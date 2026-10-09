@@ -60,6 +60,9 @@ struct ApontamentosApp: App {
         }
         .commands {
             CommandGroup(replacing: .newItem) {}
+            CommandGroup(after: .appSettings) {
+                Button("Preparar o Recap…") { NotificationCenter.default.post(name: .abrirPreparacao, object: nil) }
+            }
         }
 
         Settings {

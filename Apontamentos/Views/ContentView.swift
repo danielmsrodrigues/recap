@@ -7,6 +7,8 @@ struct ContentView: View {
     @Environment(SessaoDireto.self) private var direto
     @Environment(Navegacao.self) private var navegacao
     @State private var pesquisa = ""
+    @State private var preparar = false
+    @Environment(Definicoes.self) private var definicoes
     /// Painel das perguntas à aula, à direita.
     @AppStorage("mostrarPerguntas") private var mostrarPerguntas = true
     @AppStorage("larguraPerguntas") private var larguraPerguntas = 320.0
@@ -58,6 +60,10 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 860, minHeight: 560)
+        // Num Mac novo (ou se faltar o Claude Code ou o modelo), o assistente abre sozinho.
+        .sheet(isPresented: $preparar) { PreparacaoView() }
+        .onAppear { if PreparacaoView.faltaAlgo(definicoes) { preparar = true } }
+        .onReceive(NotificationCenter.default.publisher(for: .abrirPreparacao)) { _ in preparar = true }
         // Resultados da pesquisa e links entre aulas: a aula abre e trata do resto (separador, momento, realce).
         .onChange(of: navegacao.destino) { _, destino in
             // O URL canónico da aula: o do link pode vir noutra normalização Unicode e a lista não o reconhecia.
@@ -124,6 +130,8 @@ struct ContentView: View {
             if let titulo = ProcessInfo.processInfo.environment["APONTAMENTOS_SELECIONAR"] {
                 selecao = library.cadeiras.flatMap(\.aulas).first { $0.meta.titulo == titulo }?.pasta
             }
+            // `APONTAMENTOS_PREPARAR=1`: abre o assistente "Preparar o Recap".
+            if ProcessInfo.processInfo.environment["APONTAMENTOS_PREPARAR"] == "1" { preparar = true }
             // `APONTAMENTOS_PESQUISA="<texto>"`: pesquisa em todas as aulas.
             if let texto = ProcessInfo.processInfo.environment["APONTAMENTOS_PESQUISA"] { pesquisa = texto }
             // `APONTAMENTOS_DIRETO=1`: abre a folha "Transcrever em direto".
@@ -229,4 +237,9 @@ private struct DivisoriaPainel: View {
                     .onEnded { _ in inicio = nil }
             )
     }
+}
+
+extension Notification.Name {
+    /// Recap → Preparar o Recap…
+    static let abrirPreparacao = Notification.Name("abrirPreparacao")
 }

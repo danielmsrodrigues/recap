@@ -15,29 +15,35 @@ As aulas ficam em `~/Aulas/<cadeira>/<data>_<título>/`, em ficheiros normais. N
 
 ## Requisitos
 
-- Mac com Apple Silicon (M1 ou mais recente) e macOS 26 ou mais recente.
-- [Claude Code](https://claude.com/claude-code) instalado e com sessão iniciada numa conta Claude Pro ou Max. Os apontamentos contam para os limites da subscrição, sem custos extra. Em alternativa, uma chave da API da Anthropic (Definições → Geração).
+- Mac com chip Apple (M1 ou mais recente) e macOS 26 ou mais recente.
+- Conta Claude Pro ou Max. Os apontamentos contam para os limites da subscrição, sem custos extra. Em alternativa, uma chave da API da Anthropic (Definições → Geração).
 
 ## Instalar
 
-1. Em [Releases](../../releases), descarrega o `Recap.zip` da versão mais recente.
-2. Abre o zip e arrasta o **Recap** para a pasta **Aplicações**.
-3. Abre o Recap. Da primeira vez, o macOS avisa que não consegue verificar o programador, porque a app não está registada na Apple. Para a abrir:
-   1. Clica em **OK**.
-   2. Vai a **Definições do Sistema → Privacidade e Segurança**.
-   3. Desce até à mensagem sobre o Recap, carrega em **Abrir na mesma** e confirma.
+Abre o **Terminal** (está em Aplicações → Utilitários), cola esta linha e carrega em Enter:
 
-   Só é preciso fazer isto uma vez.
+```bash
+curl -fsSL https://raw.githubusercontent.com/danielmsrodrigues/recap/main/instalar.sh | bash
+```
 
-## Primeira utilização
+O script instala o Recap em Aplicações e, se ainda não o tiveres, o Claude Code. Depois abre a app.
 
-1. **Claude Code:** se ainda não o tens, instala-o e inicia sessão. No Terminal, corre:
-   ```bash
-   curl -fsSL https://claude.ai/install.sh | bash
-   ```
-   Depois corre `claude` e faz login com a tua conta. O Recap encontra-o sozinho; confirma em Definições → Geração.
-2. **Modelo de transcrição:** em Definições → Transcrição, descarrega o modelo do Whisper (cerca de 1,5 GB, só uma vez).
-3. **Transcrever em direto:** da primeira vez, o macOS pede autorização. Ativa o Recap em Definições do Sistema → Privacidade e Segurança → **Gravação de ecrã e áudio do sistema** e volta a abrir a app.
+Na primeira abertura, a janela **Preparar o Recap** guia os três passos que faltam, cada um com o seu botão:
+
+1. **Iniciar sessão no Claude:** abre o Terminal; fazes login no browser com a tua conta.
+2. **Descarregar o modelo de transcrição:** cerca de 1,5 GB, só uma vez.
+3. **Autorizar a gravação de ecrã:** só para transcrever em direto. Depois de autorizar, volta a abrir o Recap.
+
+Para atualizar, corre a mesma linha outra vez.
+
+<details>
+<summary>Instalar sem o Terminal</summary>
+
+1. Em [Releases](../../releases), descarrega o `Recap.zip` da versão mais recente, abre-o e arrasta o Recap para Aplicações.
+2. Da primeira vez, o macOS diz que não consegue verificar o programador, porque a app não está registada na Apple. Clica em OK, vai a Definições do Sistema → Privacidade e Segurança, carrega em **Abrir na mesma** e confirma.
+3. Instala o Claude Code com o [instalador oficial](https://claude.com/claude-code). O resto faz-se na janela Preparar o Recap.
+
+</details>
 
 ## Como usar
 
