@@ -1,0 +1,162 @@
+import Foundation
+import Observation
+
+/// Cadeiras e aulas lidas de `~/Aulas`. Não há base de dados: cada `recarregar()` volta a ler o disco.
+@MainActor @Observable
+final class Library {
+    let raiz: URL
+    private(set) var cadeiras: [Cadeira] = []
+    /// Muda a cada leitura do disco; as vistas usam-no para recarregar ficheiros.
+    private(set) var versao = 0
+    private(set) var erro: String?
+
+    init(raiz: URL = Disco.raizPorDefeito) {
+        self.raiz = raiz
+        recarregar()
+    }
+
+    func recarregar() {
+        do {
+            try FileManager.default.createDirectory(at: raiz, withIntermediateDirectories: true)
+            cadeiras = try Self.ler(raiz: raiz)
+            erro = nil
+        } catch {
+            erro = "Não foi possível ler \(raiz.path): \(error.localizedDescription)"
+        }
+        versao += 1
+    }
+
+    nonisolated static func ler(raiz: URL) throws -> [Cadeira] {
+        let fm = FileManager.default
+        let pastas = try fm.contentsOfDirectory(at: raiz, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles)
+        return pastas
+            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+            .map { pasta in
+                let nome = pasta.lastPathComponent
+                let subpastas = (try? fm.contentsOfDirectory(at: pasta, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
+                let aulas = subpastas.compactMap { sub -> Aula? in
+                    guard let meta = try? Disco.lerMeta(sub) else { return nil }
+                    return Aula(
+                        pasta: sub,
+                        cadeira: nome,
+                        meta: meta,
+                        temTranscricao: Disco.existe(Disco.transcricaoJSON, em: sub),
+                        temApontamentos: Disco.existe(Disco.apontamentosMD, em: sub)
+                    )
+                }
+                .sorted { ($0.meta.data, $0.meta.criadaEm) > ($1.meta.data, $1.meta.criadaEm) }
+                return Cadeira(nome: nome, pasta: pasta, meta: Disco.lerCadeira(pasta), aulas: aulas)
+            }
+            .sorted { $0.nome.localizedStandardCompare($1.nome) == .orderedAscending }
+    }
+
+    // MARK: Consultas
+
+    func aula(em pasta: URL) -> Aula? {
+        for c in cadeiras { if let a = c.aulas.first(where: { $0.pasta.mesmoCaminho(pasta) }) { return a } }
+        return nil
+    }
+
+    /// O URL tal como a biblioteca o lê do disco, para seleções e comparações baterem certo.
+    private func canonico(_ pasta: URL) -> URL {
+        aula(em: pasta)?.pasta ?? pasta
+    }
+
+    func cadeira(nome: String) -> Cadeira? {
+        cadeiras.first { $0.nome == nome }
+    }
+
+    // MARK: Alterações
+
+    @discardableResult
+    func criarCadeira(nome: String) throws -> URL {
+        let pasta = raiz.appending(path: Disco.nomeDePasta(nome), directoryHint: .isDirectory)
+        if !FileManager.default.fileExists(atPath: pasta.path) {
+            try FileManager.default.createDirectory(at: pasta, withIntermediateDirectories: true)
+            try Disco.escreverCadeira(CadeiraMeta(), em: pasta)
+        }
+        recarregar()
+        return pasta
+    }
+
+    func criarAula(cadeira: String, titulo: String, data: Date, video: URL?) throws -> URL {
+        let pastaCadeira = try criarCadeira(nome: cadeira)
+        let pasta = Disco.pastaLivre(Disco.nomePastaAula(titulo: titulo, data: data), em: pastaCadeira)
+        try FileManager.default.createDirectory(at: pasta, withIntermediateDirectories: true)
+        var meta = AulaMeta(titulo: titulo, data: data, video: video.map(VideoResolver.referencia(para:)))
+        if video == nil { meta.origem = "direto" }
+        try Disco.escreverMeta(meta, em: pasta)
+        recarregar()
+        return canonico(pasta)
+    }
+
+    func atualizarMeta(em pasta: URL, _ alterar: (inout AulaMeta) -> Void) throws {
+        var meta = try Disco.lerMeta(pasta)
+        alterar(&meta)
+        try Disco.escreverMeta(meta, em: pasta)
+        recarregar()
+    }
+
+    func guardarCadeira(_ meta: CadeiraMeta, cadeira: Cadeira) throws {
+        try Disco.escreverCadeira(meta, em: cadeira.pasta)
+        recarregar()
+    }
+
+    /// Renomeia a pasta da cadeira. Devolve a nova pasta.
+    @discardableResult
+    func renomearCadeira(_ cadeira: Cadeira, para nome: String) throws -> URL {
+        let novoNome = Disco.nomeDePasta(nome)
+        guard novoNome != cadeira.pasta.lastPathComponent else { return cadeira.pasta }
+        let destino = raiz.appending(path: novoNome, directoryHint: .isDirectory)
+        guard !FileManager.default.fileExists(atPath: destino.path) else {
+            throw NSError(domain: "Recap", code: 20, userInfo: [NSLocalizedDescriptionKey: "Já existe uma cadeira chamada \"\(novoNome)\"."])
+        }
+        try FileManager.default.moveItem(at: cadeira.pasta, to: destino)
+        recarregar()
+        return destino
+    }
+
+    /// Muda título, data ou cadeira de uma aula; a pasta é renomeada ou movida para acompanhar. Devolve a nova pasta.
+    func editarAula(_ aula: Aula, titulo: String, data: Date, cadeira: String) throws -> URL {
+        var meta = aula.meta
+        meta.titulo = titulo
+        meta.data = data
+        try Disco.escreverMeta(meta, em: aula.pasta)
+
+        let pastaCadeira = raiz.appending(path: Disco.nomeDePasta(cadeira), directoryHint: .isDirectory)
+        if !FileManager.default.fileExists(atPath: pastaCadeira.path) {
+            try FileManager.default.createDirectory(at: pastaCadeira, withIntermediateDirectories: true)
+            try Disco.escreverCadeira(CadeiraMeta(), em: pastaCadeira)
+        }
+        let nome = Disco.nomePastaAula(titulo: titulo, data: data)
+        var destino = aula.pasta
+        if aula.pasta.deletingLastPathComponent().standardizedFileURL != pastaCadeira.standardizedFileURL
+            || aula.pasta.lastPathComponent != nome {
+            destino = Disco.pastaLivre(nome, em: pastaCadeira)
+            try FileManager.default.moveItem(at: aula.pasta, to: destino)
+        }
+        recarregar()
+        return canonico(destino)
+    }
+
+    func definirRevista(_ revista: Bool, em pasta: URL) throws {
+        try atualizarMeta(em: pasta) { $0.revista = revista }
+    }
+
+    /// Vai para o Lixo (recuperável), não é apagado.
+    func moverParaLixo(_ pasta: URL) throws {
+        try FileManager.default.trashItem(at: pasta, resultingItemURL: nil)
+        recarregar()
+    }
+}
+
+extension URL {
+    /// Compara caminhos de ficheiros ignorando symlinks (/var ↔ /private/var) e a normalização Unicode dos acentos.
+    func mesmoCaminho(_ outro: URL) -> Bool {
+        func chave(_ u: URL) -> String {
+            u.standardizedFileURL.resolvingSymlinksInPath().path.precomposedStringWithCanonicalMapping
+                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        }
+        return self == outro || chave(self) == chave(outro)
+    }
+}
