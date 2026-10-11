@@ -8,6 +8,7 @@ struct ApontamentosApp: App {
     @State private var direto = SessaoDireto()
     @State private var estudo: Estudo
     @State private var navegacao = Navegacao()
+    @State private var atualizador = Atualizador()
 
     init() {
         let library = Library(raiz: Self.raiz)
@@ -39,6 +40,7 @@ struct ApontamentosApp: App {
                 .environment(direto)
                 .environment(estudo)
                 .environment(navegacao)
+                .environment(atualizador)
         }
 
         Window("Em direto", id: "direto") {
@@ -62,6 +64,7 @@ struct ApontamentosApp: App {
             CommandGroup(replacing: .newItem) {}
             CommandGroup(after: .appSettings) {
                 Button("Preparar o Recap…") { NotificationCenter.default.post(name: .abrirPreparacao, object: nil) }
+                Button("Procurar atualizações…") { Task { await atualizador.procurar() } }
             }
         }
 

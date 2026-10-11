@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var pesquisa = ""
     @State private var preparar = false
     @Environment(Definicoes.self) private var definicoes
+    @Environment(Atualizador.self) private var atualizador
     /// Painel das perguntas à aula, à direita.
     @AppStorage("mostrarPerguntas") private var mostrarPerguntas = true
     @AppStorage("larguraPerguntas") private var larguraPerguntas = 320.0
@@ -56,7 +57,7 @@ struct ContentView: View {
                     }
                 }
             } else {
-                DropZoneView { importar = true }
+                EcraInicial(aCaptar: direto.ativa, aoTranscrever: { configurarDireto = true }, aoEscolherVideo: { importar = true })
             }
         }
         .frame(minWidth: 860, minHeight: 560)
@@ -64,6 +65,18 @@ struct ContentView: View {
         .sheet(isPresented: $preparar) { PreparacaoView() }
         .onAppear { if PreparacaoView.faltaAlgo(definicoes) { preparar = true } }
         .onReceive(NotificationCenter.default.publisher(for: .abrirPreparacao)) { _ in preparar = true }
+        .modifier(AvisosAtualizacao(ocupado: direto.ativa || fila.jobs.contains(where: \.ativo)))
+        .task {
+            #if DEBUG
+            // `APONTAMENTOS_ATUALIZAR=1`: procura e instala logo (teste da atualização de ponta a ponta).
+            if ProcessInfo.processInfo.environment["APONTAMENTOS_ATUALIZAR"] == "1" {
+                await atualizador.procurar()
+                await atualizador.instalar()
+            }
+            #else
+            await atualizador.procurarSeForAltura()
+            #endif
+        }
         // Resultados da pesquisa e links entre aulas: a aula abre e trata do resto (separador, momento, realce).
         .onChange(of: navegacao.destino) { _, destino in
             // O URL canónico da aula: o do link pode vir noutra normalização Unicode e a lista não o reconhecia.
@@ -186,28 +199,45 @@ private struct VideoPendente: Identifiable {
     var id: URL { url }
 }
 
-private struct DropZoneView: View {
-    let aoEscolher: () -> Void
+/// Sem aula aberta: transcrever em direto é a ação principal; importar um vídeo fica em segundo plano
+/// (largar um vídeo em qualquer sítio da janela continua a funcionar).
+private struct EcraInicial: View {
+    let aCaptar: Bool
+    let aoTranscrever: () -> Void
+    let aoEscolherVideo: () -> Void
 
     var body: some View {
         VStack(spacing: 14) {
-            Image(systemName: "film.stack")
-                .font(.system(size: 48, weight: .light))
+            Image(systemName: "waveform.badge.mic")
+                .font(.system(size: 52, weight: .light))
+                .foregroundStyle(.tint)
+            Text("Transcrever uma aula").font(.title.bold())
+            Text("O Recap ouve a aula enquanto dá, ao vivo ou numa gravação no browser, e escreve os apontamentos no fim.")
                 .foregroundStyle(.secondary)
-            Text("Larga aqui a gravação de uma aula").font(.title2)
-            Text("Vídeos .mp4, .mov ou .mkv. Podes largar vários; são processados um de cada vez.")
-                .foregroundStyle(.secondary)
-            Button("Escolher vídeo…", action: aoEscolher)
-                .buttonStyle(.borderedProminent)
-                .padding(.top, 4)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 440)
+            Button(action: aoTranscrever) {
+                Label(aCaptar ? "Já há uma aula a ser captada" : "Transcrever em direto…", systemImage: "record.circle")
+                    .font(.title3.weight(.semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.extraLarge)
+            .disabled(aCaptar)
+            .padding(.top, 6)
+            Text("⇧⌘L").font(.caption).foregroundStyle(.tertiary)
+
+            HStack(spacing: 4) {
+                Text("Tens o vídeo da aula? Larga-o aqui ou")
+                Button("escolhe o ficheiro…", action: aoEscolherVideo).buttonStyle(.link)
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .padding(.top, 22)
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background {
-            RoundedRectangle(cornerRadius: 16)
-                .strokeBorder(.separator, style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
-                .padding(24)
-        }
     }
 }
 
@@ -242,4 +272,47 @@ private struct DivisoriaPainel: View {
 extension Notification.Name {
     /// Recap → Preparar o Recap…
     static let abrirPreparacao = Notification.Name("abrirPreparacao")
+}
+
+/// Os avisos do atualizador: versão nova, a instalar, já atualizado, erro.
+private struct AvisosAtualizacao: ViewModifier {
+    @Environment(Atualizador.self) private var atualizador
+    /// Há uma captação ou um processamento em curso: atualizar agora perdia-o.
+    let ocupado: Bool
+
+    private var disponivel: String? { if case .disponivel(let v) = atualizador.estado { v } else { nil } }
+    private var mensagem: String? {
+        switch atualizador.estado {
+        case .emDia: "O Recap está atualizado (versão \(Atualizador.versaoAtual))."
+        case .falhou(let m): m
+        default: nil
+        }
+    }
+    private var aInstalar: Bool { if case .aInstalar = atualizador.estado { true } else { false } }
+
+    func body(content: Content) -> some View {
+        content
+            .alert("Há uma versão nova do Recap", isPresented: Binding(get: { disponivel != nil }, set: { if !$0 { atualizador.dispensar() } }),
+                   presenting: disponivel) { _ in
+                Button("Atualizar agora") { Task { await atualizador.instalar() } }.disabled(ocupado)
+                Button("Mais tarde", role: .cancel) { atualizador.dispensar() }
+            } message: { versao in
+                Text(ocupado
+                     ? "Versão \(versao) (tens a \(Atualizador.versaoAtual)). Há uma aula a ser captada ou processada: atualiza quando terminar, em Recap → Procurar atualizações…"
+                     : "Versão \(versao) (tens a \(Atualizador.versaoAtual)). O Recap fecha, atualiza-se e volta a abrir. As tuas aulas não são tocadas.")
+            }
+            .alert("Atualizações", isPresented: Binding(get: { mensagem != nil }, set: { if !$0 { atualizador.dispensar() } }), presenting: mensagem) { _ in
+                Button("OK") { atualizador.dispensar() }
+            } message: { Text($0) }
+            .overlay {
+                if aInstalar {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("A atualizar o Recap…")
+                    }
+                    .padding(28)
+                    .background(.regularMaterial, in: .rect(cornerRadius: 14))
+                }
+            }
+    }
 }

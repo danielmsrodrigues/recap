@@ -5,8 +5,12 @@
 set -euo pipefail
 cd "${0:A:h}/.."
 
+# A versão da app é a da release: é por ela que o Recap sabe se há uma atualização.
+versao_app=()
+[[ "${1:-}" == "--github" ]] && versao_app=("MARKETING_VERSION=${2:?indica a versão, por exemplo: --github 1.2}")
+
 xcodebuild -project Apontamentos.xcodeproj -scheme Apontamentos -configuration Release \
-  -derivedDataPath build/DerivedData build | grep -E "error|BUILD" || true
+  -derivedDataPath build/DerivedData build "${versao_app[@]}" | grep -E "error|BUILD" || true
 app=build/DerivedData/Build/Products/Release/Recap.app
 codesign --verify --deep --strict "$app"
 

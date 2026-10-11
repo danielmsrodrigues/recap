@@ -34,7 +34,7 @@ Na primeira abertura, a janela **Preparar o Recap** guia os três passos que fal
 2. **Descarregar o modelo de transcrição:** cerca de 1,5 GB, só uma vez.
 3. **Autorizar a gravação de ecrã:** só para transcrever em direto. Depois de autorizar, volta a abrir o Recap.
 
-Para atualizar, corre a mesma linha outra vez.
+**Atualizações:** o Recap procura versões novas ao abrir (uma vez por dia) e pergunta se queres atualizar; fecha, atualiza-se e volta a abrir. Também está em **Recap → Procurar atualizações…**.
 
 <details>
 <summary>Instalar sem o Terminal</summary>
@@ -66,7 +66,7 @@ open Apontamentos.xcodeproj
 
 O projeto assina com um certificado local chamado "Recap Local", que não vais ter. No Xcode, em Signing & Capabilities do alvo Apontamentos, muda para **Sign to Run Locally**.
 
-O `Ferramentas/publicar.sh` compila a versão final e instala-a em /Applications. Com `--github 1.1`, também a publica como release.
+O `Ferramentas/publicar.sh` compila a versão final e instala-a em /Applications. Com `--github 1.3`, também a publica como release (as apps instaladas atualizam-se a partir daí).
 
 ## Licenças de terceiros
 

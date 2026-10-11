@@ -88,3 +88,23 @@ struct EstudoTests {
         #expect(!FileManager.default.fileExists(atPath: pasta.appending(path: Disco.perguntasJSON).path))
     }
 }
+
+struct AtualizadorTests {
+    @Test func comparaVersoesNumeroANumero() {
+        #expect(Atualizador.maisRecente("1.10", que: "1.9"))
+        #expect(Atualizador.maisRecente("2.0", que: "1.9.9"))
+        #expect(Atualizador.maisRecente("1.2.1", que: "1.2"))
+        #expect(!Atualizador.maisRecente("1.2", que: "1.2"))
+        #expect(!Atualizador.maisRecente("1.2", que: "1.2.0"))
+        #expect(!Atualizador.maisRecente("1.1", que: "1.2"))
+    }
+
+    /// Só aceita uma app assinada pelo mesmo autor desta (os testes correm dentro do Recap).
+    @Test func soAceitaAMesmaAssinatura() throws {
+        #expect(throws: Atualizador.Erro.self) { try Atualizador.verificarAssinatura(URL(fileURLWithPath: "/System/Applications/Calculator.app")) }
+        let instalada = URL(fileURLWithPath: "/Applications/Recap.app")
+        if FileManager.default.fileExists(atPath: instalada.path) {
+            try Atualizador.verificarAssinatura(instalada)
+        }
+    }
+}
