@@ -1,4 +1,5 @@
 import Foundation
+import PDFKit
 
 /// O que o Claude recebe sobre uma aula.
 struct ContextoAula: Sendable {
@@ -54,7 +55,20 @@ struct NotesGenerator: Sendable {
     }
 
     static func conteudo(_ c: ContextoAula) -> [BlocoConteudo] {
-        materiais(c) + [.texto("Escreve os apontamentos desta aula seguindo as instruções.")]
+        var pedido = "Escreve os apontamentos desta aula seguindo as instruções."
+        if c.pdfProfessor != nil || !c.slides.isEmpty {
+            let numero = c.pdfProfessor != nil ? "o número da página do PDF (a primeira é 1)" : "o número do slide na lista acima"
+            pedido += """
+
+
+            Slides dentro dos apontamentos:
+            - Para mostrar um slide, escreve numa linha própria `![Slide N — <título curto>](slide:N)`, em que N é \(numero).
+            - Põe cada slide dado na aula logo a seguir ao título ou ao parágrafo do tema a que pertence. Cada slide entra uma vez só.
+            - Deixa de fora capas, separadores de tema, índices, slides só com logótipos ou imagens decorativas, slides repetidos e slides que não foram dados nesta aula.
+            - A imagem não substitui o texto: a matéria do slide continua escrita nos apontamentos, para se estudar e pesquisar sem a imagem.
+            """
+        }
+        return materiais(c) + [.texto(pedido)]
     }
 
     /// Cabeçalho, glossário, slides (ou o PDF do professor) e transcrição: o que se sabe da aula.
@@ -71,7 +85,8 @@ struct NotesGenerator: Sendable {
         }
         var blocos: [BlocoConteudo] = [.texto(cabecalho)]
         if let pdf = c.pdfProfessor {
-            blocos.append(.texto("Slides publicados pelo professor (PDF). Usa-os como fonte principal para a notação, as fórmulas e a ordem dos temas; a transcrição diz o que foi explicado sobre eles."))
+            let paginas = PDFDocument(data: pdf)?.pageCount
+            blocos.append(.texto("Slides publicados pelo professor (PDF\(paginas.map { ", \($0) páginas" } ?? "")). Usa-os como fonte principal para a notação, as fórmulas, os valores e a ordem dos temas; a transcrição diz o que foi explicado sobre eles. O PDF pode trazer slides de outras aulas: usa só os que foram dados nesta."))
             blocos.append(.documentoPDF(base64: pdf.base64EncodedString()))
         } else if !c.slides.isEmpty {
             blocos.append(.texto("Slides projetados na aula (\(c.slides.count)), cada um precedido do momento em que apareceu:"))
@@ -84,8 +99,11 @@ struct NotesGenerator: Sendable {
                 blocos.append(.imagem(mediaType: "image/jpeg", base64: s.jpeg.base64EncodedString()))
             }
         }
+        let vozes = c.transcricao.temOradores
+            ? "A identificação de voz marcou com (aluno) as linhas ditas por alunos; as restantes são do professor. Pode falhar."
+            : "Esta transcrição não tem identificação de voz: deduz pelo contexto quem fala."
         let transcricao = """
-        Transcrição automática da aula (espanhol), um segmento por linha com o seu timestamp:
+        Transcrição automática da aula (espanhol), um segmento por linha com o seu timestamp. \(vozes)
 
         <transcricao>
         \(c.transcricao.textoComTimestamps)

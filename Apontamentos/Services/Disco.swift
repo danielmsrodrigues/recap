@@ -149,6 +149,8 @@ enum Disco {
         let destino = pasta.appending(path: slidesPDF)
         if FileManager.default.fileExists(atPath: destino.path) { try FileManager.default.removeItem(at: destino) }
         try FileManager.default.copyItem(at: origem, to: destino)
+        // As páginas do PDF antigo já não correspondem; as novas são criadas em fundo por quem juntou o PDF.
+        SlidesNosApontamentos.apagarPaginas(em: pasta)
     }
 
     static func urlSlide(_ slide: Slide, em pasta: URL) -> URL {

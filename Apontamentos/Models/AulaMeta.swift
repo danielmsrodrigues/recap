@@ -52,6 +52,8 @@ struct AulaMeta: Codable, Hashable, Sendable {
     var editadoEm: Date?
     /// "direto" quando o áudio foi captado enquanto a aula tocava (não há vídeo guardado).
     var origem: String?
+    /// O utilizador mudou o título à mão; a partir daí as gerações deixam de o substituir pelo tema da aula.
+    var tituloManual: Bool?
 
     init(titulo: String, data: Date, video: VideoRef?) {
         self.titulo = titulo
@@ -81,5 +83,31 @@ struct AulaMeta: Codable, Hashable, Sendable {
         revista = try c.decodeIfPresent(Bool.self, forKey: .revista) ?? false
         editadoEm = try c.decodeIfPresent(Date.self, forKey: .editadoEm)
         origem = try c.decodeIfPresent(String.self, forKey: .origem)
+        tituloManual = try c.decodeIfPresent(Bool.self, forKey: .tituloManual)
+    }
+}
+
+/// Título das aulas: o Claude escreve o tema no `# título` dos apontamentos e a app junta o número da aula,
+/// que ele não sabe (vem da ordem das datas dentro da cadeira).
+enum TituloAula {
+    static func titulo(numero: Int, tema: String) -> String { "Aula \(numero) · \(tema)" }
+
+    /// O tema no primeiro `# título`, sem o nome da cadeira nem um "Aula N" que o Claude tenha posto à frente.
+    static func tema(_ markdown: String) -> String? {
+        guard let linha = markdown.split(separator: "\n", omittingEmptySubsequences: true).first,
+              linha.hasPrefix("# ") else { return nil }
+        var tema = linha.dropFirst(2).trimmingCharacters(in: .whitespaces)
+        if let r = tema.range(of: #"^(.*[—–-]\s*)?(Aula|Clase|Sesi[oó]n)\s+\d+(\s*[:·—–-]\s*|$)"#, options: [.regularExpression, .caseInsensitive]) {
+            tema.removeSubrange(r)
+        }
+        tema = tema.trimmingCharacters(in: .whitespaces.union(CharacterSet(charactersIn: ".")))
+        guard !tema.isEmpty else { return nil }
+        return tema.prefix(1).uppercased() + tema.dropFirst()
+    }
+
+    /// Troca o primeiro `# título` dos apontamentos.
+    static func trocarCabecalho(_ markdown: String, por titulo: String) -> String {
+        guard let r = markdown.range(of: #"(?m)^# .*$"#, options: .regularExpression) else { return markdown }
+        return markdown.replacingCharacters(in: r, with: "# \(titulo)")
     }
 }

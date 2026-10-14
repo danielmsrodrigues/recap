@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 import Foundation
 import PDFKit
@@ -125,6 +126,25 @@ struct IntegracaoSlidesTests {
 
 @MainActor
 struct ExportadorPDFTests {
+    @Test func pdfLevaAsImagensDosSlides() async throws {
+        let pasta = FileManager.default.temporaryDirectory.appending(path: "aula-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: pasta.appending(path: "slides-pdf"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: pasta) }
+        // Ruído: uma imagem que não comprime, para se notar no tamanho do PDF.
+        let rep = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 800, pixelsHigh: 450, bitsPerSample: 8,
+                                                samplesPerPixel: 3, hasAlpha: false, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        let bytes = try #require(rep.bitmapData)
+        for i in 0..<(rep.bytesPerRow * 450) { bytes[i] = .random(in: 0...255) }
+        try #require(rep.representation(using: .jpeg, properties: [.compressionFactor: 0.9])).write(to: pasta.appending(path: "slides-pdf/pagina-01.jpg"))
+        let md = "# Título\n\nAntes.\n\n![Slide 1 — Teste](slides-pdf/pagina-01.jpg)\n\nDepois."
+        let com = pasta.appending(path: "com.pdf"), sem = pasta.appending(path: "sem.pdf")
+        try await ExportadorPDF.exportar(markdown: md, pastaAula: pasta, para: com)
+        try await ExportadorPDF.exportar(markdown: md, pastaAula: nil, para: sem)
+        let tamanho = { (u: URL) in (try? u.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0 }
+        #expect(tamanho(com) > tamanho(sem) + 50_000)
+        #expect(PDFDocument(url: com)?.string?.contains("Slide 1 — Teste") == true)
+    }
+
     @Test func geraPDFPaginadoComFormulas() async throws {
         let md = "# Título\n\n## Secção [01:05]\n\n" + String(repeating: "Texto com $A v = \\lambda v$ e mais palavras para encher a página. ", count: 200)
             + "\n\n$$\n\\det(A - \\lambda I) = 0\n$$\n"

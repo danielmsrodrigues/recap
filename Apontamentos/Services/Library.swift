@@ -66,6 +66,14 @@ final class Library {
         cadeiras.first { $0.nome == nome }
     }
 
+    /// Número da aula dentro da cadeira, pela ordem das datas (a primeira é 1).
+    func numeroDaAula(_ aula: Aula) -> Int {
+        let anteriores = cadeira(nome: aula.cadeira)?.aulas.filter {
+            !$0.pasta.mesmoCaminho(aula.pasta) && ($0.meta.data, $0.meta.criadaEm) < (aula.meta.data, aula.meta.criadaEm)
+        }
+        return (anteriores?.count ?? 0) + 1
+    }
+
     // MARK: Alterações
 
     @discardableResult
@@ -119,6 +127,7 @@ final class Library {
     /// Muda título, data ou cadeira de uma aula; a pasta é renomeada ou movida para acompanhar. Devolve a nova pasta.
     func editarAula(_ aula: Aula, titulo: String, data: Date, cadeira: String) throws -> URL {
         var meta = aula.meta
+        if meta.titulo != titulo { meta.tituloManual = true }
         meta.titulo = titulo
         meta.data = data
         try Disco.escreverMeta(meta, em: aula.pasta)

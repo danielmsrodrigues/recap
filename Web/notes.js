@@ -1,7 +1,7 @@
 // Renderiza os apontamentos (Markdown + matemática) e permite editá-los como num processador de texto.
 //
 // A app chama:
-//   renderMarkdown(texto, emStreaming)   mostra os apontamentos
+//   renderMarkdown(texto, emStreaming, base)   mostra os apontamentos (base: de onde vêm as imagens da aula)
 //   definirEdicao(true|false)            liga/desliga a edição direta
 //   comando(nome, valor)                 negrito, títulos, listas, fórmula, desfazer…
 //   obterMarkdown()                      devolve o documento editado em Markdown
@@ -91,7 +91,42 @@
 
   const abertas = new Set();
 
-  window.renderMarkdown = function (md, emStreaming) {
+  // Slides dentro dos apontamentos: `![legenda](slides-pdf/pagina-07.jpg)`, relativo à pasta da aula,
+  // servido pela app em `base`. Um `slide:N` ainda por resolver (durante o streaming) fica só com a legenda.
+  function ligarImagens(elemento, base) {
+    for (const img of elemento.querySelectorAll("img")) {
+      const src = img.getAttribute("src") || "";
+      if (src.startsWith("slide:")) {
+        const s = document.createElement("span");
+        s.className = "slide-pendente";
+        s.contentEditable = "false";
+        s.textContent = img.alt || "Slide";
+        s.dataset.marca = "![" + (img.alt || "") + "](" + src + ")";
+        img.replaceWith(s);
+        continue;
+      }
+      if (base && !/^[a-z][a-z0-9+.-]*:/i.test(src)) {
+        // O marked já codifica o src (espaços → %20): descodificar antes de voltar a codificar.
+        const relativo = src.split("/").map((p) => { try { return decodeURIComponent(p); } catch (e) { return p; } });
+        img.dataset.src = relativo.join("/");
+        img.src = base + relativo.map(encodeURIComponent).join("/");
+      }
+      img.classList.add("slide");
+      const p = img.parentElement;
+      if (p && p.tagName === "P" && p.children.length === 1 && !p.textContent.trim()) {
+        p.classList.add("figura");
+        if (img.alt) {
+          const legenda = document.createElement("span");
+          legenda.className = "legenda";
+          legenda.contentEditable = "false";
+          legenda.textContent = img.alt;
+          p.appendChild(legenda);
+        }
+      }
+    }
+  }
+
+  window.renderMarkdown = function (md, emStreaming, base) {
     const r = raiz();
     const perto = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     const { texto, formulas } = protegerMatematica(md || "");
@@ -99,10 +134,13 @@
     html = html.replace(/@@MATH(\d+)@@/g, (_, i) => formulaHTML(formulas[Number(i)].tex, formulas[Number(i)].display));
     r.innerHTML = html;
     ligarTimestamps(r);
+    ligarImagens(r, base);
     // Explicações que o professor não deu: destacadas à parte das definições.
     for (const q of r.querySelectorAll("blockquote")) {
       const t = q.textContent.trim();
       if (t.startsWith("💡")) q.classList.add("extra");
+      else if (t.startsWith("⭐")) q.classList.add("importante");
+      else if (t.startsWith("⚠")) q.classList.add("erro-comum");
       // Resolução dos exercícios: escondida até o estudante a abrir (o estado sobrevive ao streaming).
       else if (/^Resolução\b/.test(t)) {
         const d = document.createElement("details");
@@ -152,8 +190,19 @@
       filter: (no) => no.nodeName === "A" && no.classList.contains("ts"),
       replacement: (conteudo) => "[" + conteudo + "]",
     });
-    // Os separadores de tema e o editor de fórmulas não fazem parte do documento.
-    turndown.remove((no) => no.id === "editor-formula");
+    // As imagens voltam ao caminho relativo à pasta da aula (o src aponta para a app).
+    turndown.addRule("imagem", {
+      filter: "img",
+      replacement: (_, no) => "![" + (no.getAttribute("alt") || "") + "](" + (no.dataset.src || no.getAttribute("src") || "") + ")",
+    });
+    // O editor de fórmulas e as legendas dos slides (vêm do texto alternativo) não fazem parte do documento.
+    turndown.remove((no) => no.id === "editor-formula" ||
+      (no.nodeName === "SPAN" && no.classList.contains("legenda")));
+    // Uma marca de slide que ficou por resolver volta tal como estava.
+    turndown.addRule("slidePendente", {
+      filter: (no) => no.nodeName === "SPAN" && no.classList.contains("slide-pendente"),
+      replacement: (_, no) => no.dataset.marca || "",
+    });
     return turndown;
   }
 

@@ -44,7 +44,16 @@ struct TranscricaoView: View {
                         Text(Timestamp.format(s.inicio))
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(.tint)
+                        if s.orador == .aluno {
+                            Text("Aluno")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 6)
+                                .background(.quaternary, in: .capsule)
+                                .help("Identificado pela voz como um aluno (pode falhar)")
+                        }
                         Text(s.texto)
+                            .foregroundStyle(s.orador == .aluno ? .secondary : .primary)
                             .textSelection(.enabled)
                     }
                     .padding(.vertical, 2)

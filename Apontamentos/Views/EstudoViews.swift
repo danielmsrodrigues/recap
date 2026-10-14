@@ -110,6 +110,8 @@ struct PerguntasView: View {
         HStack(spacing: 6) {
             TextField("Pergunta sobre esta aula…", text: $texto)
                 .textFieldStyle(.plain)
+                // O .title2 do HStack é só para os ícones dos botões.
+                .font(.body)
                 .focused($focado)
                 .onSubmit { enviar(texto) }
             if emCurso != nil {

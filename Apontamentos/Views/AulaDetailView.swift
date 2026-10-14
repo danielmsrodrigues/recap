@@ -23,6 +23,8 @@ struct AulaDetailView: View {
     @State private var escolherPDF = false
     @State private var estadoVideo: VideoResolver.Estado?
     @State private var confirmarRegenerar = false
+    /// O PDF dos slides acabou de ser juntado (muda o texto da confirmação de regenerar).
+    @State private var pdfJuntado = false
     @State private var estimativa: String?
     @State private var localizarVideo = false
     @State private var erro: String?
@@ -70,7 +72,9 @@ struct AulaDetailView: View {
         } message: {
             Text(avisoRegenerar)
         }
-        .task(id: confirmarRegenerar) { if confirmarRegenerar { await estimar() } }
+        .task(id: confirmarRegenerar) {
+            if confirmarRegenerar { await estimar() } else { pdfJuntado = false }
+        }
         .fileImporter(isPresented: $escolherPDF, allowedContentTypes: [.pdf]) { resultado in
             if case .success(let url) = resultado { juntarPDFProfessor(url) }
         }
@@ -161,7 +165,7 @@ struct AulaDetailView: View {
         switch tab {
         case .apontamentos:
             if aGerar, let job, !job.textoEmCurso.isEmpty {
-                NotesWebView(markdown: job.textoEmCurso, emStreaming: true)
+                NotesWebView(markdown: job.textoEmCurso, emStreaming: true, pastaAula: aula.pasta)
             } else if let apontamentos {
                 VStack(spacing: 0) {
                     if controlador.editando {
@@ -172,7 +176,7 @@ struct AulaDetailView: View {
                     }
                     NotesWebView(markdown: apontamentos, controlador: controlador,
                                  aoClicarTimestamp: aoClicarNosApontamentos,
-                                 realcar: controlador.editando ? [] : realce)
+                                 realcar: controlador.editando ? [] : realce, pastaAula: aula.pasta)
                 }
             } else {
                 vazioApontamentos
@@ -199,7 +203,8 @@ struct AulaDetailView: View {
     }
 
     private var avisoRegenerar: String {
-        var t = "Os apontamentos atuais são substituídos e ficam guardados em \(Disco.apontamentosAnteriorMD). A transcrição e os slides são reutilizados."
+        var t = pdfJuntado ? "Os apontamentos atuais foram feitos sem este PDF. Ao regenerar, os slides entram nos tópicos certos.\n\n" : ""
+        t += "Os apontamentos atuais são substituídos e ficam guardados em \(Disco.apontamentosAnteriorMD). A transcrição e os slides são reutilizados."
         if aula.meta.temEdicoesManuais { t += "\n\nAtenção: fizeste alterações à mão depois da última geração." }
         if let estimativa { t += "\n\n\(estimativa)" }
         return t
@@ -369,7 +374,7 @@ struct AulaDetailView: View {
         Task {
             defer { aCriarPDF = false }
             do {
-                try await ExportadorPDF.exportar(markdown: apontamentos, para: pasta.appending(path: Disco.apontamentosPDF))
+                try await ExportadorPDF.exportar(markdown: apontamentos, pastaAula: pasta, para: pasta.appending(path: Disco.apontamentosPDF))
                 pdfPronto = true
             } catch {
                 erro = "Não foi possível criar o PDF: \(error.localizedDescription)"
@@ -444,7 +449,15 @@ struct AulaDetailView: View {
         do {
             try Disco.juntarPDFProfessor(url, em: aula.pasta)
             pdfProfessor = Disco.urlPDFProfessor(aula.pasta)
-            tab = .slides
+            let pasta = aula.pasta
+            Task { await SlidesNosApontamentos.garantirPaginasEmFundo(em: pasta) }
+            // Com apontamentos já feitos sem o PDF, propõe refazê-los para os slides entrarem nos tópicos.
+            if apontamentos != nil, job?.ativo != true, definicoes.faltaParaGerar == nil, !controlador.editando {
+                pdfJuntado = true
+                confirmarRegenerar = true
+            } else {
+                tab = .slides
+            }
         } catch {
             erro = error.localizedDescription
         }
@@ -455,6 +468,7 @@ struct AulaDetailView: View {
         guard let pdfProfessor else { return }
         do {
             try FileManager.default.trashItem(at: pdfProfessor, resultingItemURL: nil)
+            SlidesNosApontamentos.apagarPaginas(em: aula.pasta)
             self.pdfProfessor = nil
         } catch {
             erro = error.localizedDescription

@@ -1,5 +1,6 @@
 import Foundation
 import Synchronization
+@preconcurrency import SpeakerKit
 @preconcurrency import WhisperKit
 
 enum ErroTranscricao: LocalizedError {
@@ -25,6 +26,10 @@ final class Sinal: Sendable {
 actor Transcriber {
     private var kit: WhisperKit?
     private var modeloCarregado: WhisperModelo?
+    /// Separação por vozes (professor/alunos). nil = indisponível; a transcrição continua sem ela.
+    private var vozes: SpeakerKit?
+    /// Porque é que a separação por vozes não está disponível (para mostrar no progresso).
+    private(set) var semVozes: String?
 
     /// Carrega o modelo já descarregado. Na primeira vez o Core ML especializa-o para este Mac, o que demora.
     func carregar(_ modelo: WhisperModelo, store: ModelStore) async throws {
@@ -43,9 +48,28 @@ actor Transcriber {
         modeloCarregado = modelo
     }
 
-    func libertar() {
+    /// Descarrega (só na primeira vez, ~30 MB) e carrega os modelos de separação por vozes.
+    /// Se falhar (sem rede na primeira vez, por exemplo) a transcrição faz-se na mesma, sem professor/alunos.
+    func carregarVozes(base: URL) async {
+        guard vozes == nil else { return }
+        do {
+            let config = PyannoteConfig(
+                modelDownloadConfig: ModelDownloadConfig(downloadBase: base.path, modelRepo: "argmaxinc/speakerkit-coreml"),
+                download: true, load: true, verbose: false, logLevel: .error)
+            vozes = try await SpeakerKit(config)
+            semVozes = nil
+        } catch {
+            semVozes = error.localizedDescription
+        }
+    }
+
+    func libertar() async {
         kit = nil
         modeloCarregado = nil
+        // Limpar antes de suspender: um carregarVozes a meio não pode ver o modelo que está a sair.
+        let saida = vozes
+        vozes = nil
+        await saida?.unloadModels()
     }
 
     /// Descodificadores em paralelo. O WhisperKit usa 16 no Mac; medido com 20 min de áudio:
@@ -80,7 +104,7 @@ actor Transcriber {
             let segs = try await transcreverBloco(amostras, glossario: glossario) { p in
                 progresso(min(1, (base + p * tamanho) / duracao))
             }
-            todos += segs.map { Segmento(inicio: $0.inicio + base, fim: $0.fim + base, texto: $0.texto) }
+            todos += segs.map { Segmento(inicio: $0.inicio + base, fim: $0.fim + base, texto: $0.texto, orador: $0.orador) }
             inicio += max(tamanho, 1)
         }
         let segmentos = Self.limpar(todos)
@@ -116,6 +140,8 @@ actor Transcriber {
             detectLanguage: false,
             skipSpecialTokens: true,
             withoutTimestamps: false,
+            // As palavras com tempos servem para partir um segmento onde muda quem fala.
+            wordTimestamps: vozes != nil,
             concurrentWorkerCount: Self.descodificadores,
             chunkingStrategy: .vad
         )
@@ -147,8 +173,29 @@ actor Transcriber {
         }
         try Task.checkCancellation()
 
-        return resultados.flatMap(\.segments).map {
-            Segmento(inicio: Double($0.start), fim: Double($0.end), texto: $0.text)
+        let segmentos = resultados.flatMap(\.segments).map { s in
+            (segmento: Segmento(inicio: Double(s.start), fim: Double(s.end), texto: s.text),
+             palavras: (s.words ?? []).map { Oradores.Palavra(texto: $0.word, inicio: Double($0.start), fim: Double($0.end)) })
+        }
+        return await marcarOradores(segmentos, amostras: amostras)
+    }
+
+    /// Professor ou aluno em cada segmento do bloco. Uma falha aqui não estraga a transcrição.
+    private func marcarOradores(_ segmentos: [(segmento: Segmento, palavras: [Oradores.Palavra])], amostras: [Float]) async -> [Segmento] {
+        guard let vozes, !segmentos.isEmpty else { return segmentos.map(\.segmento) }
+        do {
+            let resultado = try await vozes.diarize(audioArray: amostras)
+            try Task.checkCancellation()
+            let turnos = resultado.segments.compactMap { s in
+                s.speaker.speakerId.map { Oradores.Turno(inicio: Double(s.startTime), fim: Double(s.endTime), voz: $0) }
+            }
+            guard let principal = Oradores.vozPrincipal(turnos) else { return segmentos.map(\.segmento) }
+            let professor = Oradores.vozesDoProfessor(principal: principal, turnos: turnos) {
+                resultado.centroidCosineDistance(between: $0, and: $1)
+            }
+            return Oradores.marcar(segmentos, turnos: turnos, professor: professor)
+        } catch {
+            return segmentos.map(\.segmento)
         }
     }
 

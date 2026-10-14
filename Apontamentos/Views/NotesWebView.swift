@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import WebKit
 
 /// Liga a barra de formatação nativa ao documento editável dentro do WKWebView.
@@ -61,6 +62,8 @@ struct NotesWebView: NSViewRepresentable {
     var modo: String?
     /// Texto a realçar e mostrar (vindo da pesquisa global): o primeiro destes que existir na página.
     var realcar: [String] = []
+    /// Pasta da aula, de onde vêm as imagens dos slides referidas nos apontamentos.
+    var pastaAula: URL?
 
     func makeCoordinator() -> Coordenador { Coordenador() }
 
@@ -73,6 +76,7 @@ struct NotesWebView: NSViewRepresentable {
             config.userContentController.addUserScript(WKUserScript(
                 source: "document.documentElement.classList.add('\(modo)')", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         }
+        config.setURLSchemeHandler(context.coordinator.esquema, forURLScheme: EsquemaAula.nome)
         let web = WKWebView(frame: .zero, configuration: config)
         web.navigationDelegate = context.coordinator
         web.setValue(false, forKey: "drawsBackground")
@@ -88,6 +92,7 @@ struct NotesWebView: NSViewRepresentable {
         context.coordinator.aoClicarTimestamp = aoClicarTimestamp
         context.coordinator.controlador = controlador
         context.coordinator.realcar(realcar)
+        context.coordinator.pastaAula = pastaAula
         // Durante a edição o documento é o que está no ecrã; não o substituir.
         if controlador?.editando != true {
             context.coordinator.mostrar(markdown, emStreaming: emStreaming)
@@ -105,6 +110,8 @@ struct NotesWebView: NSViewRepresentable {
         weak var web: WKWebView?
         var aoClicarTimestamp: ((Double) -> Void)?
         weak var controlador: ControladorNotas?
+        let esquema = EsquemaAula()
+        var pastaAula: URL?
         /// Textos pedidos para realçar, e os que já foram procurados na página.
         private var termosPedidos: [String] = []
         private var realcado: [String]?
@@ -138,7 +145,8 @@ struct NotesWebView: NSViewRepresentable {
             mostrado = markdown
             ultimoRender = .now
             guard let json = try? JSONEncoder().encode(markdown), let literal = String(data: json, encoding: .utf8) else { return }
-            web.evaluateJavaScript("renderMarkdown(\(literal), \(emStreaming))") { [weak self] _, _ in
+            let base = pastaAula.map { esquema.base(para: $0) } ?? ""
+            web.evaluateJavaScript("renderMarkdown(\(literal), \(emStreaming), '\(base)')") { [weak self] _, _ in
                 // O realce perde-se ao renderizar de novo.
                 self?.realcado = nil
                 self?.aplicarRealce()
@@ -198,4 +206,41 @@ struct NotesWebView: NSViewRepresentable {
             }
         }
     }
+}
+
+/// Serve ao WKWebView as imagens da pasta de uma aula: `recap-aula://<id>/slides-pdf/pagina-01.jpg`.
+/// Cada pasta tem o seu id, para o WebKit não mostrar de cache a imagem de outra aula com o mesmo nome.
+@MainActor
+final class EsquemaAula: NSObject, WKURLSchemeHandler {
+    static let nome = "recap-aula"
+    private var pastas: [String: URL] = [:]
+
+    /// Início dos URLs das imagens desta pasta (termina em `/`).
+    func base(para pasta: URL) -> String {
+        let id = pastas.first { $0.value.mesmoCaminho(pasta) }?.key ?? {
+            let novo = UUID().uuidString.lowercased()
+            pastas[novo] = pasta
+            return novo
+        }()
+        return "\(Self.nome)://\(id)/"
+    }
+
+    func webView(_ webView: WKWebView, start tarefa: any WKURLSchemeTask) {
+        guard let url = tarefa.request.url, let id = url.host(), let pasta = pastas[id]?.standardizedFileURL else {
+            tarefa.didFailWithError(URLError(.fileDoesNotExist))
+            return
+        }
+        let ficheiro = pasta.appending(path: String(url.path(percentEncoded: false).drop { $0 == "/" })).standardizedFileURL
+        // Só ficheiros dentro da pasta da aula.
+        guard ficheiro.path.hasPrefix(pasta.path + "/"), let dados = try? Data(contentsOf: ficheiro) else {
+            tarefa.didFailWithError(URLError(.fileDoesNotExist))
+            return
+        }
+        let tipo = UTType(filenameExtension: ficheiro.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+        tarefa.didReceive(URLResponse(url: url, mimeType: tipo, expectedContentLength: dados.count, textEncodingName: nil))
+        tarefa.didReceive(dados)
+        tarefa.didFinish()
+    }
+
+    func webView(_ webView: WKWebView, stop tarefa: any WKURLSchemeTask) {}
 }

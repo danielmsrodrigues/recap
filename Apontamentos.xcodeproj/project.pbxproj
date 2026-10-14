@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		A10000000000000000000101 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000401 /* WhisperKit */; };
+		A10000000000000000000103 /* SpeakerKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000403 /* SpeakerKit */; };
 		A10000000000000000000102 /* Web in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000203 /* Web */; };
 /* End PBXBuildFile section */
 
@@ -46,6 +47,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000101 /* WhisperKit in Frameworks */,
+				A10000000000000000000103 /* SpeakerKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -99,6 +101,7 @@
 			name = Apontamentos;
 			packageProductDependencies = (
 				A10000000000000000000401 /* WhisperKit */,
+				A10000000000000000000403 /* SpeakerKit */,
 			);
 			productName = Apontamentos;
 			productReference = A10000000000000000000201 /* Apontamentos.app */;
@@ -404,6 +407,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A10000000000000000000402 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */;
 			productName = WhisperKit;
+		};
+		A10000000000000000000403 /* SpeakerKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000000000000000000402 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */;
+			productName = SpeakerKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

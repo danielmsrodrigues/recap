@@ -10,6 +10,10 @@
   --destaque: #0a64d6;
   --definicao: #0a64d6;
   --chip: #e8f0fd;
+  --importante: #7a4fd6;
+  --fundo-importante: #f3eefd;
+  --erro: #c9452f;
+  --fundo-erro: #fdf0ed;
   /* A folha e a mesa por baixo. */
   --papel: #ffffff;
   --mesa: #e8e8eb;
@@ -27,6 +31,10 @@
     --chip: #1f3350;
     --extra: #e0a526;
     --fundo-extra: #2e2817;
+    --importante: #a98bf0;
+    --fundo-importante: #2a2340;
+    --erro: #f08a76;
+    --fundo-erro: #3a2320;
     --papel: #2b2b2e;
     --mesa: #111112;
     --fundo-bloco: #343438;
@@ -132,6 +140,10 @@ html.impressao {
   color-scheme: light;
   --extra: #c98a00;
   --fundo-extra: #fff8e6;
+  --importante: #7a4fd6;
+  --fundo-importante: #f3eefd;
+  --erro: #c9452f;
+  --fundo-erro: #fdf0ed;
   --texto: #1d1d1f;
   --texto-suave: #6e6e73;
   --fundo: #ffffff;
@@ -186,6 +198,31 @@ body.editar .math:hover { background: var(--chip); outline: 1px dashed var(--des
 
 /* "💡 Explicação extra": o que o professor não disse, à parte das definições. */
 blockquote.extra { border-left-color: var(--extra); background: var(--fundo-extra); }
+/* "⭐ Importante": o que o professor sublinhou (costuma sair no exame). "⚠️ Erro comum": a correção de um erro. */
+blockquote.importante { border-left-color: var(--importante); background: var(--fundo-importante); }
+blockquote.erro-comum { border-left-color: var(--erro); background: var(--fundo-erro); }
+
+/* Slides dentro dos apontamentos, com a legenda por baixo. */
+p.figura { margin: 1.1em 0 1.3em; text-align: center; break-inside: avoid; }
+img.slide {
+  display: block;
+  max-width: 100%;
+  max-height: 520px;
+  margin: 0 auto;
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+}
+p.figura .legenda { display: block; margin-top: 0.4em; font-size: 0.85em; color: var(--texto-suave); }
+html.impressao img.slide { max-height: 300px; }
+/* Enquanto os apontamentos chegam, o slide ainda não tem imagem. */
+.slide-pendente {
+  display: inline-block;
+  padding: 0.2em 0.7em;
+  border-radius: 6px;
+  background: var(--fundo-bloco);
+  color: var(--texto-suave);
+  font-size: 0.85em;
+}
 
 /* Resolução dos exercícios, escondida até se abrir. */
 details.resolucao {

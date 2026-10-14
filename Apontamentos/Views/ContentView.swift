@@ -143,6 +143,13 @@ struct ContentView: View {
             if let titulo = ProcessInfo.processInfo.environment["APONTAMENTOS_SELECIONAR"] {
                 selecao = library.cadeiras.flatMap(\.aulas).first { $0.meta.titulo == titulo }?.pasta
             }
+            // `APONTAMENTOS_REGENERAR="<título>"`: regenera os apontamentos dessa aula (o mesmo que o botão Regenerar).
+            if let titulo = ProcessInfo.processInfo.environment["APONTAMENTOS_REGENERAR"],
+               let aula = library.cadeiras.flatMap(\.aulas).first(where: { $0.meta.titulo == titulo }) {
+                selecao = aula.pasta
+                fila.adicionar(Job(pastaAula: aula.pasta, titulo: aula.meta.titulo, video: nil,
+                                   gerarApontamentos: true, soApontamentos: true))
+            }
             // `APONTAMENTOS_PREPARAR=1`: abre o assistente "Preparar o Recap".
             if ProcessInfo.processInfo.environment["APONTAMENTOS_PREPARAR"] == "1" { preparar = true }
             // `APONTAMENTOS_PESQUISA="<texto>"`: pesquisa em todas as aulas.

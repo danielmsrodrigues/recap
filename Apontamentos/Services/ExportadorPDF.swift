@@ -15,14 +15,19 @@ final class ExportadorPDF: NSObject, WKNavigationDelegate {
     /// O AppKit termina a impressão noutra thread; a continuação fica protegida por um Mutex.
     private nonisolated let imprimiu = Mutex<CheckedContinuation<Bool, Never>?>(nil)
 
-    static func exportar(markdown: String, para destino: URL) async throws {
-        try await ExportadorPDF().exportar(markdown: markdown, para: destino)
+    /// `pastaAula`: de onde vêm as imagens dos slides referidas nos apontamentos.
+    static func exportar(markdown: String, pastaAula: URL? = nil, para destino: URL) async throws {
+        try await ExportadorPDF().exportar(markdown: markdown, pastaAula: pastaAula, para: destino)
     }
 
-    private func exportar(markdown: String, para destino: URL) async throws {
+    private let esquema = EsquemaAula()
+
+    private func exportar(markdown: String, pastaAula: URL?, para destino: URL) async throws {
         guard let pasta = Bundle.main.url(forResource: "Web", withExtension: nil) else { throw CocoaError(.fileNoSuchFile) }
+        let config = WKWebViewConfiguration()
+        config.setURLSchemeHandler(esquema, forURLScheme: EsquemaAula.nome)
         // Largura de uma página A4 menos as margens, para o texto partir as linhas como no papel.
-        let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 523, height: 800))
+        let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 523, height: 800), configuration: config)
         web.navigationDelegate = self
         let janela = NSWindow(contentRect: NSRect(x: -10_000, y: -10_000, width: 523, height: 800),
                               styleMask: .borderless, backing: .buffered, defer: false)
@@ -38,9 +43,12 @@ final class ExportadorPDF: NSObject, WKNavigationDelegate {
             web.loadFileURL(pasta.appending(path: "notes.html"), allowingReadAccessTo: pasta)
         }
         let json = String(data: try JSONEncoder().encode(markdown), encoding: .utf8) ?? "\"\""
-        _ = try await web.evaluateJavaScript("document.documentElement.classList.add('impressao'); renderMarkdown(\(json), false); true")
-        // Dar tempo às fontes do KaTeX para carregarem antes de paginar.
-        _ = try await web.callAsyncJavaScript("await document.fonts.ready; return true", contentWorld: .page)
+        let base = pastaAula.map { esquema.base(para: $0) } ?? ""
+        _ = try await web.evaluateJavaScript("document.documentElement.classList.add('impressao'); renderMarkdown(\(json), false, '\(base)'); true")
+        // Dar tempo às fontes do KaTeX e às imagens dos slides para carregarem antes de paginar.
+        _ = try await web.callAsyncJavaScript(
+            "await document.fonts.ready; await Promise.all([...document.images].map(i => i.decode().catch(() => {}))); return true",
+            contentWorld: .page)
 
         let info = NSPrintInfo()
         info.paperSize = NSSize(width: 595, height: 842) // A4 em pontos
