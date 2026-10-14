@@ -16,9 +16,12 @@ struct ConfigSlides: Sendable {
     var regiao: RegiaoIgnorar = .automatica
     /// Multiplica os tempos guardados (capturas feitas a 1,5× ou 2× correspondem a mais tempo de aula).
     var escalaTempo: Double = 1
-    /// Recorta a zona que muda ao longo da aula (o leitor de vídeo dentro da janela do browser),
-    /// deixando de fora a barra do browser e as margens da página. Para as capturas em direto.
+    /// Recorta a zona do slide dentro da janela captada (ver `zonaDoSlide`), deixando de fora o chat,
+    /// os participantes e o resto do ecrã. Para as capturas em direto; sem zona do slide não há slides.
     var recortarZonaAtiva = false
+    /// Só aceita imagens com texto. Depois de recortar a zona do slide, uma imagem sem texto é a câmara
+    /// ou o avatar de alguém, não um slide.
+    var soComTexto = false
 }
 
 /// De onde vêm os frames: um vídeo, ou as capturas feitas durante uma aula em direto.
@@ -152,6 +155,10 @@ struct SlideExtractor: Sendable {
 
     /// Grelha de luminância usada para medir movimento.
     static let colunas = 32, linhas = 18
+    /// Fração de células da grelha fina que mudam de uma captura para a seguinte, num recorte do slide, a partir
+    /// da qual é outro slide. Medido em capturas do PowerPoint partilhado: trocas de slide 0,11–0,49 (só o texto
+    /// trocado, no mesmo modelo, 0,14); o cursor 0,002.
+    static let mudancaDeSlide = 0.05
     /// Diferença de luminância (0–1) a partir da qual uma célula mudou.
     static let limiarCelula: Float = 0.08
 
@@ -163,14 +170,23 @@ struct SlideExtractor: Sendable {
     func extrair(de fonte: some FonteFrames, para pasta: URL, progresso: @escaping @Sendable (Double) -> Void) async throws -> [Slide] {
         if config.recortarZonaAtiva {
             var grelhas: [[Float]] = []
+            var aspeto = 16.0 / 9.0
             try await fonte.percorrer(intervalo: config.intervalo, maxLado: 640) { _, imagem in
+                if grelhas.isEmpty { aspeto = Double(imagem.width) / Double(max(1, imagem.height)) }
                 grelhas.append(Self.grelha(imagem, colunas: Self.colunasFinas, linhas: Self.linhasFinas))
             }
-            if let zona = Self.zonaAtiva(grelhas) {
-                var semRecorte = self
-                semRecorte.config.recortarZonaAtiva = false
-                return try await semRecorte.extrair(de: FonteRecortada(base: fonte, zona: zona), para: pasta, progresso: progresso)
+            // Só a zona do slide (o que muda quando se troca de slide). Sem ela não há slides: a janela inteira,
+            // ou a zona que mais mexe, podia ser o chat ou as caras e os nomes dos colegas.
+            guard let zona = Self.zonaDoSlide(grelhas, aspetoImagem: aspeto) else {
+                try? FileManager.default.removeItem(at: pasta.appending(path: "slides", directoryHint: .isDirectory))
+                try Disco.escreverSlides([], em: pasta)
+                progresso(1)
+                return []
             }
+            var recortado = self
+            recortado.config.recortarZonaAtiva = false
+            recortado.config.soComTexto = true
+            return try await recortado.extrair(de: FonteRecortada(base: fonte, zona: zona), para: pasta, progresso: progresso)
         }
         let duracao = try await fonte.duracao()
         let total = try await fonte.tempos(intervalo: config.intervalo).count
@@ -194,6 +210,7 @@ struct SlideExtractor: Sendable {
         var candidatos: [Candidato] = []
         var atual: Candidato?
         var grelhaAnterior: [Float]?
+        var finaAnterior: [Float]?
         var i = 0
         try await fonte.percorrer(intervalo: config.intervalo, maxLado: 640) { t, imagem in
             i += 1
@@ -204,33 +221,65 @@ struct SlideExtractor: Sendable {
             let tapada = Self.tapar(imagem, mascara)
             let fp = try await pedidoFP.perform(on: tapada)
 
-            if var c = atual, try fp.distance(to: c.referencia) <= config.limiar {
+            // Num recorte do slide, mudar de uma vez boa parte da imagem é outro slide, mesmo que o feature print
+            // fique perto (slides do mesmo modelo, só com o texto diferente, dão 0,17–0,40). Na grelha fina:
+            // na grossa, uma linha de texto trocada quase não mexe na média de cada célula.
+            let fina = config.soComTexto ? Self.grelha(tapada, colunas: Self.colunasFinas, linhas: Self.linhasFinas) : []
+            let mudancaFina = finaAnterior.map { Self.fracaoMudada($0, fina, ignorar: []) } ?? 0
+            finaAnterior = fina
+            let trocou = config.soComTexto && mudancaFina >= Self.mudancaDeSlide
+            if var c = atual, !trocou, try fp.distance(to: c.referencia) <= config.limiar {
                 c.fim = t + config.intervalo
                 c.ultima = tapada
                 c.ultimaFP = fp
+                c.ultimaFina = fina
                 c.ultimoTempo = t
                 c.movimento += movimento
                 c.amostras += 1
                 atual = c
             } else {
                 if let c = atual { candidatos.append(c) }
-                atual = Candidato(inicio: t, fim: t + config.intervalo, referencia: fp, ultima: tapada, ultimaFP: fp, ultimoTempo: t)
+                atual = Candidato(inicio: t, fim: t + config.intervalo, referencia: fp, ultima: tapada, ultimaFP: fp, ultimaFina: fina, ultimoTempo: t)
             }
         }
         if let c = atual { candidatos.append(c) }
+        // Num recorte do slide, revelar uma linha de cada vez separa troços; junta-se cada troço ao seguinte
+        // quando o seguinte só acrescenta conteúdo, e fica a imagem mais completa.
+        if config.soComTexto {
+            var juntos: [Candidato] = []
+            for c in candidatos {
+                if let anterior = juntos.last, Self.soAcrescenta(anterior.ultimaFina, c.ultimaFina) {
+                    var novo = c
+                    novo.inicio = anterior.inicio
+                    novo.amostras += anterior.amostras
+                    novo.movimento += anterior.movimento
+                    juntos[juntos.count - 1] = novo
+                } else {
+                    juntos.append(c)
+                }
+            }
+            candidatos = juntos
+        }
 
         // 3. Filtrar e juntar
         var escolhidos: [Escolhido] = []
         for c in candidatos where c.amostras >= 2 && c.movimento / Double(c.amostras) < 0.12 {
             // Em resolução completa: em 640 px o texto de um ecrã partilhado fica pequeno demais para o Vision.
             let grande = Self.tapar(try await fonte.frame(em: c.ultimoTempo, maxLado: config.ladoMaximo), mascara)
-            guard try await Self.pareceSlide(grande) else { continue }
-            let novo = Escolhido(inicio: c.inicio, fim: min(c.fim, duracao), tempoImagem: c.ultimoTempo, fp: c.ultimaFP)
+            guard try await Self.pareceSlide(grande, soComTexto: config.soComTexto) else { continue }
+            let novo = Escolhido(inicio: c.inicio, fim: min(c.fim, duracao), tempoImagem: c.ultimoTempo, fp: c.ultimaFP,
+                                 grelha: c.ultimaFina)
 
             // Já apareceu antes: só regista a reaparição.
             // Mais exigente do que a deteção de mudança: o mesmo slide dá < 0,02, slides parecidos (mesmo modelo,
             // texto diferente) podem ficar abaixo do limiar, sobretudo com capturas comprimidas.
-            if let k = try escolhidos.firstIndex(where: { try $0.fp.distance(to: novo.fp) <= config.limiar * 0.5 }) {
+            // Num recorte do slide, o feature print de slides do mesmo modelo fica perto; exige-se também que a imagem
+            // seja quase igual.
+            let mesmo = { (e: Escolhido) throws -> Bool in
+                try e.fp.distance(to: novo.fp) <= config.limiar * 0.5
+                    && (!config.soComTexto || Self.fracaoMudada(e.grelha, novo.grelha, ignorar: []) < Self.mudancaDeSlide)
+            }
+            if let k = try escolhidos.firstIndex(where: mesmo) {
                 escolhidos[k].reaparicoes.append(novo.inicio)
                 continue
             }
@@ -268,6 +317,8 @@ struct SlideExtractor: Sendable {
         var referencia: FeaturePrintObservation
         var ultima: CGImage
         var ultimaFP: FeaturePrintObservation
+        /// Grelha fina da última imagem (só num recorte do slide).
+        var ultimaFina: [Float]
         var ultimoTempo: Double
         var movimento = 0.0
         var amostras = 1
@@ -278,6 +329,8 @@ struct SlideExtractor: Sendable {
         var fim: Double
         var tempoImagem: Double
         var fp: FeaturePrintObservation
+        /// Grelha fina da imagem (só num recorte do slide).
+        var grelha: [Float]
         var reaparicoes: [Double] = []
     }
 
@@ -287,7 +340,19 @@ struct SlideExtractor: Sendable {
     /// Slide, ecrã partilhado ou quadro, e não a câmara do professor nem um ecrã vazio.
     /// Texto chega; sem texto legível (letras pequenas num ecrã partilhado), basta não haver uma cara grande
     /// (na câmara a cara ocupa 2–4% da imagem; a miniatura da câmara num canto já está tapada).
-    static func pareceSlide(_ imagem: CGImage) async throws -> Bool {
+    /// `soComTexto`: sem texto não é slide (para recortes da zona do slide, onde a alternativa é a câmara).
+    static func pareceSlide(_ imagem: CGImage, soComTexto: Bool = false) async throws -> Bool {
+        if soComTexto {
+            let caras = try await DetectFaceRectanglesRequest().perform(on: imagem)
+            // A câmara do professor no lugar do slide: uma cara grande, mesmo que haja letras atrás (lombadas de livros).
+            if caras.contains(where: { $0.boundingBox.width * $0.boundingBox.height > 0.02 }) { return false }
+            // Reconhecer as letras (o detetor de retângulos de texto junta um slide cheio de texto num só bloco).
+            var ocr = RecognizeTextRequest()
+            ocr.recognitionLevel = .fast
+            let letras = try await ocr.perform(on: imagem).compactMap { $0.topCandidates(1).first?.string }
+                .joined().filter(\.isLetter).count
+            return letras >= 12
+        }
         if try await DetectTextRectanglesRequest().perform(on: imagem).count >= 2 { return true }
         let caras = try await DetectFaceRectanglesRequest().perform(on: imagem)
         if caras.contains(where: { $0.boundingBox.width * $0.boundingBox.height > 0.01 }) { return false }
@@ -298,36 +363,98 @@ struct SlideExtractor: Sendable {
     /// e quase não mexem na média de uma célula grande.
     static let colunasFinas = 96, linhasFinas = 54
 
-    /// A zona que muda durante a aula (o vídeo dentro da janela do browser), normalizada com a origem em cima
-    /// à esquerda. nil se for quase tudo (já é só o vídeo), se nada mudar ou se não houver dados suficientes.
-    static func zonaAtiva(_ grelhas: [[Float]]) -> CGRect? {
+    /// A zona do slide dentro da janela, a partir das trocas de slide, normalizada com a origem em cima à esquerda.
+    ///
+    /// Quando o professor partilha o ecrã inteiro (o PowerPoint em modo de edição, por exemplo), o slide é só
+    /// uma parte da imagem; à volta ficam o friso do programa, o chat e a lista de participantes, que também
+    /// mudam, mas aos bocadinhos (uma linha de cada vez). Uma troca de slide muda de uma vez um bloco grande
+    /// e compacto. Junta-se o retângulo desse bloco em cada troca e fica a zona comum a boa parte delas,
+    /// alargada para 16:9 (o cabeçalho e o rodapé dos slides não mudam, mas fazem parte do slide).
+    /// nil se não houver trocas suficientes para decidir.
+    /// `aspetoImagem`: largura/altura das capturas em píxeis (para o 16:9 ser em píxeis e não na grelha).
+    static func zonaDoSlide(_ grelhas: [[Float]], aspetoImagem: Double = 16.0 / 9.0) -> CGRect? {
         let (c, l) = (colunasFinas, linhasFinas)
         guard grelhas.count >= 3 else { return nil }
-        var mudou = [Bool](repeating: false, count: c * l)
+        var contagem = [Int](repeating: 0, count: c * l)
+        var trocas = 0
         for (a, b) in zip(grelhas, grelhas.dropFirst()) {
-            for i in a.indices where abs(a[i] - b[i]) > 0.03 { mudou[i] = true }
+            let mudou = a.indices.map { abs(a[$0] - b[$0]) > 0.03 }
+            let fracao = Double(mudou.filter { $0 }.count) / Double(c * l)
+            // Menos de 2%: uma linha no chat, o cursor. Mais de 60%: mudou o ecrã todo (câmara ↔ partilha).
+            guard fracao > 0.02, fracao < 0.6, let caixa = maiorBloco(mudou, colunas: c, linhas: l, dilatar: 2) else { continue }
+            guard Double(caixa.width * caixa.height) / Double(c * l) >= 0.04 else { continue }
+            // O chat ou a lista de participantes a deslizar uma linha muda o painel todo de uma vez, como um slide:
+            // não conta.
+            guard !eDeslocamento(a, b, caixa: caixa, colunas: c) else { continue }
+            trocas += 1
+            for y in caixa.minY..<caixa.maxY { for x in caixa.minX..<caixa.maxX { contagem[y * c + x] += 1 } }
         }
-        // Ignora células isoladas (um ícone que pisca não alarga a zona).
-        func vizinhaMudou(_ x: Int, _ y: Int) -> Bool {
-            for dy in -1...1 { for dx in -1...1 where dx != 0 || dy != 0 {
-                let vx = x + dx, vy = y + dy
-                if vx >= 0, vx < c, vy >= 0, vy < l, mudou[vy * c + vx] { return true }
-            } }
-            return false
-        }
-        var x0 = c, y0 = l, x1 = -1, y1 = -1
-        for y in 0..<l {
-            for x in 0..<c where mudou[y * c + x] && vizinhaMudou(x, y) {
-                x0 = min(x0, x); x1 = max(x1, x); y0 = min(y0, y); y1 = max(y1, y)
-            }
-        }
-        guard x1 >= x0, y1 >= y0 else { return nil }
-        // Uma célula de margem, para não cortar as bordas do slide.
-        x0 = max(0, x0 - 1); y0 = max(0, y0 - 1); x1 = min(c - 1, x1 + 1); y1 = min(l - 1, y1 + 1)
-        let zona = CGRect(x: Double(x0) / Double(c), y: Double(y0) / Double(l),
-                          width: Double(x1 - x0 + 1) / Double(c), height: Double(y1 - y0 + 1) / Double(l))
+        guard trocas >= 2 else { return nil }
+        // Metade das trocas, no mínimo: a passagem câmara ↔ partilha também muda um bloco grande (o palco),
+        // mas acontece poucas vezes; o slide muda em quase todas. Entre os blocos que ficam, o mais votado.
+        let comum = contagem.map { $0 * 2 >= trocas }
+        guard let caixa = maiorBloco(comum, colunas: c, linhas: l, dilatar: 0, pesos: contagem) else { return nil }
+        var zona = CGRect(x: Double(caixa.minX) / Double(c), y: Double(caixa.minY) / Double(l),
+                          width: Double(caixa.width) / Double(c), height: Double(caixa.height) / Double(l))
         let area = zona.width * zona.height
-        return area > 0.85 || area < 0.05 ? nil : zona
+        guard area >= 0.04, area <= 0.9 else { return nil }
+        // 16:9 em píxeis, em coordenadas normalizadas.
+        let alvo = (16.0 / 9.0) / aspetoImagem
+        if zona.width / zona.height > alvo {
+            zona = zona.insetBy(dx: 0, dy: -(zona.width / alvo - zona.height) / 2)
+        } else {
+            zona = zona.insetBy(dx: -(zona.height * alvo - zona.width) / 2, dy: 0)
+        }
+        zona = zona.insetBy(dx: -0.01, dy: -0.01)
+        return zona.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+    }
+
+    struct Caixa: Equatable {
+        var minX: Int, minY: Int, maxX: Int, maxY: Int
+        var width: Int { maxX - minX }
+        var height: Int { maxY - minY }
+    }
+
+    /// O conteúdo da caixa em `b` é o de `a` deslocado na vertical (1 a 6 linhas da grelha): um painel a deslizar.
+    static func eDeslocamento(_ a: [Float], _ b: [Float], caixa: Caixa, colunas c: Int) -> Bool {
+        func diferentes(_ s: Int) -> Int {
+            var n = 0
+            for y in caixa.minY..<caixa.maxY where (caixa.minY..<caixa.maxY).contains(y + s) {
+                for x in caixa.minX..<caixa.maxX where abs(a[(y + s) * c + x] - b[y * c + x]) > 0.03 { n += 1 }
+            }
+            return n
+        }
+        let semDeslocar = diferentes(0)
+        guard semDeslocar > 0 else { return false }
+        // Deslocada, a imagem quase coincide (sobra no máximo 1/5 da diferença).
+        return (Array(-6...(-1)) + Array(1...6)).contains { diferentes($0) * 5 <= semDeslocar }
+    }
+
+    /// O retângulo do maior conjunto ligado de células marcadas. `dilatar` junta células a essa distância
+    /// (as letras de um slide não se tocam). Com `pesos`, o maior é o de mais peso somado, não o de mais células.
+    static func maiorBloco(_ marcadas: [Bool], colunas c: Int, linhas l: Int, dilatar: Int, pesos: [Int]? = nil) -> Caixa? {
+        var visto = [Bool](repeating: false, count: c * l)
+        var melhor: (n: Int, caixa: Caixa)?
+        for inicio in marcadas.indices where marcadas[inicio] && !visto[inicio] {
+            var pilha = [inicio]
+            visto[inicio] = true
+            var n = 0
+            var caixa = Caixa(minX: c, minY: l, maxX: 0, maxY: 0)
+            while let i = pilha.popLast() {
+                n += pesos?[i] ?? 1
+                let x = i % c, y = i / c
+                caixa = Caixa(minX: min(caixa.minX, x), minY: min(caixa.minY, y), maxX: max(caixa.maxX, x + 1), maxY: max(caixa.maxY, y + 1))
+                let r = dilatar + 1
+                for dy in -r...r { for dx in -r...r where dx != 0 || dy != 0 {
+                    let vx = x + dx, vy = y + dy
+                    guard vx >= 0, vx < c, vy >= 0, vy < l else { continue }
+                    let j = vy * c + vx
+                    if marcadas[j], !visto[j] { visto[j] = true; pilha.append(j) }
+                } }
+            }
+            if n > (melhor?.n ?? 0) { melhor = (n, caixa) }
+        }
+        return melhor?.caixa
     }
 
     static func grelha(_ imagem: CGImage, colunas: Int = colunas, linhas: Int = linhas) -> [Float] {
@@ -351,6 +478,15 @@ struct SlideExtractor: Sendable {
             }
         }
         return s
+    }
+
+    /// `b` é `a` com mais coisas: as células que mudaram eram fundo em `a` (perto da luminância mais comum).
+    static func soAcrescenta(_ a: [Float], _ b: [Float]) -> Bool {
+        guard !a.isEmpty, a.count == b.count else { return false }
+        let fundo = a.sorted()[a.count / 2]
+        let mudadas = a.indices.filter { abs(a[$0] - b[$0]) > limiarCelula }
+        guard !mudadas.isEmpty else { return false }
+        return mudadas.filter { abs(a[$0] - fundo) < 0.05 }.count * 10 >= mudadas.count * 9
     }
 
     static func fracaoMudada(_ a: [Float], _ b: [Float], ignorar: Set<Int>) -> Double {
@@ -413,3 +549,4 @@ struct SlideExtractor: Sendable {
         guard CGImageDestinationFinalize(destino) else { throw CocoaError(.fileWriteUnknown) }
     }
 }
+

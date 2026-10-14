@@ -65,22 +65,4 @@ struct DiretoTests {
         #expect(CapturaAudio.centroPreto(imagem(0)))
         #expect(!CapturaAudio.centroPreto(imagem(0.9)))
     }
-
-    /// Só a zona do leitor muda; a barra do browser e as margens ficam iguais e são recortadas.
-    @Test func zonaAtivaEncontraOLeitor() {
-        let (c, l) = (SlideExtractor.colunasFinas, SlideExtractor.linhasFinas)
-        let grelhas = (0..<5).map { n in
-            (0..<(c * l)).map { i -> Float in
-                let x = i % c, y = i / c
-                return (24..<72).contains(x) && (15..<40).contains(y) ? Float((x * 7 + y * 3 + n * 11) % 10) / 10 : 1
-            }
-        }
-        let zona = try! #require(SlideExtractor.zonaAtiva(grelhas))
-        #expect(abs(zona.minX - 23.0 / Double(c)) < 0.001)
-        #expect(abs(zona.minY - 14.0 / Double(l)) < 0.001)
-        #expect(abs(zona.maxX - 73.0 / Double(c)) < 0.001)
-        #expect(abs(zona.maxY - 41.0 / Double(l)) < 0.001)
-        // Nada muda: sem recorte.
-        #expect(SlideExtractor.zonaAtiva(Array(repeating: grelhas[0], count: 5)) == nil)
-    }
 }
