@@ -7,6 +7,7 @@ struct ApontamentosApp: App {
     @State private var fila: ProcessingQueue
     @State private var direto = SessaoDireto()
     @State private var estudo: Estudo
+    @State private var fichas: Fichas
     @State private var navegacao = Navegacao()
     @State private var atualizador = Atualizador()
 
@@ -15,7 +16,9 @@ struct ApontamentosApp: App {
         let definicoes = Definicoes()
         _library = State(initialValue: library)
         _definicoes = State(initialValue: definicoes)
-        _fila = State(initialValue: ProcessingQueue(runner: PipelineRunner(library: library, definicoes: definicoes)))
+        let fichas = Fichas(library: library, definicoes: definicoes)
+        _fichas = State(initialValue: fichas)
+        _fila = State(initialValue: ProcessingQueue(runner: PipelineRunner(library: library, definicoes: definicoes, fichas: fichas)))
         _estudo = State(initialValue: Estudo(library: library, definicoes: definicoes))
         // O painel das perguntas abre sempre ao arrancar; fechá-lo só vale até sair da app.
         UserDefaults.standard.set(true, forKey: "mostrarPerguntas")
@@ -39,6 +42,7 @@ struct ApontamentosApp: App {
                 .environment(fila)
                 .environment(direto)
                 .environment(estudo)
+                .environment(fichas)
                 .environment(navegacao)
                 .environment(atualizador)
         }

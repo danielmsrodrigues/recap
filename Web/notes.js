@@ -159,18 +159,6 @@
         d.append(s, q);
       }
     }
-    // "Sobre a cadeira": a logística numa ficha à parte da matéria, até ao título seguinte do mesmo nível.
-    for (const h of r.querySelectorAll(":scope > h2")) {
-      if (!/^sobre a cadeira/i.test(h.textContent.trim())) continue;
-      const ficha = document.createElement("section");
-      ficha.className = "sobre-cadeira";
-      h.before(ficha);
-      for (let no = h; no && !(no !== h && /^H[12]$/.test(no.nodeName));) {
-        const seguinte = no.nextSibling;
-        ficha.appendChild(no);
-        no = seguinte;
-      }
-    }
     // Links para secções dos apontamentos (`[Título](#ancora)`, nas respostas do painel das perguntas).
     for (const a of r.querySelectorAll('a[href^="#"]:not(.ts)')) {
       if (a.getAttribute("href").length < 2) continue;

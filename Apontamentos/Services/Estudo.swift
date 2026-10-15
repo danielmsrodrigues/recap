@@ -165,7 +165,8 @@ extension ContextoAula {
         }
         return ContextoAula(cadeira: aula.cadeira, titulo: aula.meta.titulo, data: aula.meta.data,
                             glossario: library.cadeira(nome: aula.cadeira)?.meta.glossario ?? "",
-                            transcricao: transcricao, slides: slides, pdfsProfessor: pdfs)
+                            transcricao: transcricao, slides: slides, pdfsProfessor: pdfs,
+                            fichaCadeira: library.cadeira(nome: aula.cadeira).flatMap { FichaCadeira.lerFicha($0.pasta) })
     }
 
     /// Até `maximo` capturas espalhadas pela aula, sem passar de `bytes` (o que sobra do pedido depois dos PDFs).

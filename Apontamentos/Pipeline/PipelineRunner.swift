@@ -6,12 +6,14 @@ import Foundation
 final class PipelineRunner {
     private let library: Library
     private let definicoes: Definicoes
+    private let fichas: Fichas
     private let transcriber = Transcriber()
     private let modelos = ModelStore()
 
-    init(library: Library, definicoes: Definicoes) {
+    init(library: Library, definicoes: Definicoes, fichas: Fichas) {
         self.library = library
         self.definicoes = definicoes
+        self.fichas = fichas
     }
 
     func executar(_ job: Job) async {
@@ -203,8 +205,11 @@ final class PipelineRunner {
             markdown = TituloAula.trocarCabecalho(markdown, por: titulo!)
         }
 
+        // O que a aula disse sobre a cadeira vai para a ficha da cadeira, não fica nos apontamentos.
+        let (semSobre, sobre) = FichaCadeira.separar(markdown)
         try Disco.guardarCopiaApontamentos(em: job.pastaAula)
-        try Disco.escreverApontamentos(markdown, em: job.pastaAula)
+        try Disco.escreverApontamentos(semSobre, em: job.pastaAula)
+        try FichaCadeira.escreverExcerto(sobre, em: job.pastaAula)
         try library.atualizarMeta(em: job.pastaAula) {
             $0.geracoes.append(resultado.geracao)
             if let titulo { $0.titulo = titulo }
@@ -214,6 +219,7 @@ final class PipelineRunner {
         var resumo = g.resumo
         if g.modeloServido != g.modeloPedido { resumo += " · servido por \(g.modeloServido) (fallback)" }
         job.concluir(.apontamentos, detalhe: resumo)
+        if sobre != nil { fichas.atualizar(nomeCadeira: aula.cadeira) }
         if g.truncada {
             job.aviso = "Os apontamentos atingiram o limite de \(gerador.maxTokens.formatted()) tokens e ficaram incompletos."
         }

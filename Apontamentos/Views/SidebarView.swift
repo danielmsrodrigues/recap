@@ -3,6 +3,7 @@ import SwiftUI
 struct SidebarView: View {
     @Environment(Library.self) private var library
     @Environment(ProcessingQueue.self) private var fila
+    @Environment(Fichas.self) private var fichas
     @Binding var selecao: URL?
     @Binding var aEditarCadeira: Cadeira?
 
@@ -25,6 +26,8 @@ struct SidebarView: View {
 
             ForEach(library.cadeiras) { cadeira in
                 Section {
+                    LinhaFicha(aAtualizar: fichas.aAtualizar(cadeira) != nil, comErro: fichas.erro(cadeira) != nil)
+                        .tag(FichaCadeira.url(cadeira.pasta))
                     ForEach(cadeira.aulas) { aula in
                         LinhaAula(aula: aula, job: fila.job(para: aula.pasta)) { menu(aula) }
                             .tag(aula.pasta)
@@ -183,6 +186,27 @@ private struct LinhaAula<Acoes: View>: View {
         } else {
             Image(systemName: "clock").foregroundStyle(.tertiary)
         }
+    }
+}
+
+/// "Sobre a cadeira", sempre a primeira linha de cada cadeira.
+private struct LinhaFicha: View {
+    let aAtualizar: Bool
+    let comErro: Bool
+    @Environment(\.backgroundProminence) private var proeminencia
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Group {
+                if aAtualizar { ProgressView().controlSize(.mini) }
+                else if comErro { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange) }
+                else { Image(systemName: "info.circle").foregroundStyle(proeminencia == .increased ? Color.white : Color.secondary) }
+            }
+            .frame(width: 16)
+            Text(FichaCadeira.tituloSeccao)
+            Spacer(minLength: 0)
+        }
+        .help("Avaliação, datas, programa e avisos da cadeira, juntando o que se disse em todas as aulas")
     }
 }
 

@@ -12,6 +12,8 @@ struct ContextoAula: Sendable {
     var slides: [SlideComImagem] = []
     /// PDFs dos slides publicados pelo professor; quando existem, são a fonte principal dos slides.
     var pdfsProfessor: [PDFComDados] = []
+    /// A ficha da cadeira (ver `FichaCadeira`): situa a aula no programa.
+    var fichaCadeira: String?
 }
 
 struct PDFComDados: Sendable {
@@ -62,6 +64,9 @@ struct NotesGenerator: Sendable {
 
     static func conteudo(_ c: ContextoAula) -> [BlocoConteudo] {
         var pedido = "Escreve os apontamentos desta aula seguindo as instruções."
+        if c.fichaCadeira != nil {
+            pedido += "\n\nA ficha da cadeira serve para situares esta aula no programa (o tema, a ordem, os nomes oficiais). Em \"Sobre a cadeira\" escreve só o que foi dito nesta aula, mesmo que a ficha já o tenha, e nada copiado da ficha."
+        }
         if !c.pdfsProfessor.isEmpty || !c.slides.isEmpty {
             var marcas: [String] = []
             if !c.pdfsProfessor.isEmpty {
@@ -103,6 +108,9 @@ struct NotesGenerator: Sendable {
             cabecalho += "\n\nGlossário da cadeira (termos que costumam aparecer; usa-os para corrigir a transcrição):\n\(glossario)"
         }
         var blocos: [BlocoConteudo] = [.texto(cabecalho)]
+        if let ficha = c.fichaCadeira?.trimmingCharacters(in: .whitespacesAndNewlines), !ficha.isEmpty {
+            blocos.append(.texto("Ficha da cadeira até agora (programa, avaliação, datas e avisos, do programa oficial e das aulas anteriores):\n\n<ficha>\n\(ficha)\n</ficha>"))
+        }
         if !c.pdfsProfessor.isEmpty {
             let quantos = c.pdfsProfessor.count == 1 ? "1 PDF" : "\(c.pdfsProfessor.count) PDFs"
             let pelas = c.slides.isEmpty ? "pela transcrição" : "pela transcrição e pelas capturas do ecrã"

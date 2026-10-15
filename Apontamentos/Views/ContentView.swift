@@ -6,6 +6,7 @@ struct ContentView: View {
     @Environment(ProcessingQueue.self) private var fila
     @Environment(SessaoDireto.self) private var direto
     @Environment(Navegacao.self) private var navegacao
+    @Environment(Fichas.self) private var fichas
     @State private var pesquisa = ""
     @State private var preparar = false
     @Environment(Definicoes.self) private var definicoes
@@ -40,7 +41,10 @@ struct ContentView: View {
             .navigationSplitViewColumnWidth(min: 220, ideal: 280)
             .searchable(text: $pesquisa, placement: .sidebar, prompt: "Pesquisar em todas as aulas")
         } detail: {
-            if let selecao, let aula = library.aula(em: selecao) {
+            if let selecao, selecao.lastPathComponent == FichaCadeira.fichaMD,
+               let cadeira = library.cadeiras.first(where: { $0.pasta.mesmoCaminho(selecao.deletingLastPathComponent()) }) {
+                FichaCadeiraView(cadeira: cadeira).id(cadeira.pasta)
+            } else if let selecao, let aula = library.aula(em: selecao) {
                 // Uma divisão feita à mão e não o .inspector do SwiftUI: com a barra sempre visível em ecrã inteiro,
                 // o inspector entrava num ciclo de layout e a app fechava. (O HSplitView abria o painel largo demais.)
                 HStack(spacing: 0) {
@@ -68,6 +72,8 @@ struct ContentView: View {
         .onAppear { if PreparacaoView.faltaAlgo(definicoes) { preparar = true } }
         .onReceive(NotificationCenter.default.publisher(for: .abrirPreparacao)) { _ in preparar = true }
         .modifier(AvisosAtualizacao(ocupado: direto.ativa || fila.jobs.contains(where: \.ativo)))
+        // Aulas antigas com "Sobre a cadeira" nos apontamentos, ou que ainda não entraram na ficha da cadeira.
+        .task { fichas.atualizarTodas() }
         .task {
             #if DEBUG
             // `APONTAMENTOS_ATUALIZAR=1`: procura e instala logo (teste da atualização de ponta a ponta).
@@ -141,9 +147,10 @@ struct ContentView: View {
         #if DEBUG
         // `APONTAMENTOS_IMPORTAR="<vídeo>|<cadeira>|<título>|<0/1 gerar apontamentos>"`: o mesmo que confirmar a folha.
         .task {
-            // `APONTAMENTOS_SELECIONAR="<título>"`: abre essa aula (capturas de ecrã sem clicar).
+            // `APONTAMENTOS_SELECIONAR="<título>"`: abre essa aula, ou a ficha da cadeira com esse nome (capturas de ecrã sem clicar).
             if let titulo = ProcessInfo.processInfo.environment["APONTAMENTOS_SELECIONAR"] {
                 selecao = library.cadeiras.flatMap(\.aulas).first { $0.meta.titulo == titulo }?.pasta
+                    ?? library.cadeira(nome: titulo).map { FichaCadeira.url($0.pasta) }
             }
             // `APONTAMENTOS_REGENERAR="<título>"`: regenera os apontamentos dessa aula (o mesmo que o botão Regenerar).
             if let titulo = ProcessInfo.processInfo.environment["APONTAMENTOS_REGENERAR"],
