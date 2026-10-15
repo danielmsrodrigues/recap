@@ -13,6 +13,8 @@ struct PerguntasView: View {
     @FocusState private var focado: Bool
 
     private var emCurso: Estudo.EmCurso? { estudo.emCurso(aula, .pergunta) }
+    /// Trecho selecionado nos apontamentos ou na transcrição, à espera da pergunta.
+    private var citacao: CitacaoPergunta? { estudo.citacao(aula) }
 
     private static let sugestoes = [
         "Resume a aula em 3 frases",
@@ -22,7 +24,7 @@ struct PerguntasView: View {
     ]
 
     private var podeEnviar: Bool {
-        !texto.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && emCurso == nil && definicoes.faltaParaGerar == nil
+        Estudo.pergunta(texto, citacao: citacao) != nil && emCurso == nil && definicoes.faltaParaGerar == nil
     }
 
     var body: some View {
@@ -40,10 +42,17 @@ struct PerguntasView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 14).padding(.vertical, 6)
             }
+            if let citacao { trecho(citacao) }
             campo
         }
         .background(.background)
         .task(id: estudo.versao) { perguntas = Disco.lerPerguntas(aula.pasta) }
+        // Um trecho escolhido (ou o painel aberto por causa dele): o cursor vai para o campo.
+        .task(id: estudo.pedidosCitacao) {
+            guard citacao != nil, estudo.consumirFoco() else { return }
+            try? await Task.sleep(for: .milliseconds(80))
+            focado = true
+        }
         .confirmationDialog("Apagar a conversa desta aula?", isPresented: $confirmarApagar) {
             Button("Apagar", role: .destructive) { estudo.apagarPerguntas(aula) }
         }
@@ -85,7 +94,8 @@ struct PerguntasView: View {
                 .fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Self.sugestoes, id: \.self) { s in
-                    Button { enviar(s) } label: {
+                    // As sugestões são sobre a aula toda, não sobre o trecho escolhido.
+                    Button { enviar(s, citacao: nil) } label: {
                         Text(s)
                             .font(.callout)
                             .multilineTextAlignment(.leading)
@@ -106,9 +116,34 @@ struct PerguntasView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    private func trecho(_ c: CitacaoPergunta) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(.tint)
+                .frame(width: 3)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(c.legenda.replacingOccurrences(of: "[", with: "").replacingOccurrences(of: "]", with: ""))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                Text(c.textoLimpo)
+                    .font(.callout)
+                    .lineLimit(4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Button("Tirar o trecho", systemImage: "xmark.circle.fill") { estudo.tirarCitacao(aula) }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .help("Perguntar sem este trecho")
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 26)
+        .padding(.top, 10)
+    }
+
     private var campo: some View {
         HStack(spacing: 6) {
-            TextField("Pergunta sobre esta aula…", text: $texto)
+            TextField(citacao == nil ? "Pergunta sobre esta aula…" : "Pergunta sobre o trecho (↩ para o explicar)", text: $texto)
                 .textFieldStyle(.plain)
                 // O .title2 do HStack é só para os ícones dos botões.
                 .font(.body)
@@ -138,24 +173,32 @@ struct PerguntasView: View {
 
     /// A conversa toda num só documento (uma vista web em vez de uma por resposta).
     private var conversa: String {
-        var md = perguntas.map { Self.bloco($0.pergunta) + $0.resposta }.joined(separator: "\n\n")
+        var md = perguntas.map { Self.bloco($0.pergunta, $0.citacao) + $0.resposta }.joined(separator: "\n\n")
         if let emCurso, let pergunta = emCurso.pergunta {
-            md += (md.isEmpty ? "" : "\n\n") + Self.bloco(pergunta)
+            md += (md.isEmpty ? "" : "\n\n") + Self.bloco(pergunta, emCurso.citacao)
                 + (emCurso.texto.isEmpty ? "<div class=\"a-pensar\"><span></span><span></span><span></span></div>" : emCurso.texto)
         }
         return md
     }
 
-    private static func bloco(_ pergunta: String) -> String {
-        let escapada = pergunta.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: "\n", with: "<br>")
-        return "<div class=\"pergunta\">\(escapada)</div>\n\n"
+    /// A pergunta numa bolha, com o trecho citado por cima (o `[mm:ss]` da legenda fica clicável).
+    private static func bloco(_ pergunta: String, _ citacao: CitacaoPergunta?) -> String {
+        let trecho = citacao.map {
+            "<div class=\"citacao\"><span class=\"origem\">\(html($0.legenda))</span>\(html($0.textoLimpo))</div>"
+        } ?? ""
+        return "<div class=\"pergunta\">\(trecho)\(html(pergunta))</div>\n\n"
     }
 
-    private func enviar(_ texto: String) {
-        let pergunta = texto.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !pergunta.isEmpty, emCurso == nil, definicoes.faltaParaGerar == nil else { return }
-        estudo.perguntar(pergunta, sobre: aula)
+    private static func html(_ texto: String) -> String {
+        texto.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: "\n", with: "<br>")
+    }
+
+    private func enviar(_ texto: String) { enviar(texto, citacao: citacao) }
+
+    private func enviar(_ texto: String, citacao: CitacaoPergunta?) {
+        guard let pergunta = Estudo.pergunta(texto, citacao: citacao), emCurso == nil, definicoes.faltaParaGerar == nil else { return }
+        estudo.perguntar(pergunta, sobre: aula, citacao: citacao)
         self.texto = ""
     }
 }

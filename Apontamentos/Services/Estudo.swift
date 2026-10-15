@@ -7,6 +7,45 @@ struct PerguntaAula: Codable, Identifiable, Hashable, Sendable {
     var pergunta: String
     var resposta: String
     var data = Date.now
+    /// O trecho selecionado sobre o qual se perguntou.
+    var citacao: CitacaoPergunta?
+}
+
+/// Um trecho selecionado nos apontamentos ou na transcrição, para perguntar sobre ele.
+struct CitacaoPergunta: Codable, Hashable, Sendable {
+    enum Origem: String, Codable, Sendable { case apontamentos, transcricao }
+
+    /// Nos apontamentos em Markdown (com o LaTeX); na transcrição tal como foi dito, em espanhol.
+    var texto: String
+    var origem: Origem
+    /// Onde começa na aula, em segundos (só na transcrição).
+    var inicio: Double?
+
+    /// De onde vem, para mostrar com o trecho.
+    var legenda: String {
+        switch origem {
+        case .apontamentos: "Apontamentos"
+        case .transcricao: "Transcrição" + (inicio.map { " · [\(Timestamp.format($0))]" } ?? "")
+        }
+    }
+
+    /// Um trecho maior não acrescenta nada (a aula toda já vai para o Claude) e repetia-se nas perguntas seguintes.
+    static let limite = 1500
+
+    /// O mesmo trecho com no máximo `maximo` caracteres (cortado numa palavra, com "…").
+    func cortado(_ maximo: Int = limite) -> CitacaoPergunta {
+        guard texto.count > maximo else { return self }
+        var c = self
+        let inicio = texto.prefix(maximo)
+        c.texto = String(inicio.lastIndex(of: " ").map { inicio[..<$0] } ?? inicio) + "…"
+        return c
+    }
+
+    /// O trecho para ler (sem marcadores de Markdown e com o LaTeX simplificado).
+    var textoLimpo: String {
+        texto.components(separatedBy: .newlines).map(Pesquisa.limparMarkdown)
+            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.joined(separator: "\n")
+    }
 }
 
 
@@ -137,11 +176,18 @@ final class Estudo {
         var texto = ""
         /// A pergunta a que se está a responder.
         var pergunta: String?
+        var citacao: CitacaoPergunta?
         var tarefa: Task<Void, Never>?
     }
 
     private(set) var emCurso: [Chave: EmCurso] = [:]
     private(set) var erros: [Chave: String] = [:]
+    /// Trecho escolhido para a próxima pergunta de cada aula (fica até se perguntar ou o tirar).
+    private(set) var citacoes: [Chave: CitacaoPergunta] = [:]
+    /// Muda a cada trecho escolhido, para o painel das perguntas pôr o cursor no campo.
+    private(set) var pedidosCitacao = 0
+    /// O último trecho escolhido ainda não levou o cursor ao campo (só uma vez: voltar à aula ou abrir o painel não o rouba).
+    @ObservationIgnored private var focoPendente = false
     /// Muda quando um ficheiro de estudo é gravado (as vistas voltam a ler do disco).
     private(set) var versao = 0
 
@@ -163,26 +209,64 @@ final class Estudo {
         emCurso[Self.chave(aula, tipo)]?.tarefa?.cancel()
     }
 
+    func citacao(_ aula: Aula) -> CitacaoPergunta? { citacoes[Self.chave(aula, .pergunta)] }
+    func tirarCitacao(_ aula: Aula) { citacoes[Self.chave(aula, .pergunta)] = nil }
+
+    /// Perguntar sobre um trecho: fica à espera da pergunta no painel.
+    func citar(_ citacao: CitacaoPergunta, em aula: Aula) {
+        citacoes[Self.chave(aula, .pergunta)] = citacao.cortado()
+        pedidosCitacao += 1
+        focoPendente = true
+    }
+
+    /// O painel deve pôr o cursor no campo (uma vez por trecho escolhido).
+    func consumirFoco() -> Bool {
+        defer { focoPendente = false }
+        return focoPendente
+    }
+
     // MARK: Pedidos
 
-    func perguntar(_ pergunta: String, sobre aula: Aula) {
+    func perguntar(_ pergunta: String, sobre aula: Aula, citacao: CitacaoPergunta? = nil) {
         let anteriores = Disco.lerPerguntas(aula.pasta)
-        executar(aula, .pergunta, pergunta: pergunta, esforco: .medium,
+        let chave = Self.chave(aula, .pergunta)
+        defer { if let citacao, emCurso[chave]?.citacao == citacao { citacoes[chave] = nil } }
+        executar(aula, .pergunta, pergunta: pergunta, citacao: citacao, esforco: .medium,
                  sistema: Self.sistemaPerguntas) { contexto in
             var blocos = contexto.map(NotesGenerator.materiais) ?? []
             if let notas = Disco.lerApontamentos(aula.pasta) {
                 blocos.append(.texto("Apontamentos já feitos desta aula (PT-PT):\n\n<apontamentos>\n\(notas)\n</apontamentos>"))
             }
             if !anteriores.isEmpty {
-                let conversa = anteriores.suffix(8).map { "Pergunta: \($0.pergunta)\n\nResposta: \($0.resposta)" }
+                let conversa = anteriores.suffix(8).map { "Pergunta: \(Self.pedido($0.pergunta, citacao: $0.citacao?.cortado(300)))\n\nResposta: \($0.resposta)" }
                     .joined(separator: "\n\n---\n\n")
                 blocos.append(.texto("Perguntas anteriores sobre esta aula:\n\n<conversa>\n\(conversa)\n</conversa>"))
             }
-            blocos.append(.texto("Pergunta do estudante:\n\n\(pergunta)"))
+            blocos.append(.texto("Pergunta do estudante:\n\n\(Self.pedido(pergunta, citacao: citacao))"))
             return blocos
         } concluir: { texto in
-            try Disco.escreverPerguntas(Disco.lerPerguntas(aula.pasta) + [PerguntaAula(pergunta: pergunta, resposta: texto)], em: aula.pasta)
+            try Disco.escreverPerguntas(Disco.lerPerguntas(aula.pasta) + [PerguntaAula(pergunta: pergunta, resposta: texto, citacao: citacao)], em: aula.pasta)
         }
+    }
+
+    /// Enviar sem escrever nada com um trecho escolhido pede para o explicar.
+    nonisolated static let perguntaSobreTrecho = "Explica este trecho"
+
+    /// A pergunta a enviar a partir do que foi escrito no campo, ou nil se não houver nada para perguntar.
+    nonisolated static func pergunta(_ escrito: String, citacao: CitacaoPergunta?) -> String? {
+        let p = escrito.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !p.isEmpty { return p }
+        return citacao == nil ? nil : perguntaSobreTrecho
+    }
+
+    /// A pergunta como vai para o Claude: o trecho selecionado (e de onde vem) antes da pergunta.
+    nonisolated static func pedido(_ pergunta: String, citacao: CitacaoPergunta?) -> String {
+        guard let citacao else { return pergunta }
+        let onde = switch citacao.origem {
+        case .apontamentos: "dos apontamentos"
+        case .transcricao: "da transcrição" + (citacao.inicio.map { ", dito aos [\(Timestamp.format($0))]" } ?? "")
+        }
+        return "Sobre este trecho \(onde):\n\n<trecho>\n\(citacao.texto)\n</trecho>\n\n\(pergunta)"
     }
 
     func gerarExercicios(_ aula: Aula) {
@@ -245,7 +329,7 @@ final class Estudo {
     // MARK: Execução
 
     private func executar(
-        _ aula: Aula, _ tipo: Tipo, pergunta: String? = nil, comTranscricao: Bool = true, esforco: Esforco? = nil,
+        _ aula: Aula, _ tipo: Tipo, pergunta: String? = nil, citacao: CitacaoPergunta? = nil, comTranscricao: Bool = true, esforco: Esforco? = nil,
         sistema: String,
         conteudo: @MainActor (ContextoAula?) -> [BlocoConteudo],
         concluir: @escaping @MainActor (String) throws -> Void
@@ -266,7 +350,7 @@ final class Estudo {
         // Só se lê a transcrição, os slides e o PDF quando o pedido precisa deles.
         let contexto = comTranscricao ? transcricao.map { ContextoAula.carregar(aula, library: library, transcricao: $0) } : nil
         let blocos = conteudo(contexto)
-        emCurso[chave] = EmCurso(pergunta: pergunta)
+        emCurso[chave] = EmCurso(pergunta: pergunta, citacao: citacao)
         emCurso[chave]?.tarefa = Task {
             do {
                 let r = try await gerador.gerar(
@@ -278,7 +362,11 @@ final class Estudo {
                 try concluir(r.markdown.trimmingCharacters(in: .whitespacesAndNewlines))
             } catch is CancellationError {
             } catch {
-                if !Task.isCancelled { erros[chave] = error.localizedDescription }
+                if !Task.isCancelled {
+                    erros[chave] = error.localizedDescription
+                    // O trecho volta para o campo, para tentar outra vez sem o selecionar de novo.
+                    if let c = emCurso[chave]?.citacao, citacoes[chave] == nil { citacoes[chave] = c }
+                }
             }
             emCurso[chave] = nil
             versao += 1
@@ -321,6 +409,7 @@ final class Estudo {
     ## Como responder
     - Responde diretamente à pergunta, de forma clara e curta, para quem está a ver a matéria pela primeira vez.
     - Baseia-te no que foi dito e mostrado na aula, e indica onde: "aos [12:34] o professor…".
+    - Se a pergunta vier com um trecho selecionado (dos apontamentos ou da transcrição), responde sobre esse trecho e situa-o na aula. Num trecho da transcrição, usa o momento indicado para encontrar o contexto.
     - Se a pergunta for sobre um trecho confuso, diz o que o professor disse (podes citar a frase em espanhol e traduzi-la) e explica-o.
     - Podes acrescentar explicações que o professor não deu, se forem conhecimento padrão e estiverem certas; põe-nas num bloco `> 💡 **Explicação extra:** ...`.
     - Se a aula não falar do assunto, diz isso claramente antes de responder com conhecimento geral.

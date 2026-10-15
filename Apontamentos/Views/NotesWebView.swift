@@ -64,20 +64,29 @@ struct NotesWebView: NSViewRepresentable {
     var realcar: [String] = []
     /// Pasta da aula, de onde vêm as imagens dos slides referidas nos apontamentos.
     var pastaAula: URL?
+    /// Chamado com o texto selecionado (em Markdown) ao carregar em "Perguntar" junto à seleção ou no menu de contexto.
+    /// Sem ele, o botão não aparece. Decide-se ao criar a vista.
+    var aoPerguntar: ((String) -> Void)?
+
+    private static let mensagens = ["timestamp", "alterado", "formato", "selecao", "perguntar"]
 
     func makeCoordinator() -> Coordenador { Coordenador() }
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
-        for nome in ["timestamp", "alterado", "formato"] {
+        for nome in Self.mensagens {
             config.userContentController.add(context.coordinator, name: nome)
+        }
+        if aoPerguntar != nil {
+            config.userContentController.addUserScript(WKUserScript(
+                source: "window.podePerguntar = true", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         }
         if let modo {
             config.userContentController.addUserScript(WKUserScript(
                 source: "document.documentElement.classList.add('\(modo)')", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         }
         config.setURLSchemeHandler(context.coordinator.esquema, forURLScheme: EsquemaAula.nome)
-        let web = WKWebView(frame: .zero, configuration: config)
+        let web = WebNotas(frame: .zero, configuration: config)
         web.navigationDelegate = context.coordinator
         web.setValue(false, forKey: "drawsBackground")
         context.coordinator.web = web
@@ -90,6 +99,7 @@ struct NotesWebView: NSViewRepresentable {
 
     func updateNSView(_ web: WKWebView, context: Context) {
         context.coordinator.aoClicarTimestamp = aoClicarTimestamp
+        context.coordinator.aoPerguntar = aoPerguntar
         context.coordinator.controlador = controlador
         context.coordinator.realcar(realcar)
         context.coordinator.pastaAula = pastaAula
@@ -100,7 +110,7 @@ struct NotesWebView: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ web: WKWebView, coordinator: Coordenador) {
-        for nome in ["timestamp", "alterado", "formato"] {
+        for nome in mensagens {
             web.configuration.userContentController.removeScriptMessageHandler(forName: nome)
         }
     }
@@ -109,6 +119,7 @@ struct NotesWebView: NSViewRepresentable {
     final class Coordenador: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         weak var web: WKWebView?
         var aoClicarTimestamp: ((Double) -> Void)?
+        var aoPerguntar: ((String) -> Void)?
         weak var controlador: ControladorNotas?
         let esquema = EsquemaAula()
         var pastaAula: URL?
@@ -200,11 +211,35 @@ struct NotesWebView: NSViewRepresentable {
                                                     italico: d["italico"] as? Bool ?? false,
                                                     bloco: d["bloco"] as? String ?? "p")
                 if controlador?.formato != novo { controlador?.formato = novo }
+            case "selecao":
+                (web as? WebNotas)?.haSelecao = message.body as? Bool ?? false
+            case "perguntar":
+                if let texto = message.body as? String { aoPerguntar?(texto) }
             default:
                 if let segundos = message.body as? Double { aoClicarTimestamp?(segundos) }
                 else if let segundos = message.body as? Int { aoClicarTimestamp?(Double(segundos)) }
             }
         }
+    }
+}
+
+/// O WKWebView das notas, com "Perguntar sobre a seleção" no menu de contexto quando há texto selecionado.
+final class WebNotas: WKWebView {
+    /// A página diz quando há texto selecionado sobre o qual se pode perguntar (mensagem "selecao").
+    var haSelecao = false
+
+    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        super.willOpenMenu(menu, with: event)
+        guard haSelecao else { return }
+        let item = NSMenuItem(title: "Perguntar sobre a seleção", action: #selector(perguntarSelecao), keyEquivalent: "")
+        item.target = self
+        item.image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: nil)
+        menu.insertItem(item, at: 0)
+        menu.insertItem(.separator(), at: 1)
+    }
+
+    @objc private func perguntarSelecao() {
+        evaluateJavaScript("perguntarSelecao()")
     }
 }
 

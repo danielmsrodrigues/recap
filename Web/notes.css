@@ -269,3 +269,41 @@ html.conversa blockquote { padding: 0.5em 0.8em; }
 .a-pensar span:nth-child(2) { animation-delay: 0.15s; }
 .a-pensar span:nth-child(3) { animation-delay: 0.3s; }
 @keyframes pensar { 0%, 80%, 100% { opacity: 0.25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+
+/* Trecho selecionado sobre o qual se perguntou, dentro da bolha da pergunta. */
+.pergunta .citacao {
+  margin: 1px 0 6px;
+  padding: 2px 0 2px 9px;
+  border-left: 2px solid rgba(255, 255, 255, 0.6);
+  font-weight: 400;
+  font-size: 0.93em;
+  opacity: 0.92;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.pergunta .citacao .origem { display: block; margin-bottom: 1px; font-size: 0.88em; opacity: 0.8; }
+.pergunta a.ts { color: #fff; text-decoration: underline; }
+
+/* Botão "Perguntar" junto ao texto selecionado (só a ler, não a editar). */
+#perguntar-selecao {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px 4px 8px;
+  border: none;
+  border-radius: 999px;
+  background: #0a64d6;
+  color: #fff;
+  font: 500 12px -apple-system, system-ui, sans-serif;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#perguntar-selecao:hover { background: #0857bd; }
+#perguntar-selecao svg { width: 13px; height: 13px; fill: currentColor; }
+@media print { #perguntar-selecao { display: none; } }

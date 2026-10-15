@@ -6,6 +6,7 @@ struct AulaDetailView: View {
     @Environment(ProcessingQueue.self) private var fila
     @Environment(Definicoes.self) private var definicoes
     @Environment(Navegacao.self) private var navegacao
+    @Environment(Estudo.self) private var estudo
     let aula: Aula
 
     private typealias Tab = SeparadorAula
@@ -61,6 +62,19 @@ struct AulaDetailView: View {
             guard ProcessInfo.processInfo.environment["APONTAMENTOS_EDITAR"] == "1" else { return }
             try? await Task.sleep(for: .seconds(1.5))
             if apontamentos != nil { comecarEdicao() }
+        }
+        .task {
+            // `APONTAMENTOS_SELECAO="<texto>"`: seleciona esse texto nos apontamentos (o botão "Perguntar" aparece);
+            // com `APONTAMENTOS_PERGUNTAR_SELECAO=1`, pergunta logo sobre ele. A transcrição trata do seu.
+            let env = ProcessInfo.processInfo.environment
+            guard let alvo = env["APONTAMENTOS_SELECAO"],
+                  let json = try? JSONEncoder().encode(alvo), let literal = String(data: json, encoding: .utf8) else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            guard tab == .apontamentos else { return }
+            controlador.web?.evaluateJavaScript("window.find(\(literal))", completionHandler: nil)
+            guard env["APONTAMENTOS_PERGUNTAR_SELECAO"] == "1" else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            controlador.web?.evaluateJavaScript("perguntarSelecao()", completionHandler: nil)
         }
         .task {
             // `APONTAMENTOS_SEPARADOR="Ligações"`: abre a aula nesse separador.
@@ -176,7 +190,8 @@ struct AulaDetailView: View {
                     }
                     NotesWebView(markdown: apontamentos, controlador: controlador,
                                  aoClicarTimestamp: aoClicarNosApontamentos,
-                                 realcar: controlador.editando ? [] : realce, pastaAula: aula.pasta)
+                                 realcar: controlador.editando ? [] : realce, pastaAula: aula.pasta,
+                                 aoPerguntar: { perguntarSobre(CitacaoPergunta(texto: $0, origem: .apontamentos)) })
                 }
             } else {
                 vazioApontamentos
@@ -194,7 +209,7 @@ struct AulaDetailView: View {
             }
         case .transcricao:
             if let transcricao {
-                TranscricaoView(transcricao: transcricao, irPara: salto)
+                TranscricaoView(transcricao: transcricao, irPara: salto, aoPerguntar: perguntarSobre)
             } else {
                 ContentUnavailableView("Ainda sem transcrição", systemImage: "waveform",
                                        description: Text(job?.ativo == true ? "A transcrição está em curso." : "Esta aula ainda não foi transcrita."))
@@ -300,6 +315,12 @@ struct AulaDetailView: View {
     private var aoClicarNosApontamentos: ((Double) -> Void)? {
         if controlador.editando { return nil }
         return { irParaTranscricao($0) }
+    }
+
+    /// Leva o trecho selecionado para o painel das perguntas (e abre-o), à espera da pergunta.
+    private func perguntarSobre(_ citacao: CitacaoPergunta) {
+        estudo.citar(citacao, em: aula)
+        mostrarPerguntas = true
     }
 
     private func irParaTranscricao(_ segundos: Double) {

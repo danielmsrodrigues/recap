@@ -5,7 +5,9 @@
 //   definirEdicao(true|false)            liga/desliga a edição direta
 //   comando(nome, valor)                 negrito, títulos, listas, fórmula, desfazer…
 //   obterMarkdown()                      devolve o documento editado em Markdown
-// e recebe as mensagens "timestamp" (segundos), "alterado" e "formato".
+//   perguntarSelecao()                   pergunta sobre o texto selecionado (menu de contexto da app)
+// e recebe as mensagens "timestamp" (segundos), "alterado", "formato", "selecao" (há texto selecionado
+// para perguntar) e "perguntar" (o texto selecionado, em Markdown).
 (function () {
   "use strict";
 
@@ -155,6 +157,7 @@
       }
     }
     alterado = false;
+    esconderPerguntar();
     if (emStreaming && perto) window.scrollTo(0, document.body.scrollHeight);
   };
 
@@ -285,6 +288,7 @@
     r.contentEditable = ligar ? "true" : "false";
     document.body.classList.toggle("editar", ligar);
     fecharEditorFormula(false);
+    esconderPerguntar();
     alterado = false;
     historico = ligar ? [{ html: r.innerHTML, cursor: null }] : [];
     futuro = [];
@@ -471,5 +475,105 @@
     if (!a) return;
     ev.preventDefault();
     enviar("timestamp", Number(a.dataset.t));
+  });
+
+  // MARK: Perguntar sobre a seleção
+
+  // A ler (não a editar), o texto selecionado ganha um botão "Perguntar" que o manda para o painel das perguntas.
+  // Só onde a app o pede (`window.podePerguntar`, posto antes de a página carregar).
+  let botaoPerguntar = null, textoPerguntar = "", haSelecao = false, aPremir = false, esperaSelecao = null;
+
+  // O texto selecionado em Markdown (fórmulas em LaTeX, `[mm:ss]`), ou null se não for nos apontamentos.
+  function selecaoAtual() {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+    // Só a parte dentro dos apontamentos (⌘A ou um arrastar que sai da página apanham mais).
+    const range = sel.getRangeAt(0).cloneRange();
+    const r = raiz();
+    if (!r.contains(range.commonAncestorContainer)) {
+      if (!range.intersectsNode(r)) return null;
+      if (!r.contains(range.startContainer)) range.setStart(r, 0);
+      if (!r.contains(range.endContainer)) range.setEnd(r, r.childNodes.length);
+    }
+    const caixa = document.createElement("div");
+    caixa.appendChild(range.cloneContents());
+    // Um slide vale pela legenda (o caminho da imagem não diz nada).
+    for (const img of caixa.querySelectorAll("img")) img.replaceWith("(" + (img.alt || "Slide") + ")");
+    const texto = conversor().turndown(caixa.innerHTML).trim();
+    return texto.length >= 2 ? { range, texto } : null;
+  }
+
+  function botao() {
+    if (botaoPerguntar) return botaoPerguntar;
+    const b = document.createElement("button");
+    b.id = "perguntar-selecao";
+    b.type = "button";
+    b.title = "Perguntar sobre o texto selecionado";
+    b.innerHTML = '<svg viewBox="0 0 16 16"><path d="M8 0l1.8 6.2L16 8l-6.2 1.8L8 16l-1.8-6.2L0 8l6.2-1.8z"/></svg>Perguntar';
+    b.style.display = "none";
+    // Sem isto o clique tirava a seleção antes de chegar ao botão.
+    b.addEventListener("mousedown", (ev) => ev.preventDefault());
+    b.addEventListener("click", (ev) => { ev.preventDefault(); perguntarSelecao(); });
+    document.body.appendChild(b);
+    botaoPerguntar = b;
+    return b;
+  }
+
+  function informarSelecao(ha) {
+    if (ha !== haSelecao) { haSelecao = ha; enviar("selecao", ha); }
+  }
+
+  function esconderPerguntar() {
+    textoPerguntar = "";
+    if (botaoPerguntar) botaoPerguntar.style.display = "none";
+    informarSelecao(false);
+  }
+
+  function atualizarPerguntar() {
+    if (!window.podePerguntar) return;
+    const s = raiz().contentEditable === "true" || aPremir ? null : selecaoAtual();
+    if (!s) { esconderPerguntar(); return; }
+    textoPerguntar = s.texto;
+    // Por baixo do fim da seleção, ou por cima se não couber.
+    const rects = s.range.getClientRects();
+    const r = rects.length ? rects[rects.length - 1] : s.range.getBoundingClientRect();
+    const b = botao();
+    b.style.display = "flex";
+    const largura = b.offsetWidth, altura = b.offsetHeight;
+    const topo = r.bottom + altura + 10 > window.innerHeight ? r.top - altura - 6 : r.bottom + 6;
+    b.style.top = topo + window.scrollY + "px";
+    b.style.left = Math.max(8, Math.min(window.innerWidth - largura - 8, r.right - largura)) + window.scrollX + "px";
+    informarSelecao(true);
+  }
+
+  window.perguntarSelecao = function () {
+    const s = selecaoAtual();
+    const texto = s ? s.texto : textoPerguntar;
+    if (!texto) return;
+    enviar("perguntar", texto);
+    window.getSelection().removeAllRanges();
+    esconderPerguntar();
+  };
+
+  document.addEventListener("selectionchange", () => {
+    clearTimeout(esperaSelecao);
+    esperaSelecao = setTimeout(atualizarPerguntar, 200);
+  });
+  // Enquanto se arrasta a seleção o botão não aparece (o menu de contexto, com o botão direito, mantém-na).
+  document.addEventListener("mousedown", (ev) => {
+    if (ev.button !== 0 || ev.ctrlKey || (botaoPerguntar && botaoPerguntar.contains(ev.target))) return;
+    aPremir = true;
+    esconderPerguntar();
+  });
+  // Com o botão direito o WebKit seleciona a palavra antes de abrir o menu: a app tem de o saber já.
+  document.addEventListener("contextmenu", () => {
+    clearTimeout(esperaSelecao);
+    atualizarPerguntar();
+  });
+  window.addEventListener("resize", () => { if (textoPerguntar) atualizarPerguntar(); });
+  document.addEventListener("mouseup", () => {
+    if (!aPremir) return;
+    aPremir = false;
+    setTimeout(atualizarPerguntar, 0);
   });
 })();
