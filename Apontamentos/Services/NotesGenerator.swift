@@ -83,7 +83,7 @@ struct NotesGenerator: Sendable {
             if !c.pdfsProfessor.isEmpty {
                 pedido += """
 
-                - Em "Avisos", diz de cada PDF que páginas foram dadas nesta aula e quais ficaram de fora (por exemplo "PDF 2 (Tema 3): páginas 4–18; 19–30 ainda por dar"), ou que o PDF não corresponde a esta aula e foi ignorado.
+                - Em "Sobre a cadeira", diz de cada PDF que páginas foram dadas nesta aula e quais ficaram de fora (por exemplo "PDF 2 (Tema 3): páginas 4–18; 19–30 ainda por dar"), ou que o PDF não corresponde a esta aula e foi ignorado.
                 """
             }
         }

@@ -10,6 +10,24 @@ struct ClaudeTests {
         return (acc, recebido)
     }
 
+    /// O fim da resposta são linhas grandes (a mensagem inteira e o resultado), escritas mesmo antes de o processo
+    /// sair; têm de chegar inteiras, mesmo a última sem quebra de linha.
+    @Test func linhasDaSaidaChegamInteiras() async {
+        let pipe = Pipe()
+        let grande = String(repeating: "á", count: 300_000)
+        let escritas = ["{\"type\":\"a\"}\n", "{\"type\":\"b\",\"t\":\"", grande, "\"}\n", "{\"type\":\"result\"}"]
+        DispatchQueue.global().async {
+            for e in escritas { pipe.fileHandleForWriting.write(Data(e.utf8)) }
+            try? pipe.fileHandleForWriting.close()
+        }
+        var linhas: [String] = []
+        for await l in ClaudeCodeClient.linhas(pipe.fileHandleForReading) { linhas.append(l) }
+        #expect(linhas.count == 3)
+        #expect(linhas.first == "{\"type\":\"a\"}")
+        #expect(linhas.dropFirst().first == "{\"type\":\"b\",\"t\":\"\(grande)\"}")
+        #expect(linhas.last == "{\"type\":\"result\"}")
+    }
+
     @Test func juntaTextoEUso() throws {
         let (acc, recebido) = try eventos([
             #"{"type":"message_start","message":{"model":"claude-sonnet-5-5","usage":{"input_tokens":1200,"output_tokens":1}}}"#,

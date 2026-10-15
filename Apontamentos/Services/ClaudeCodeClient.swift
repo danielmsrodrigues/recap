@@ -143,7 +143,7 @@ struct ClaudeCodeClient: Sendable {
         var reinicio: Date?
 
         try await withTaskCancellationHandler {
-            for try await linha in saida.fileHandleForReading.bytes.lines {
+            for await linha in Self.linhas(saida.fileHandleForReading) {
                 guard let dados = linha.data(using: .utf8),
                       let obj = try? JSONSerialization.jsonObject(with: dados) as? [String: Any],
                       let tipo = obj["type"] as? String
@@ -190,6 +190,32 @@ struct ClaudeCodeClient: Sendable {
             custoEquivalente: resultado["total_cost_usd"] as? Double,
             uso5h: uso5h
         )
+    }
+
+    /// As linhas da saída, lidas tão depressa quanto o Claude Code as escreve.
+    ///
+    /// O Claude Code (Node) sai logo a seguir à última linha, e o que ainda não coube no pipe perde-se: lendo
+    /// byte a byte, ao ritmo de quem processa as linhas, o fim da resposta (a linha do resultado) ficava por ler
+    /// e a geração falhava com "terminou com o código 0". Aqui uma thread esvazia o pipe para um buffer sem limite.
+    static func linhas(_ fonte: FileHandle) -> AsyncStream<String> {
+        AsyncStream { continuacao in
+            DispatchQueue.global(qos: .userInitiated).async {
+                var pendente = Data()
+                while true {
+                    let bloco = fonte.availableData // bloqueia até haver dados; vazio no fim
+                    if bloco.isEmpty { break }
+                    pendente.append(bloco)
+                    var inicio = pendente.startIndex
+                    while let fim = pendente[inicio...].firstIndex(of: 0x0A) {
+                        continuacao.yield(String(decoding: pendente[inicio..<fim], as: UTF8.self))
+                        inicio = pendente.index(after: fim)
+                    }
+                    pendente = Data(pendente[inicio...])
+                }
+                if !pendente.isEmpty { continuacao.yield(String(decoding: pendente, as: UTF8.self)) }
+                continuacao.finish()
+            }
+        }
     }
 
     static func erro(mensagem: String, status: Int?, reinicio: Date?) -> ErroClaudeCode {
