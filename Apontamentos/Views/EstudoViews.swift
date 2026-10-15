@@ -6,6 +6,8 @@ struct PerguntasView: View {
     @Environment(Definicoes.self) private var definicoes
     let aula: Aula
     var aoClicarTimestamp: (Double) -> Void
+    /// Um link para uma secção dos apontamentos numa resposta.
+    var aoClicarSeccao: (LigacaoSeccao) -> Void
 
     @State private var texto = ""
     @State private var perguntas: [PerguntaAula] = []
@@ -34,7 +36,8 @@ struct PerguntasView: View {
             if perguntas.isEmpty && emCurso == nil {
                 vazio
             } else {
-                NotesWebView(markdown: conversa, emStreaming: emCurso != nil, aoClicarTimestamp: aoClicarTimestamp, modo: "conversa")
+                NotesWebView(markdown: conversa, emStreaming: emCurso != nil, aoClicarTimestamp: aoClicarTimestamp, modo: "conversa",
+                             aoClicarSeccao: aoClicarSeccao)
             }
             if let erro = estudo.erro(aula, .pergunta) {
                 Label(erro, systemImage: "exclamationmark.triangle")
@@ -53,6 +56,14 @@ struct PerguntasView: View {
             try? await Task.sleep(for: .milliseconds(80))
             focado = true
         }
+        #if DEBUG
+        .task {
+            // `APONTAMENTOS_PERGUNTAR="<pergunta>"`: faz essa pergunta à aula aberta (o mesmo que escrevê-la e carregar ↩).
+            guard let p = ProcessInfo.processInfo.environment["APONTAMENTOS_PERGUNTAR"] else { return }
+            try? await Task.sleep(for: .seconds(1))
+            enviar(p, citacao: nil)
+        }
+        #endif
         .confirmationDialog("Apagar a conversa desta aula?", isPresented: $confirmarApagar) {
             Button("Apagar", role: .destructive) { estudo.apagarPerguntas(aula) }
         }

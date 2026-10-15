@@ -62,6 +62,7 @@ struct ApontamentosApp: App {
         }
         .commands {
             CommandGroup(replacing: .newItem) {}
+            CommandGroup(after: .textEditing) { ComandoProcurar() }
             CommandGroup(after: .appSettings) {
                 Button("Preparar o Recap…") { NotificationCenter.default.post(name: .abrirPreparacao, object: nil) }
                 Button("Procurar atualizações…") { Task { await atualizador.procurar() } }

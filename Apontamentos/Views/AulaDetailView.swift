@@ -36,6 +36,12 @@ struct AulaDetailView: View {
     @State private var houveEdicao = false
     @State private var pdfPronto = false
     @State private var aCriarPDF = false
+    /// Procurar nos apontamentos (⌘F).
+    @State private var procurando = false
+    @State private var termoProcura = ""
+    @State private var pedidosProcura = 0
+    /// Secção a mostrar nos apontamentos (link de uma resposta).
+    @State private var irSeccao: PedidoSeccao?
 
     private var job: Job? { fila.job(para: aula.pasta) }
     private var aGerar: Bool { job?.estado == .aCorrer && job?.estadoDe(.apontamentos).fase == .emCurso }
@@ -56,6 +62,8 @@ struct AulaDetailView: View {
         .toolbar { barra }
         .task(id: "\(aula.pasta.path)#\(library.versao)") { carregar() }
         .task(id: navegacao.destino) { aplicarDestino() }
+        .focusedSceneValue(\.procurarNosApontamentos, apontamentos == nil || aGerar ? nil : AcaoProcurar { abrirProcura() })
+        .onChange(of: tab) { if tab != .apontamentos { fecharProcura() } }
         #if DEBUG
         .task {
             // `APONTAMENTOS_EDITAR=1`: abre a aula já em edição (capturas de ecrã sem clicar).
@@ -75,6 +83,26 @@ struct AulaDetailView: View {
             guard env["APONTAMENTOS_PERGUNTAR_SELECAO"] == "1" else { return }
             try? await Task.sleep(for: .seconds(1.5))
             controlador.web?.evaluateJavaScript("perguntarSelecao()", completionHandler: nil)
+        }
+        .task {
+            // `APONTAMENTOS_PROCURAR="<texto>"`: abre a procura nos apontamentos com esse texto;
+            // `APONTAMENTOS_PROCURAR_SEGUINTE=<n>` avança n ocorrências.
+            let env = ProcessInfo.processInfo.environment
+            guard let termo = env["APONTAMENTOS_PROCURAR"] else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            abrirProcura()
+            termoProcura = termo
+            for _ in 0..<(Int(env["APONTAMENTOS_PROCURAR_SEGUINTE"] ?? "") ?? 0) {
+                try? await Task.sleep(for: .milliseconds(400))
+                controlador.andarProcura(1)
+            }
+        }
+        .task {
+            // `APONTAMENTOS_SECCAO="<âncora>|<texto do link>"`: o mesmo que clicar nesse link no painel das perguntas.
+            guard let partes = ProcessInfo.processInfo.environment["APONTAMENTOS_SECCAO"]?.components(separatedBy: "|") else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            navegacao.destino = DestinoAula(pasta: aula.pasta, separador: .apontamentos,
+                                            seccao: LigacaoSeccao(ancora: partes[0], texto: partes.count > 1 ? partes[1] : ""))
         }
         .task {
             // `APONTAMENTOS_SEPARADOR="Ligações"`: abre a aula nesse separador.
@@ -188,10 +216,15 @@ struct AulaDetailView: View {
                                         aoConcluir: { Task { await concluirEdicao() } })
                         Divider()
                     }
+                    if procurando {
+                        BarraProcura(controlador: controlador, termo: $termoProcura, pedidosFoco: pedidosProcura, aoFechar: fecharProcura)
+                        Divider()
+                    }
                     NotesWebView(markdown: apontamentos, controlador: controlador,
                                  aoClicarTimestamp: aoClicarNosApontamentos,
                                  realcar: controlador.editando ? [] : realce, pastaAula: aula.pasta,
-                                 aoPerguntar: { perguntarSobre(CitacaoPergunta(texto: $0, origem: .apontamentos)) })
+                                 aoPerguntar: { perguntarSobre(CitacaoPergunta(texto: $0, origem: .apontamentos)) },
+                                 aoClicarSeccao: irParaSeccao, irParaSeccao: irSeccao)
                 }
             } else {
                 vazioApontamentos
@@ -337,6 +370,30 @@ struct AulaDetailView: View {
         tab = tabs.contains(d.separador) ? d.separador : .apontamentos
         realce = d.termos
         if let t = d.tempo { salto = SaltoTempo(segundos: t) }
+        if let s = d.seccao { irParaSeccao(s) }
+    }
+
+    /// Mostra a secção de um link `[Título](#ancora)`. Se nenhum título lhe corresponder (apontamentos refeitos
+    /// depois da resposta), procura o texto do link na página.
+    private func irParaSeccao(_ ligacao: LigacaoSeccao) {
+        let markdown = apontamentos ?? Disco.lerApontamentos(aula.pasta) ?? ""
+        if let s = Seccoes.resolver(ligacao, em: Seccoes.lista(markdown)) {
+            irSeccao = PedidoSeccao(indice: s.indice)
+        } else if !ligacao.texto.isEmpty {
+            realce = [ligacao.texto]
+        }
+    }
+
+    private func abrirProcura() {
+        tab = .apontamentos
+        procurando = true
+        pedidosProcura += 1
+    }
+
+    private func fecharProcura() {
+        guard procurando else { return }
+        procurando = false
+        controlador.limparProcura()
     }
 
     private func carregar() {

@@ -236,6 +236,10 @@ final class Estudo {
             var blocos = contexto.map(NotesGenerator.materiais) ?? []
             if let notas = Disco.lerApontamentos(aula.pasta) {
                 blocos.append(.texto("Apontamentos já feitos desta aula (PT-PT):\n\n<apontamentos>\n\(notas)\n</apontamentos>"))
+                let seccoes = Seccoes.lista(notas)
+                if !seccoes.isEmpty {
+                    blocos.append(.texto("Secções dos apontamentos, já como links para usar nas respostas:\n\n<seccoes>\n\(Seccoes.indice(seccoes))\n</seccoes>"))
+                }
             }
             if !anteriores.isEmpty {
                 let conversa = anteriores.suffix(8).map { "Pergunta: \(Self.pedido($0.pergunta, citacao: $0.citacao?.cortado(300)))\n\nResposta: \($0.resposta)" }
@@ -409,6 +413,7 @@ final class Estudo {
     ## Como responder
     - Responde diretamente à pergunta, de forma clara e curta, para quem está a ver a matéria pela primeira vez.
     - Baseia-te no que foi dito e mostrado na aula, e indica onde: "aos [12:34] o professor…".
+    - Quando referires uma secção ou tópico dos apontamentos (por exemplo, "em que parte se fala de X"), põe o link dessa secção tal como vem na lista de secções, ex.: [Cadeia de valor](#cadeia-de-valor). O estudante clica e vai para lá. Só links da lista, nunca âncoras inventadas.
     - Se a pergunta vier com um trecho selecionado (dos apontamentos ou da transcrição), responde sobre esse trecho e situa-o na aula. Num trecho da transcrição, usa o momento indicado para encontrar o contexto.
     - Se a pergunta for sobre um trecho confuso, diz o que o professor disse (podes citar a frase em espanhol e traduzi-la) e explica-o.
     - Podes acrescentar explicações que o professor não deu, se forem conhecimento padrão e estiverem certas; põe-nas num bloco `> 💡 **Explicação extra:** ...`.

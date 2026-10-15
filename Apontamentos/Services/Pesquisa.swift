@@ -19,6 +19,8 @@ struct DestinoAula: Equatable, Sendable {
     var tempo: Double?
     /// Texto a realçar: o primeiro que existir na página (um pedaço da frase, depois só a palavra).
     var termos: [String] = []
+    /// Secção dos apontamentos a mostrar (link numa resposta do painel das perguntas).
+    var seccao: LigacaoSeccao?
     var id = UUID()
 }
 

@@ -307,3 +307,27 @@ html.conversa blockquote { padding: 0.5em 0.8em; }
 #perguntar-selecao:hover { background: #0857bd; }
 #perguntar-selecao svg { width: 13px; height: 13px; fill: currentColor; }
 @media print { #perguntar-selecao { display: none; } }
+
+/* Links para secções dos apontamentos (nas respostas do painel das perguntas). */
+a.seccao {
+  text-decoration: none;
+  background: var(--chip);
+  padding: 0 0.35em;
+  border-radius: 4px;
+  cursor: pointer;
+}
+a.seccao::before { content: "§ "; opacity: 0.7; }
+a.seccao:hover { text-decoration: underline; }
+@media print { a.seccao { background: none; padding: 0; } a.seccao::before { content: none; } }
+
+/* A secção para onde se foi, realçada por instantes. */
+h1, h2, h3, h4, h5, h6 { scroll-margin-top: 16px; }
+.seccao-realcada { animation: realce-seccao 2.4s ease-out; border-radius: 6px; }
+@keyframes realce-seccao {
+  0%, 35% { background: rgba(255, 196, 0, 0.38); box-shadow: 0 0 0 6px rgba(255, 196, 0, 0.38); }
+  100% { background: transparent; box-shadow: 0 0 0 6px transparent; }
+}
+
+/* Procurar na página (⌘F): todas as ocorrências e, mais forte, a atual. */
+::highlight(procura) { background-color: rgba(255, 214, 10, 0.45); }
+::highlight(procura-atual) { background-color: #ff9f0a; color: #000; }
