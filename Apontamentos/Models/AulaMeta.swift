@@ -54,6 +54,8 @@ struct AulaMeta: Codable, Hashable, Sendable {
     var origem: String?
     /// O utilizador mudou o título à mão; a partir daí as gerações deixam de o substituir pelo tema da aula.
     var tituloManual: Bool?
+    /// Nome original de cada PDF do professor juntado, pelo ficheiro na pasta da aula (`slides-professor-2.pdf` → `Tema 3.pdf`).
+    var nomesPDFs: [String: String]?
 
     init(titulo: String, data: Date, video: VideoRef?) {
         self.titulo = titulo
@@ -84,6 +86,7 @@ struct AulaMeta: Codable, Hashable, Sendable {
         editadoEm = try c.decodeIfPresent(Date.self, forKey: .editadoEm)
         origem = try c.decodeIfPresent(String.self, forKey: .origem)
         tituloManual = try c.decodeIfPresent(Bool.self, forKey: .tituloManual)
+        nomesPDFs = try c.decodeIfPresent([String: String].self, forKey: .nomesPDFs)
     }
 }
 

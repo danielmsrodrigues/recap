@@ -150,17 +150,32 @@ extension Disco {
 }
 
 extension ContextoAula {
-    /// Tudo o que se sabe de uma aula, como no pedido dos apontamentos (o PDF do professor substitui as capturas).
+    /// Tudo o que se sabe de uma aula, como no pedido dos apontamentos. Com PDFs do professor, as capturas
+    /// só vão até onde cabem no pedido, para se saber que páginas foram dadas.
     @MainActor
     static func carregar(_ aula: Aula, library: Library, transcricao: Transcricao) -> ContextoAula {
-        let pdf = Disco.urlPDFProfessor(aula.pasta)
-        let slides = pdf != nil ? [] : (Disco.lerSlides(aula.pasta) ?? []).compactMap { s in
+        let pdfs = Disco.pdfsProfessor(aula.pasta, nomes: aula.meta.nomesPDFs ?? [:]).compactMap { pdf in
+            (try? Data(contentsOf: pdf.url(em: aula.pasta))).map { PDFComDados(pdf: pdf, dados: $0) }
+        }
+        var slides = (Disco.lerSlides(aula.pasta) ?? []).compactMap { s in
             (try? Data(contentsOf: Disco.urlSlide(s, em: aula.pasta))).map { SlideComImagem(slide: s, jpeg: $0) }
+        }
+        if !pdfs.isEmpty {
+            slides = capturasQueCabem(slides, bytes: Disco.tamanhoMaximoPDF - pdfs.reduce(0) { $0 + $1.dados.count })
         }
         return ContextoAula(cadeira: aula.cadeira, titulo: aula.meta.titulo, data: aula.meta.data,
                             glossario: library.cadeira(nome: aula.cadeira)?.meta.glossario ?? "",
-                            transcricao: transcricao, slides: slides,
-                            pdfProfessor: pdf.flatMap { try? Data(contentsOf: $0) })
+                            transcricao: transcricao, slides: slides, pdfsProfessor: pdfs)
+    }
+
+    /// Até `maximo` capturas espalhadas pela aula, sem passar de `bytes` (o que sobra do pedido depois dos PDFs).
+    nonisolated static func capturasQueCabem(_ capturas: [SlideComImagem], bytes: Int, maximo: Int = 40) -> [SlideComImagem] {
+        guard !capturas.isEmpty, bytes > 0 else { return [] }
+        let media = max(1, capturas.reduce(0) { $0 + $1.jpeg.count } / capturas.count)
+        let quantas = min(maximo, capturas.count, bytes / media)
+        guard quantas < capturas.count else { return capturas }
+        guard quantas > 1 else { return quantas == 1 ? [capturas[0]] : [] }
+        return (0..<quantas).map { capturas[($0 * (capturas.count - 1) + (quantas - 1) / 2) / (quantas - 1)] }
     }
 }
 

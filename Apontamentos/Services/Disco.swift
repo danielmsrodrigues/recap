@@ -18,9 +18,7 @@ enum Disco {
     /// Versão anterior, guardada antes de cada regeneração.
     static let apontamentosAnteriorMD = "apontamentos.anterior.md"
     static let slidesJSON = "slides.json"
-    /// Slides publicados pelo professor, juntados à aula pelo utilizador.
-    static let slidesPDF = "slides-professor.pdf"
-    /// Acima disto o pedido ao Claude fica demasiado grande (o limite é ~32 MB no total).
+    /// Acima disto (somando os PDFs do professor) o pedido ao Claude fica demasiado grande (o limite é ~32 MB no total).
     static let tamanhoMaximoPDF = 24 * 1_048_576
     static let pastaSlides = "slides"
 
@@ -135,22 +133,52 @@ enum Disco {
         try escrever(slides, em: pasta.appending(path: slidesJSON))
     }
 
-    static func urlPDFProfessor(_ pasta: URL) -> URL? {
-        let url = pasta.appending(path: slidesPDF)
-        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    /// Os PDFs dos slides do professor juntados à aula, pelo número (ver `PDFProfessor`).
+    /// `nomes` evita ler `aula.json` quando quem chama já o tem.
+    static func pdfsProfessor(_ pasta: URL, nomes: [String: String]? = nil) -> [PDFProfessor] {
+        let ficheiros = (try? FileManager.default.contentsOfDirectory(atPath: pasta.path)) ?? []
+        let numeros = ficheiros.compactMap(PDFProfessor.numero(doFicheiro:)).sorted()
+        guard !numeros.isEmpty else { return [] }
+        let nomes = nomes ?? (try? lerMeta(pasta))?.nomesPDFs ?? [:]
+        return numeros.map { n in
+            var pdf = PDFProfessor(numero: n)
+            pdf.nome = nomes[pdf.ficheiro]
+            return pdf
+        }
     }
 
-    static func juntarPDFProfessor(_ origem: URL, em pasta: URL) throws {
-        let tamanho = (try? origem.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-        guard tamanho <= tamanhoMaximoPDF else {
-            throw NSError(domain: "Recap", code: 40, userInfo: [NSLocalizedDescriptionKey:
-                "O PDF tem \(tamanho / 1_048_576) MB; o máximo é \(tamanhoMaximoPDF / 1_048_576) MB. Exporta-o com menos qualidade (Pré-visualização → Exportar → Filtro Quartz \"Reduce File Size\") e tenta de novo."])
+    /// Copia PDFs do professor para a aula, a seguir aos que já lá estão (um PDF igual a um já juntado é saltado).
+    /// Devolve os juntados, com o nome original (quem chama guarda-o em `aula.json`).
+    static func juntarPDFsProfessor(_ origens: [URL], em pasta: URL) throws -> [PDFProfessor] {
+        let existentes = pdfsProfessor(pasta, nomes: [:])
+        let novos = origens.filter { origem in
+            !existentes.contains { FileManager.default.contentsEqual(atPath: $0.url(em: pasta).path, andPath: origem.path) }
         }
-        let destino = pasta.appending(path: slidesPDF)
-        if FileManager.default.fileExists(atPath: destino.path) { try FileManager.default.removeItem(at: destino) }
-        try FileManager.default.copyItem(at: origem, to: destino)
-        // As páginas do PDF antigo já não correspondem; as novas são criadas em fundo por quem juntou o PDF.
-        SlidesNosApontamentos.apagarPaginas(em: pasta)
+        let tamanho = { (url: URL) in (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0 }
+        let total = (existentes.map { $0.url(em: pasta) } + novos).map(tamanho).reduce(0, +)
+        guard total <= tamanhoMaximoPDF else {
+            let mb = total / 1_048_576, maximo = tamanhoMaximoPDF / 1_048_576
+            let qual = existentes.isEmpty && novos.count == 1 ? "O PDF tem \(mb) MB" : "Os PDFs desta aula ficavam com \(mb) MB"
+            throw NSError(domain: "Recap", code: 40, userInfo: [NSLocalizedDescriptionKey:
+                "\(qual); o máximo é \(maximo) MB. Exporta-os com menos qualidade (Pré-visualização → Exportar → Filtro Quartz \"Reduce File Size\") e tenta de novo."])
+        }
+        var proximo = (existentes.map(\.numero).max() ?? 0) + 1
+        var juntados: [PDFProfessor] = []
+        for origem in novos {
+            let pdf = PDFProfessor(numero: proximo, nome: origem.lastPathComponent)
+            try FileManager.default.copyItem(at: origem, to: pdf.url(em: pasta))
+            // Páginas de um PDF removido que tinha este número já não correspondem; as novas são criadas em fundo.
+            SlidesNosApontamentos.apagarPaginas(de: pdf, em: pasta)
+            juntados.append(pdf)
+            proximo += 1
+        }
+        return juntados
+    }
+
+    /// O PDF e as imagens das páginas vão para o Lixo (recuperáveis).
+    static func removerPDFProfessor(_ pdf: PDFProfessor, em pasta: URL) throws {
+        try FileManager.default.trashItem(at: pdf.url(em: pasta), resultingItemURL: nil)
+        SlidesNosApontamentos.apagarPaginas(de: pdf, em: pasta)
     }
 
     static func urlSlide(_ slide: Slide, em pasta: URL) -> URL {
