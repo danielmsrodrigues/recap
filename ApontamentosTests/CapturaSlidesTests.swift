@@ -159,6 +159,64 @@ struct CapturaSlidesTests {
         }
     }
 
+    /// Slides do mesmo modelo, como os da aula de 15/10: o cabeçalho e o rodapé não mudam, só o texto do meio.
+    /// A zona comum das trocas é só esse texto; o recorte tem de chegar às bordas do vídeo, no palco escuro.
+    private static func capturaModelo(slide n: Int, mensagens: Int) -> CGImage {
+        let ctx = CGContext(data: nil, width: largura, height: altura, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: true)
+        ctx.translateBy(x: 0, y: CGFloat(altura)); ctx.scaleBy(x: 1, y: -1)
+        func texto(_ s: String, _ x: CGFloat, _ y: CGFloat, _ tamanho: CGFloat, cor: NSColor = .black) {
+            NSAttributedString(string: s, attributes: [.font: NSFont.systemFont(ofSize: tamanho), .foregroundColor: cor]).draw(at: CGPoint(x: x, y: y))
+        }
+        NSColor(white: 0.15, alpha: 1).setFill(); CGRect(x: 0, y: 0, width: largura, height: altura).fill()
+        texto("Sala de la asignatura", 16, 14, 14, cor: .white)
+        let r = CGRect(x: 20, y: 120, width: 800, height: 450)
+        NSColor.white.setFill(); r.fill()
+        texto("Cabecera", r.minX + 20, r.minY + 14, 22, cor: .systemGreen)
+        texto("Rodapie fijo", r.minX + 20, r.maxY - 30, 14)
+        let palavras = ["probabilidad", "variable", "aleatoria", "distribución", "densidad", "suceso", "muestral", "frecuencia"]
+        for k in 0..<(3 + n % 3) {
+            let linha = (0..<5).map { palavras[(n * 7 + k * 3 + $0 * (n + 2)) % palavras.count] }.joined(separator: " ")
+            texto("\(k + 1). \(linha)", r.minX + 180 + CGFloat(n % 2 * 40), r.minY + 120 + CGFloat(k * 40), 22)
+        }
+        NSColor.white.setFill(); CGRect(x: 860, y: 50, width: 420, height: altura - 50).fill()
+        for k in 0..<min(mensagens, 24) { texto("Aluno \(k): mensagem do chat número \(k)", 870, 70 + CGFloat(k * 26), 13) }
+        NSGraphicsContext.restoreGraphicsState()
+        return ctx.makeImage()!
+    }
+
+    @Test(.timeLimit(.minutes(3))) func slidesDoMesmoModeloSaemInteiros() async throws {
+        let base = FileManager.default.temporaryDirectory.appending(path: "captura-\(UUID().uuidString)")
+        let capturas = base.appending(path: "capturas"), aula = base.appending(path: "aula")
+        try FileManager.default.createDirectory(at: capturas, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: aula, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        var t = 0.0, mensagens = 0
+        for n in (1...6).flatMap({ Array(repeating: $0, count: 6) }) {
+            if Int(t) % 6 == 0 { mensagens += 1 }
+            try SlideExtractor.gravarJPEG(Self.capturaModelo(slide: n, mensagens: mensagens), em: capturas.appending(path: FontePasta.nome(t)), qualidade: 0.6)
+            t += 2
+        }
+        var config = ConfigSlides()
+        config.recortarZonaAtiva = true
+        let slides = try await SlideExtractor(config: config).extrair(de: FontePasta(pasta: capturas), para: aula) { _ in }
+        #expect(slides.count == 6)
+        for s in slides {
+            let imagem = try #require(FontePasta.ler(Disco.urlSlide(s, em: aula), maxLado: 2000))
+            var ocr = RecognizeTextRequest()
+            ocr.recognitionLevel = .accurate
+            let lido = try await ocr.perform(on: imagem).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+            #expect(lido.contains("Cabecera"), "\(s.ficheiro): \(lido)")
+            #expect(lido.contains("Rodapie"), "\(s.ficheiro): \(lido)")
+            #expect(lido.contains("1."), "\(s.ficheiro): \(lido)")
+            #expect(!lido.localizedCaseInsensitiveContains("chat"), "\(s.ficheiro): \(lido)")
+            #expect(!lido.contains("Sala"), "\(s.ficheiro): \(lido)")
+        }
+    }
+
     @Test func semZonaDeSlideNaoGuardaAJanela() async throws {
         let base = FileManager.default.temporaryDirectory.appending(path: "captura-\(UUID().uuidString)")
         let capturas = base.appending(path: "capturas"), aula = base.appending(path: "aula")
