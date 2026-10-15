@@ -6,8 +6,11 @@
 //   comando(nome, valor)                 negrito, títulos, listas, fórmula, desfazer…
 //   obterMarkdown()                      devolve o documento editado em Markdown
 //   perguntarSelecao()                   pergunta sobre o texto selecionado (menu de contexto da app)
+//   procurarTexto(termo) / andarProcura(±1) / limparProcura()   procurar na página (⌘F)
+//   irParaSeccao(indice)                 mostra o n-ésimo título e realça-o por instantes
 // e recebe as mensagens "timestamp" (segundos), "alterado", "formato", "selecao" (há texto selecionado
-// para perguntar) e "perguntar" (o texto selecionado, em Markdown).
+// para perguntar), "perguntar" (o texto selecionado, em Markdown), "procura" ({total, atual}) e
+// "seccao" ({ancora, texto}: clicou-se num link `[Título](#ancora)`).
 (function () {
   "use strict";
 
@@ -168,8 +171,16 @@
         no = seguinte;
       }
     }
+    // Links para secções dos apontamentos (`[Título](#ancora)`, nas respostas do painel das perguntas).
+    for (const a of r.querySelectorAll('a[href^="#"]:not(.ts)')) {
+      if (a.getAttribute("href").length < 2) continue;
+      a.classList.add("seccao");
+      a.title = "Ir para esta secção nos apontamentos";
+    }
     alterado = false;
     esconderPerguntar();
+    // O documento é outro: a procura em curso volta a ser feita, sem mexer no scroll.
+    if (procura.termo) procurarTexto(procura.termo, true);
     if (emStreaming && perto) window.scrollTo(0, document.body.scrollHeight);
   };
 
@@ -487,6 +498,161 @@
     if (!a) return;
     ev.preventDefault();
     enviar("timestamp", Number(a.dataset.t));
+  });
+
+  // MARK: Secções
+
+  document.addEventListener("click", (ev) => {
+    const a = ev.target.closest("a.seccao");
+    if (!a || raiz().contentEditable === "true") return;
+    ev.preventDefault();
+    let ancora = a.getAttribute("href").slice(1);
+    try { ancora = decodeURIComponent(ancora); } catch (e) {}
+    enviar("seccao", { ancora, texto: a.textContent });
+  });
+
+  const titulosDeTopo = () => raiz().querySelectorAll(":scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6");
+
+  // A app resolve a âncora para a posição do título (é o mesmo n-ésimo título no Markdown).
+  window.irParaSeccao = function (indice) {
+    const h = titulosDeTopo()[indice];
+    if (!h) return false;
+    const mostrar = (suave) => h.scrollIntoView({ behavior: suave ? "smooth" : "auto", block: "start" });
+    mostrar(true);
+    // As imagens dos slides acima do título ainda a carregar empurravam-no para baixo do ecrã.
+    const ate = Date.now() + 2000;
+    for (const img of raiz().querySelectorAll("img")) {
+      if (!img.complete) img.addEventListener("load", () => { if (Date.now() < ate) mostrar(false); }, { once: true });
+    }
+    h.classList.remove("seccao-realcada");
+    void h.offsetWidth;
+    h.classList.add("seccao-realcada");
+    clearTimeout(h._realce);
+    h._realce = setTimeout(() => h.classList.remove("seccao-realcada"), 2400);
+    return true;
+  };
+
+  // MARK: Procurar na página
+
+  // Realça todas as ocorrências sem mexer no documento (CSS Custom Highlight API: também serve a editar) e anda entre
+  // elas. Sem distinguir maiúsculas nem acentos, como a pesquisa global.
+  const procura = { termo: "", ranges: [], atual: -1 };
+  const semAcentos = (s) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+  // O texto visível dos apontamentos já normalizado, com a origem (nó, posição, tamanho) de cada carácter.
+  function textoProcuravel() {
+    const nos = [], mapa = [];
+    let texto = "", blocoAnterior = null;
+    const walker = document.createTreeWalker(raiz(), NodeFilter.SHOW_TEXT, {
+      acceptNode: (no) => no.parentElement.closest(".math, #editor-formula") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+    });
+    while (walker.nextNode()) {
+      const no = walker.currentNode;
+      const bloco = no.parentElement.closest("p, li, h1, h2, h3, h4, h5, h6, td, th, pre, blockquote, summary, figcaption, main");
+      // Uma ocorrência não atravessa parágrafos.
+      if (bloco !== blocoAnterior && texto) { texto += "\n"; mapa.push(null); }
+      blocoAnterior = bloco;
+      const n = nos.push(no) - 1;
+      let o = 0;
+      for (const c of no.nodeValue) {
+        if (/\s/.test(c)) {
+          if (!texto.endsWith(" ")) { texto += " "; mapa.push({ n, o, l: c.length }); }
+        } else {
+          // Por unidade UTF-16 (um emoji ocupa duas), para o índice no texto ser o mesmo no mapa.
+          const d = semAcentos(c);
+          texto += d;
+          for (let k = 0; k < d.length; k++) mapa.push({ n, o, l: c.length });
+        }
+        o += c.length;
+      }
+    }
+    return { nos, mapa, texto };
+  }
+
+  function pintarProcura() {
+    if (!(window.CSS && CSS.highlights && window.Highlight)) return;
+    CSS.highlights.delete("procura");
+    CSS.highlights.delete("procura-atual");
+    if (!procura.ranges.length) return;
+    CSS.highlights.set("procura", new Highlight(...procura.ranges));
+    const atual = new Highlight(procura.ranges[procura.atual]);
+    atual.priority = 1;
+    CSS.highlights.set("procura-atual", atual);
+  }
+
+  function informarProcura() {
+    enviar("procura", { total: procura.ranges.length, atual: procura.atual });
+  }
+
+  function mostrarAtual() {
+    const range = procura.ranges[procura.atual];
+    if (!range) return;
+    // Uma ocorrência dentro de uma resolução fechada: abre-a.
+    let d = range.startContainer.parentElement.closest("details");
+    while (d) {
+      d.open = true;
+      d = d.parentElement && d.parentElement.closest("details");
+    }
+    const r = range.getBoundingClientRect();
+    if (r.top < 70 || r.bottom > window.innerHeight - 50) {
+      window.scrollTo({ top: window.scrollY + r.top - window.innerHeight / 3, behavior: "smooth" });
+    }
+  }
+
+  // `manter`: o mesmo termo depois de o documento mudar; fica na mesma ocorrência e não faz scroll.
+  window.procurarTexto = function (termo, manter) {
+    const alvo = semAcentos(String(termo || "")).replace(/\s+/g, " ").trim();
+    procura.termo = alvo ? termo : "";
+    procura.ranges = [];
+    if (alvo) {
+      const { nos, mapa, texto } = textoProcuravel();
+      let i = texto.indexOf(alvo);
+      while (i !== -1 && procura.ranges.length < 2000) {
+        const a = mapa[i], b = mapa[i + alvo.length - 1];
+        if (a && b) {
+          const range = document.createRange();
+          range.setStart(nos[a.n], a.o);
+          range.setEnd(nos[b.n], b.o + b.l);
+          procura.ranges.push(range);
+        }
+        i = texto.indexOf(alvo, i + alvo.length);
+      }
+    }
+    const total = procura.ranges.length;
+    if (!total) procura.atual = -1;
+    else if (manter) procura.atual = Math.min(Math.max(procura.atual, 0), total - 1);
+    else {
+      // A primeira ocorrência a partir do que está no ecrã.
+      const i = procura.ranges.findIndex((r) => r.getBoundingClientRect().bottom > 0 && r.getClientRects().length);
+      procura.atual = i === -1 ? 0 : i;
+    }
+    pintarProcura();
+    informarProcura();
+    if (!manter) mostrarAtual();
+  };
+
+  window.andarProcura = function (passo) {
+    const total = procura.ranges.length;
+    if (!total) return;
+    procura.atual = (procura.atual + passo + total) % total;
+    pintarProcura();
+    informarProcura();
+    mostrarAtual();
+  };
+
+  window.limparProcura = function () {
+    procura.termo = "";
+    procura.ranges = [];
+    procura.atual = -1;
+    pintarProcura();
+  };
+
+  // A editar, as posições mudam: a procura refaz-se pouco depois de cada alteração.
+  let esperaProcura = null;
+  document.addEventListener("input", () => {
+    if (!procura.termo) return;
+    clearTimeout(esperaProcura);
+    esperaProcura = setTimeout(() => procurarTexto(procura.termo, true), 300);
   });
 
   // MARK: Perguntar sobre a seleção

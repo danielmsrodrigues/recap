@@ -6,6 +6,8 @@ import WebKit
 @MainActor @Observable
 final class ControladorNotas {
     struct Formato: Equatable { var negrito = false, italico = false, bloco = "p" }
+    /// Ocorrências da procura na página (⌘F): quantas há e qual está selecionada (-1 sem nenhuma).
+    struct Procura: Equatable { var total = 0, atual = -1 }
 
     @ObservationIgnored fileprivate(set) weak var web: WKWebView?
     private(set) var editando = false
@@ -15,6 +17,9 @@ final class ControladorNotas {
     /// Chamado 1,5 s depois da última alteração (gravação automática, como no Word).
     @ObservationIgnored var aoGravar: (() async -> Void)?
     @ObservationIgnored private var gravacao: Task<Void, Never>?
+    var procura = Procura()
+    /// O texto procurado, para a página o voltar a procurar se ainda não estava carregada quando se pediu.
+    @ObservationIgnored fileprivate(set) var termoProcura = ""
 
     func definirEdicao(_ ligar: Bool) {
         editando = ligar
@@ -44,6 +49,24 @@ final class ControladorNotas {
         web?.evaluateJavaScript("renderMarkdown(\(literal), false)")
     }
 
+    /// Procura o texto na página, realçando todas as ocorrências e mostrando a primeira a partir do que está no ecrã.
+    func procurar(_ termo: String) {
+        termoProcura = termo
+        guard let json = try? JSONEncoder().encode(termo), let literal = String(data: json, encoding: .utf8) else { return }
+        web?.evaluateJavaScript("procurarTexto(\(literal), false)")
+    }
+
+    /// A ocorrência seguinte (1) ou anterior (-1), dando a volta.
+    func andarProcura(_ passo: Int) {
+        web?.evaluateJavaScript("andarProcura(\(passo))")
+    }
+
+    func limparProcura() {
+        termoProcura = ""
+        procura = Procura()
+        web?.evaluateJavaScript("limparProcura()")
+    }
+
     func markdown() async throws -> String {
         guard let web else { throw CocoaError(.featureUnsupported) }
         return try await web.evaluateJavaScript("obterMarkdown()") as? String ?? ""
@@ -67,8 +90,12 @@ struct NotesWebView: NSViewRepresentable {
     /// Chamado com o texto selecionado (em Markdown) ao carregar em "Perguntar" junto à seleção ou no menu de contexto.
     /// Sem ele, o botão não aparece. Decide-se ao criar a vista.
     var aoPerguntar: ((String) -> Void)?
+    /// Chamado ao clicar num link para uma secção (`[Título](#ancora)`).
+    var aoClicarSeccao: ((LigacaoSeccao) -> Void)?
+    /// Título a mostrar e realçar por instantes (cada pedido novo, com outro id, volta a fazê-lo).
+    var irParaSeccao: PedidoSeccao?
 
-    private static let mensagens = ["timestamp", "alterado", "formato", "selecao", "perguntar"]
+    private static let mensagens = ["timestamp", "alterado", "formato", "selecao", "perguntar", "procura", "seccao"]
 
     func makeCoordinator() -> Coordenador { Coordenador() }
 
@@ -85,6 +112,12 @@ struct NotesWebView: NSViewRepresentable {
             config.userContentController.addUserScript(WKUserScript(
                 source: "document.documentElement.classList.add('\(modo)')", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         }
+        #if DEBUG
+        // `APONTAMENTOS_JS_<MODO>="<js>"` (ex.: `APONTAMENTOS_JS_CONVERSA`): corre esse JS na página, para testar cliques sem rato.
+        if let js = ProcessInfo.processInfo.environment["APONTAMENTOS_JS_\((modo ?? "notas").uppercased())"] {
+            config.userContentController.addUserScript(WKUserScript(source: js, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
+        #endif
         config.setURLSchemeHandler(context.coordinator.esquema, forURLScheme: EsquemaAula.nome)
         let web = WebNotas(frame: .zero, configuration: config)
         web.navigationDelegate = context.coordinator
@@ -100,6 +133,7 @@ struct NotesWebView: NSViewRepresentable {
     func updateNSView(_ web: WKWebView, context: Context) {
         context.coordinator.aoClicarTimestamp = aoClicarTimestamp
         context.coordinator.aoPerguntar = aoPerguntar
+        context.coordinator.aoClicarSeccao = aoClicarSeccao
         context.coordinator.controlador = controlador
         context.coordinator.realcar(realcar)
         context.coordinator.pastaAula = pastaAula
@@ -107,6 +141,7 @@ struct NotesWebView: NSViewRepresentable {
         if controlador?.editando != true {
             context.coordinator.mostrar(markdown, emStreaming: emStreaming)
         }
+        context.coordinator.irPara(irParaSeccao)
     }
 
     static func dismantleNSView(_ web: WKWebView, coordinator: Coordenador) {
@@ -120,6 +155,7 @@ struct NotesWebView: NSViewRepresentable {
         weak var web: WKWebView?
         var aoClicarTimestamp: ((Double) -> Void)?
         var aoPerguntar: ((String) -> Void)?
+        var aoClicarSeccao: ((LigacaoSeccao) -> Void)?
         weak var controlador: ControladorNotas?
         let esquema = EsquemaAula()
         var pastaAula: URL?
@@ -131,6 +167,9 @@ struct NotesWebView: NSViewRepresentable {
         private var pendente: (String, Bool)?
         private var ultimoRender = Date.distantPast
         private var agendado = false
+        /// Título pedido ainda por mostrar (espera que a página esteja renderizada) e o último já mostrado.
+        private var seccaoPedida: PedidoSeccao?
+        private var seccaoFeita: UUID?
 
         func mostrar(_ markdown: String, emStreaming: Bool) {
             guard markdown != mostrado else { return }
@@ -154,13 +193,17 @@ struct NotesWebView: NSViewRepresentable {
             guard let (markdown, emStreaming) = pendente, let web else { return }
             pendente = nil
             mostrado = markdown
-            ultimoRender = .now
             guard let json = try? JSONEncoder().encode(markdown), let literal = String(data: json, encoding: .utf8) else { return }
             let base = pastaAula.map { esquema.base(para: $0) } ?? ""
+            let primeiro = ultimoRender == .distantPast
+            ultimoRender = .now
             web.evaluateJavaScript("renderMarkdown(\(literal), \(emStreaming), '\(base)')") { [weak self] _, _ in
+                // A procura pedida antes de a página carregar (a página refaz sozinha as seguintes).
+                if primeiro, let termo = self?.controlador?.termoProcura, !termo.isEmpty { self?.controlador?.procurar(termo) }
                 // O realce perde-se ao renderizar de novo.
                 self?.realcado = nil
                 self?.aplicarRealce()
+                self?.aplicarSeccao()
             }
         }
 
@@ -170,6 +213,19 @@ struct NotesWebView: NSViewRepresentable {
             termosPedidos = termos
             realcado = nil
             aplicarRealce()
+        }
+
+        func irPara(_ pedido: PedidoSeccao?) {
+            guard let pedido, pedido.id != seccaoFeita, pedido != seccaoPedida else { return }
+            seccaoPedida = pedido
+            aplicarSeccao()
+        }
+
+        private func aplicarSeccao() {
+            guard let pedido = seccaoPedida, carregado, pendente == nil, let web else { return }
+            seccaoPedida = nil
+            seccaoFeita = pedido.id
+            web.evaluateJavaScript("irParaSeccao(\(pedido.indice))")
         }
 
         private func aplicarRealce() {
@@ -215,6 +271,14 @@ struct NotesWebView: NSViewRepresentable {
                 (web as? WebNotas)?.haSelecao = message.body as? Bool ?? false
             case "perguntar":
                 if let texto = message.body as? String { aoPerguntar?(texto) }
+            case "procura":
+                guard let d = message.body as? [String: Any] else { return }
+                let r = ControladorNotas.Procura(total: (d["total"] as? NSNumber)?.intValue ?? 0,
+                                                 atual: (d["atual"] as? NSNumber)?.intValue ?? -1)
+                if controlador?.procura != r { controlador?.procura = r }
+            case "seccao":
+                guard let d = message.body as? [String: Any], let ancora = d["ancora"] as? String else { return }
+                aoClicarSeccao?(LigacaoSeccao(ancora: ancora, texto: d["texto"] as? String ?? ""))
             default:
                 if let segundos = message.body as? Double { aoClicarTimestamp?(segundos) }
                 else if let segundos = message.body as? Int { aoClicarTimestamp?(Double(segundos)) }

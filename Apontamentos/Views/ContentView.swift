@@ -50,6 +50,8 @@ struct ContentView: View {
                         DivisoriaPainel(largura: $larguraPerguntas)
                         PerguntasView(aula: aula) { segundos in
                             navegacao.destino = DestinoAula(pasta: aula.pasta, separador: .transcricao, tempo: segundos)
+                        } aoClicarSeccao: { ligacao in
+                            navegacao.destino = DestinoAula(pasta: aula.pasta, separador: .apontamentos, seccao: ligacao)
                         }
                         .id(aula.pasta)
                         .frame(width: larguraPerguntas)
