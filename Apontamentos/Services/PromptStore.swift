@@ -22,6 +22,8 @@ enum PromptStore {
     static let versoesAntigas: Set<String> = [
         "469769ba271771f4de02e97d3d4f652775f5dbcfbb306ddfbe66d7b6cf6a8097",
         "57a47886b9e4a71f8f01122e5b3a7f3af9c9aab00c8d534e83974bd2cfddfe63",
+        "276b739eee9dc9a7af6de6d727ffd6182943fc2148fb5b71434a5c3727adf2cc",
+        "cbb5b78db8a926614ea49e70a4036936d4640f4bea72c18c60710c1419d59ba3",
     ]
 
     static func ler() -> String {
