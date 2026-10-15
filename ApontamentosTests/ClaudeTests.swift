@@ -142,19 +142,35 @@ struct ClaudeCodeTests {
 }
 
 struct PDFProfessorTests {
-    @Test func pdfSubstituiAsCapturasNoPedido() throws {
+    private static let json: JSONEncoder = {
+        let e = JSONEncoder()
+        e.outputFormatting = .withoutEscapingSlashes
+        return e
+    }()
+
+    @Test func pdfsECapturasNoPedido() throws {
         let t = Transcricao(idioma: "es", modelo: "m", duracao: 60, criadaEm: .now, segmentos: [Segmento(inicio: 0, fim: 2, texto: "Hola")])
         let slide = SlideComImagem(slide: Slide(ficheiro: "s.jpg", inicio: 0, fim: 2), jpeg: Data([1, 2, 3]))
         var ctx = ContextoAula(cadeira: "C", titulo: "T", data: .now, glossario: "", transcricao: t, slides: [slide])
-        let semPDF = String(data: try JSONEncoder().encode(NotesGenerator.conteudo(ctx)), encoding: .utf8)!
+        let semPDF = String(data: try Self.json.encode(NotesGenerator.conteudo(ctx)), encoding: .utf8)!
         #expect(semPDF.contains("\"image\""))
         #expect(!semPDF.contains("\"document\""))
+        #expect(semPDF.contains("(slide:N)") && !semPDF.contains("slide:P/N"))
 
-        ctx.pdfProfessor = Data("%PDF-1.4".utf8)
-        ctx.slides = []
-        let comPDF = String(data: try JSONEncoder().encode(NotesGenerator.conteudo(ctx)), encoding: .utf8)!
-        #expect(comPDF.contains("\"document\""))
-        #expect(comPDF.contains("application\\/pdf") || comPDF.contains("application/pdf"))
-        #expect(!comPDF.contains("\"image\""))
+        ctx.pdfsProfessor = [
+            PDFComDados(pdf: PDFProfessor(numero: 1, nome: "Tema 1.pdf"), dados: Data("%PDF-1.4".utf8)),
+            PDFComDados(pdf: PDFProfessor(numero: 3), dados: Data("%PDF-1.4".utf8)),
+        ]
+        let blocos = NotesGenerator.conteudo(ctx)
+        let comPDF = String(data: try Self.json.encode(blocos), encoding: .utf8)!
+        #expect(comPDF.components(separatedBy: "\"document\"").count == 3)
+        #expect(comPDF.contains("application/pdf"))
+        // As capturas continuam, para se saber que páginas foram dadas, e podem ser citadas à parte.
+        #expect(comPDF.contains("\"image\""))
+        #expect(comPDF.contains("Captura 1"))
+        #expect(comPDF.contains("PDF 1 \\\"Tema 1\\\":"))
+        #expect(comPDF.contains("PDF 3:"))
+        #expect(comPDF.contains("slide:P/N") && comPDF.contains("(slide:N)"))
+        #expect(comPDF.contains("fica de fora por completo"))
     }
 }

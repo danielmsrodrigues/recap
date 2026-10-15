@@ -169,7 +169,7 @@ final class PipelineRunner {
             throw NSError(domain: "Apontamentos", code: 3, userInfo: [NSLocalizedDescriptionKey: "A pasta da aula desapareceu."])
         }
 
-        // As páginas do PDF viram imagens antes do pedido, para os slides poderem entrar nos apontamentos.
+        // As páginas dos PDFs viram imagens antes do pedido, para os slides poderem entrar nos apontamentos.
         let paginasPDF = await SlidesNosApontamentos.garantirPaginasEmFundo(em: job.pastaAula)
         let contexto = ContextoAula.carregar(aula, library: library, transcricao: transcricao)
         let prompt = PromptStore.ler()
@@ -194,7 +194,7 @@ final class PipelineRunner {
         job.aviso = nil
 
         var markdown = SlidesNosApontamentos.resolver(resultado.markdown, imagens: SlidesNosApontamentos.imagens(
-            em: job.pastaAula, paginasPDF: paginasPDF, capturas: contexto.slides.map(\.slide)))
+            paginasPDF: paginasPDF, capturas: contexto.slides.map(\.slide)))
         var titulo: String?
         // Lido de novo: o utilizador pode ter mudado o título à mão enquanto o Claude escrevia.
         let tituloManual = (try? Disco.lerMeta(job.pastaAula))?.tituloManual ?? aula.meta.tituloManual

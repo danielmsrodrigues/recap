@@ -6,8 +6,8 @@ import Testing
 
 struct SlidesNosApontamentosTests {
     @Test func trocaMarcasPelosFicheiros() {
-        let md = "## Classes [18:25]\n\n![Slide 6 — Clases de empresa](slide:6)\n\nTexto.\n![Slide 99](slide:99)\nFim."
-        let imagens = SlidesNosApontamentos.imagens(em: URL(fileURLWithPath: "/tmp"), paginasPDF: 36, capturas: [])
+        let md = "## Classes [18:25]\n\n![Slide 6 — Clases de empresa](slide:1/6)\n\nTexto.\n![Slide 99](slide:1/99)\nFim."
+        let imagens = SlidesNosApontamentos.imagens(paginasPDF: [1: 36], capturas: [])
         let r = SlidesNosApontamentos.resolver(md, imagens: imagens)
         #expect(r.contains("![Slide 6 — Clases de empresa](slides-pdf/pagina-06.jpg)\n"))
         // Um slide que não existe sai, com a sua linha.
@@ -17,27 +17,106 @@ struct SlidesNosApontamentosTests {
 
     @Test func capturasPelaOrdem() {
         let capturas = [Slide(ficheiro: "slide_01_00-00.jpg", inicio: 0, fim: 1), Slide(ficheiro: "slide_02_24-26.jpg", inicio: 1, fim: 2)]
-        let imagens = SlidesNosApontamentos.imagens(em: URL(fileURLWithPath: "/tmp"), paginasPDF: nil, capturas: capturas)
+        let imagens = SlidesNosApontamentos.imagens(paginasPDF: [:], capturas: capturas)
         #expect(SlidesNosApontamentos.resolver("![Slide 2](slide:2)", imagens: imagens) == "![Slide 2](slides/slide_02_24-26.jpg)")
+    }
+
+    @Test func variosPDFsECapturasSemAmbiguidade() {
+        let capturas = [Slide(ficheiro: "slide_01_00-00.jpg", inicio: 0, fim: 1)]
+        let imagens = SlidesNosApontamentos.imagens(paginasPDF: [1: 10, 3: 5], capturas: capturas)
+        let md = "![a](slide:1/7)\n![b](slide: 3 / 5)\n![c](slide:1)\n![d](slide:2/1)\n![e](slide:3/6)\nFim."
+        let r = SlidesNosApontamentos.resolver(md, imagens: imagens)
+        #expect(r == "![a](slides-pdf/pagina-07.jpg)\n![b](slides-pdf-3/pagina-05.jpg)\n![c](slides/slide_01_00-00.jpg)\nFim.")
+    }
+
+    private static func pdf(paginas: Int, tom: Double = 0.5) throws -> PDFDocument {
+        let pdf = PDFDocument()
+        for i in 0..<paginas {
+            let img = NSImage(size: NSSize(width: 400, height: 225))
+            img.lockFocus(); NSColor(white: (tom + Double(i)) / Double(paginas + 1), alpha: 1).setFill(); NSRect(x: 0, y: 0, width: 400, height: 225).fill(); img.unlockFocus()
+            pdf.insert(try #require(PDFPage(image: img)), at: i)
+        }
+        return pdf
     }
 
     @Test func criaUmaImagemPorPagina() throws {
         let pasta = FileManager.default.temporaryDirectory.appending(path: "slides-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: pasta, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: pasta) }
-        let pdf = PDFDocument()
-        for i in 0..<3 {
-            let img = NSImage(size: NSSize(width: 400, height: 225))
-            img.lockFocus(); NSColor(white: Double(i) / 3, alpha: 1).setFill(); NSRect(x: 0, y: 0, width: 400, height: 225).fill(); img.unlockFocus()
-            pdf.insert(try #require(PDFPage(image: img)), at: i)
-        }
-        #expect(pdf.write(to: pasta.appending(path: Disco.slidesPDF)))
-        #expect(try SlidesNosApontamentos.garantirPaginas(em: pasta) == 3)
+        // Uma aula antiga: só `slides-professor.pdf`, sem nome em aula.json.
+        #expect(try Self.pdf(paginas: 3).write(to: pasta.appending(path: "slides-professor.pdf")))
+        let pdfs = Disco.pdfsProfessor(pasta)
+        #expect(pdfs == [PDFProfessor(numero: 1)])
+        #expect(pdfs[0].titulo == "PDF 1")
+        #expect(try SlidesNosApontamentos.garantirPaginas(de: pdfs[0], em: pasta) == 3)
         let pagina = pasta.appending(path: "slides-pdf/pagina-03.jpg")
         let imagem = try #require(NSImage(contentsOf: pagina))
         #expect(imagem.representations.first?.pixelsWide == 1600)
-        SlidesNosApontamentos.apagarPaginas(em: pasta)
+        SlidesNosApontamentos.apagarPaginas(de: pdfs[0], em: pasta)
         #expect(!FileManager.default.fileExists(atPath: pagina.path))
+    }
+
+    @Test func juntarERemoverVariosPDFs() async throws {
+        let base = FileManager.default.temporaryDirectory.appending(path: "pdfs-\(UUID().uuidString)")
+        let pasta = base.appending(path: "aula"), origem = base.appending(path: "origem")
+        for p in [pasta, origem] { try FileManager.default.createDirectory(at: p, withIntermediateDirectories: true) }
+        defer { try? FileManager.default.removeItem(at: base) }
+        let tema1 = origem.appending(path: "Tema 1.pdf"), tema2 = origem.appending(path: "Tema 2.pdf"), tema3 = origem.appending(path: "Tema 3.pdf")
+        #expect(try Self.pdf(paginas: 2, tom: 0.1).write(to: tema1))
+        #expect(try Self.pdf(paginas: 3, tom: 0.6).write(to: tema2))
+        #expect(try Self.pdf(paginas: 1, tom: 0.9).write(to: tema3))
+
+        let juntados = try Disco.juntarPDFsProfessor([tema1, tema2], em: pasta)
+        #expect(juntados.map(\.numero) == [1, 2])
+        #expect(juntados.map(\.nome) == ["Tema 1.pdf", "Tema 2.pdf"])
+        #expect(Disco.existe("slides-professor.pdf", em: pasta) && Disco.existe("slides-professor-2.pdf", em: pasta))
+        // O mesmo PDF outra vez não entra.
+        #expect(try Disco.juntarPDFsProfessor([tema2], em: pasta).isEmpty)
+
+        let nomes = Dictionary(uniqueKeysWithValues: juntados.map { ($0.ficheiro, $0.nome!) })
+        #expect(Disco.pdfsProfessor(pasta, nomes: nomes).map(\.titulo) == ["Tema 1", "Tema 2"])
+        #expect(await SlidesNosApontamentos.garantirPaginasEmFundo(em: pasta) == [1: 2, 2: 3])
+        #expect(Disco.existe("slides-pdf-2/pagina-03.jpg", em: pasta))
+
+        // Remover o primeiro não renumera o segundo (os apontamentos já feitos apontam para as páginas dele).
+        try Disco.removerPDFProfessor(juntados[0], em: pasta)
+        #expect(Disco.pdfsProfessor(pasta, nomes: [:]).map(\.numero) == [2])
+        #expect(!Disco.existe("slides-pdf", em: pasta) && Disco.existe("slides-pdf-2/pagina-01.jpg", em: pasta))
+        #expect(try Disco.juntarPDFsProfessor([tema3], em: pasta).map(\.numero) == [3])
+    }
+
+    @Test func limiteSomaOsPDFs() throws {
+        let base = FileManager.default.temporaryDirectory.appending(path: "pdfs-\(UUID().uuidString)")
+        let pasta = base.appending(path: "aula")
+        try FileManager.default.createDirectory(at: pasta, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let grande = base.appending(path: "grande.pdf"), outro = base.appending(path: "outro.pdf")
+        try Data(count: Disco.tamanhoMaximoPDF / 2 + 1).write(to: grande)
+        try Data(repeating: 1, count: Disco.tamanhoMaximoPDF / 2 + 1).write(to: outro)
+        _ = try Disco.juntarPDFsProfessor([grande], em: pasta)
+        #expect(throws: (any Error).self) { try Disco.juntarPDFsProfessor([outro], em: pasta) }
+        #expect(Disco.pdfsProfessor(pasta, nomes: [:]).count == 1)
+    }
+
+    @Test func numeroPeloNomeDoFicheiro() {
+        #expect(PDFProfessor.numero(doFicheiro: "slides-professor.pdf") == 1)
+        #expect(PDFProfessor.numero(doFicheiro: "slides-professor-12.pdf") == 12)
+        #expect(PDFProfessor.numero(doFicheiro: "slides-professor-02.pdf") == nil)
+        #expect(PDFProfessor.numero(doFicheiro: "slides-professor-1.pdf") == nil)
+        #expect(PDFProfessor.numero(doFicheiro: "apontamentos.pdf") == nil)
+        #expect(PDFProfessor(numero: 12).ficheiro == "slides-professor-12.pdf")
+        #expect(PDFProfessor(numero: 12).pastaPaginas == "slides-pdf-12")
+    }
+
+    @Test func capturasEspalhadasAteAoLimite() {
+        let capturas = (0..<100).map { SlideComImagem(slide: Slide(ficheiro: "\($0).jpg", inicio: Double($0), fim: Double($0) + 1), jpeg: Data(count: 10)) }
+        let quarenta = ContextoAula.capturasQueCabem(capturas, bytes: 10_000)
+        #expect(quarenta.count == 40)
+        #expect(quarenta.first?.slide.ficheiro == "0.jpg" && quarenta.last?.slide.ficheiro == "99.jpg")
+        #expect(Set(quarenta.map(\.slide.ficheiro)).count == 40)
+        #expect(ContextoAula.capturasQueCabem(capturas, bytes: 50).count == 5)
+        #expect(ContextoAula.capturasQueCabem(capturas, bytes: 5).isEmpty)
+        #expect(ContextoAula.capturasQueCabem(Array(capturas.prefix(7)), bytes: 10_000).count == 7)
     }
 }
 

@@ -3,7 +3,7 @@
 App para Mac que transforma aulas em apontamentos de estudo em português (PT-PT). Transcreve a aula com o Whisper, no próprio Mac, e o Claude escreve os apontamentos com fórmulas em LaTeX, glossário, dúvidas e perguntas de revisão.
 
 - **Fontes:** um vídeo da aula, ou o som de uma aula ao vivo ou de uma gravação a tocar no browser ("Transcrever em direto").
-- **Slides:** apanha os slides do vídeo ou da janela da aula. Também aceita o PDF dos slides do professor.
+- **Slides:** apanha os slides do vídeo ou da janela da aula. Também aceita os PDFs dos slides do professor, um ou mais por aula.
 - **Estudo:**
   - perguntas à aula, num painel ao lado dos apontamentos;
   - exercícios extra, com a resolução escondida;
@@ -51,7 +51,7 @@ Na primeira abertura, a janela **Preparar o Recap** guia os três passos que fal
 - **Aula ao vivo ou gravação no browser:** usa **+ → Transcrever em direto…** e escolhe a janela da aula.
   - Para os slides saírem, a janela da aula tem de estar à vista, por exemplo noutro monitor.
   - O Recap termina sozinho ao fim de 3 minutos de silêncio.
-- **PDF dos slides do professor:** dentro da aula, abre o menu **Slides do professor**.
+- **PDFs dos slides do professor:** dentro da aula, abre o menu **Slides do professor** (podes juntar vários; o Claude usa só as páginas dadas nessa aula).
 - **Revisão:** o ponto azul na barra lateral marca as aulas por rever. Marca-as como revistas no botão do canto superior direito.
 
 ## Compilar a partir do código

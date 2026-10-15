@@ -20,12 +20,12 @@ struct AulaDetailView: View {
     @State private var transcricao: Transcricao?
     @State private var apontamentos: String?
     @State private var slides: [Slide]?
-    @State private var pdfProfessor: URL?
+    @State private var pdfsProfessor: [PDFProfessor] = []
     @State private var escolherPDF = false
     @State private var estadoVideo: VideoResolver.Estado?
     @State private var confirmarRegenerar = false
-    /// O PDF dos slides acabou de ser juntado (muda o texto da confirmação de regenerar).
-    @State private var pdfJuntado = false
+    /// PDFs dos slides acabados de juntar (muda o texto da confirmação de regenerar).
+    @State private var pdfsJuntados = 0
     @State private var estimativa: String?
     @State private var localizarVideo = false
     @State private var erro: String?
@@ -87,10 +87,10 @@ struct AulaDetailView: View {
             Text(avisoRegenerar)
         }
         .task(id: confirmarRegenerar) {
-            if confirmarRegenerar { await estimar() } else { pdfJuntado = false }
+            if confirmarRegenerar { await estimar() } else { pdfsJuntados = 0 }
         }
-        .fileImporter(isPresented: $escolherPDF, allowedContentTypes: [.pdf]) { resultado in
-            if case .success(let url) = resultado { juntarPDFProfessor(url) }
+        .fileImporter(isPresented: $escolherPDF, allowedContentTypes: [.pdf], allowsMultipleSelection: true) { resultado in
+            if case .success(let urls) = resultado, !urls.isEmpty { juntarPDFsProfessor(urls) }
         }
         .fileImporter(isPresented: $localizarVideo, allowedContentTypes: [.movie, .mpeg4Movie, .quickTimeMovie]) { resultado in
             if case .success(let url) = resultado { religarVideo(url) }
@@ -161,7 +161,7 @@ struct AulaDetailView: View {
 
     /// Aulas captadas em direto sem slides nem PDF não têm o separador Slides.
     private var tabs: [Tab] {
-        aula.meta.origem == "direto" && slides == nil && pdfProfessor == nil ? Tab.allCases.filter { $0 != .slides } : Tab.allCases
+        aula.meta.origem == "direto" && slides == nil && pdfsProfessor.isEmpty ? Tab.allCases.filter { $0 != .slides } : Tab.allCases
     }
 
     private var subtitulo: String {
@@ -203,7 +203,7 @@ struct AulaDetailView: View {
                 navegacao.destino = DestinoAula(pasta: pasta, separador: .apontamentos)
             }
         case .slides:
-            SlidesView(pasta: aula.pasta, slides: slides, pdf: pdfProfessor, podeExtrair: urlVideo != nil && job?.ativo != true) {
+            SlidesView(pasta: aula.pasta, slides: slides, pdfs: pdfsProfessor, podeExtrair: urlVideo != nil && job?.ativo != true) {
                 try? FileManager.default.removeItem(at: aula.pasta.appending(path: Disco.slidesJSON))
                 fila.adicionar(Job(pastaAula: aula.pasta, titulo: aula.meta.titulo, video: urlVideo, gerarApontamentos: false))
             }
@@ -218,7 +218,11 @@ struct AulaDetailView: View {
     }
 
     private var avisoRegenerar: String {
-        var t = pdfJuntado ? "Os apontamentos atuais foram feitos sem este PDF. Ao regenerar, os slides entram nos tópicos certos.\n\n" : ""
+        var t = switch pdfsJuntados {
+        case 0: ""
+        case 1: "Os apontamentos atuais foram feitos sem este PDF. Ao regenerar, os slides dados na aula entram nos tópicos certos.\n\n"
+        default: "Os apontamentos atuais foram feitos sem estes PDFs. Ao regenerar, os slides dados na aula entram nos tópicos certos.\n\n"
+        }
         t += "Os apontamentos atuais são substituídos e ficam guardados em \(Disco.apontamentosAnteriorMD). A transcrição e os slides são reutilizados."
         if aula.meta.temEdicoesManuais { t += "\n\nAtenção: fizeste alterações à mão depois da última geração." }
         if let estimativa { t += "\n\n\(estimativa)" }
@@ -268,12 +272,15 @@ struct AulaDetailView: View {
             .help("Enviar o PDF para o Freeform, AirDrop (iPad/iPhone), Notas…")
             .disabled(!pdfPronto)
             Menu("Slides do professor", systemImage: "doc.richtext") {
-                Button(pdfProfessor == nil ? "Juntar PDF dos slides…" : "Substituir PDF dos slides…") { escolherPDF = true }
-                if pdfProfessor != nil {
-                    Button("Remover PDF dos slides", role: .destructive) { removerPDFProfessor() }
+                Button(pdfsProfessor.isEmpty ? "Juntar PDFs dos slides…" : "Juntar mais PDFs…") { escolherPDF = true }
+                if !pdfsProfessor.isEmpty {
+                    Divider()
+                    ForEach(pdfsProfessor) { pdf in
+                        Button("Remover \"\(pdf.titulo)\"", role: .destructive) { removerPDFProfessor(pdf) }
+                    }
                 }
             }
-            .help("Juntar os slides em PDF publicados pelo professor; o Claude usa-os como fonte principal")
+            .help("Juntar os slides em PDF publicados pelo professor (um ou mais); o Claude usa só as páginas dadas na aula")
             Menu("Exportar", systemImage: "arrow.down.doc") {
                 Button("PDF…") { exportar(pdf: true) }.disabled(!pdfPronto)
                 Button("Markdown (.md)…") { exportar(pdf: false) }
@@ -343,7 +350,7 @@ struct AulaDetailView: View {
         transcricao = Disco.lerTranscricao(aula.pasta)
         apontamentos = Disco.lerApontamentos(aula.pasta)
         slides = Disco.lerSlides(aula.pasta)
-        pdfProfessor = Disco.urlPDFProfessor(aula.pasta)
+        pdfsProfessor = Disco.pdfsProfessor(aula.pasta, nomes: aula.meta.nomesPDFs ?? [:])
         atualizarPDF()
         guard let ref = aula.meta.video else { estadoVideo = nil; return }
         let estado = VideoResolver.resolver(ref)
@@ -464,17 +471,26 @@ struct AulaDetailView: View {
         houveEdicao = false
     }
 
-    private func juntarPDFProfessor(_ url: URL) {
-        let acedeu = url.startAccessingSecurityScopedResource()
-        defer { if acedeu { url.stopAccessingSecurityScopedResource() } }
+    private func juntarPDFsProfessor(_ urls: [URL]) {
+        let acedeu = urls.map { $0.startAccessingSecurityScopedResource() }
+        defer { for (url, sim) in zip(urls, acedeu) where sim { url.stopAccessingSecurityScopedResource() } }
         do {
-            try Disco.juntarPDFProfessor(url, em: aula.pasta)
-            pdfProfessor = Disco.urlPDFProfessor(aula.pasta)
+            let juntados = try Disco.juntarPDFsProfessor(urls, em: aula.pasta)
+            guard !juntados.isEmpty else {
+                erro = urls.count == 1 ? "Este PDF já está nesta aula." : "Estes PDFs já estão nesta aula."
+                return
+            }
+            try library.atualizarMeta(em: aula.pasta) { meta in
+                var nomes = meta.nomesPDFs ?? [:]
+                for pdf in juntados { nomes[pdf.ficheiro] = pdf.nome }
+                meta.nomesPDFs = nomes
+            }
+            pdfsProfessor = Disco.pdfsProfessor(aula.pasta)
             let pasta = aula.pasta
             Task { await SlidesNosApontamentos.garantirPaginasEmFundo(em: pasta) }
-            // Com apontamentos já feitos sem o PDF, propõe refazê-los para os slides entrarem nos tópicos.
+            // Com apontamentos já feitos sem estes PDFs, propõe refazê-los para os slides entrarem nos tópicos.
             if apontamentos != nil, job?.ativo != true, definicoes.faltaParaGerar == nil, !controlador.editando {
-                pdfJuntado = true
+                pdfsJuntados = juntados.count
                 confirmarRegenerar = true
             } else {
                 tab = .slides
@@ -485,12 +501,11 @@ struct AulaDetailView: View {
     }
 
     /// Vai para o Lixo (recuperável).
-    private func removerPDFProfessor() {
-        guard let pdfProfessor else { return }
+    private func removerPDFProfessor(_ pdf: PDFProfessor) {
         do {
-            try FileManager.default.trashItem(at: pdfProfessor, resultingItemURL: nil)
-            SlidesNosApontamentos.apagarPaginas(em: aula.pasta)
-            self.pdfProfessor = nil
+            try Disco.removerPDFProfessor(pdf, em: aula.pasta)
+            try? library.atualizarMeta(em: aula.pasta) { $0.nomesPDFs?[pdf.ficheiro] = nil }
+            pdfsProfessor.removeAll { $0.numero == pdf.numero }
         } catch {
             erro = error.localizedDescription
         }

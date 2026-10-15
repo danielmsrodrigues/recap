@@ -8,9 +8,15 @@ struct ContextoAula: Sendable {
     var data: Date
     var glossario: String
     var transcricao: Transcricao
+    /// Capturas dos slides (do vídeo ou em direto). Com PDFs do professor, servem para saber que páginas foram dadas.
     var slides: [SlideComImagem] = []
-    /// PDF dos slides publicado pelo professor; quando existe, substitui as capturas do vídeo.
-    var pdfProfessor: Data?
+    /// PDFs dos slides publicados pelo professor; quando existem, são a fonte principal dos slides.
+    var pdfsProfessor: [PDFComDados] = []
+}
+
+struct PDFComDados: Sendable {
+    var pdf: PDFProfessor
+    var dados: Data
 }
 
 struct SlideComImagem: Sendable {
@@ -56,22 +62,35 @@ struct NotesGenerator: Sendable {
 
     static func conteudo(_ c: ContextoAula) -> [BlocoConteudo] {
         var pedido = "Escreve os apontamentos desta aula seguindo as instruções."
-        if c.pdfProfessor != nil || !c.slides.isEmpty {
-            let numero = c.pdfProfessor != nil ? "o número da página do PDF (a primeira é 1)" : "o número do slide na lista acima"
+        if !c.pdfsProfessor.isEmpty || !c.slides.isEmpty {
+            var marcas: [String] = []
+            if !c.pdfsProfessor.isEmpty {
+                marcas.append("`![Slide N — <título curto>](slide:P/N)` para a página N do PDF P (a primeira página de cada PDF é 1)")
+            }
+            if !c.slides.isEmpty {
+                marcas.append("`![Slide N — <título curto>](slide:N)` para a \(c.pdfsProfessor.isEmpty ? "imagem" : "captura") N da lista acima")
+            }
+            pedido += "\n\nSlides dentro dos apontamentos:\n- Para mostrar um slide, escreve numa linha própria \(marcas.joined(separator: ", ou "))."
+            if !c.pdfsProfessor.isEmpty && !c.slides.isEmpty {
+                pedido += "\n- Prefere sempre a página do PDF. Usa uma captura só para o que foi projetado e não está em nenhum PDF."
+            }
             pedido += """
 
-
-            Slides dentro dos apontamentos:
-            - Para mostrar um slide, escreve numa linha própria `![Slide N — <título curto>](slide:N)`, em que N é \(numero).
             - Põe cada slide dado na aula logo a seguir ao título ou ao parágrafo do tema a que pertence. Cada slide entra uma vez só.
             - Deixa de fora capas, separadores de tema, índices, slides só com logótipos ou imagens decorativas, slides repetidos e slides que não foram dados nesta aula.
             - A imagem não substitui o texto: a matéria do slide continua escrita nos apontamentos, para se estudar e pesquisar sem a imagem.
             """
+            if !c.pdfsProfessor.isEmpty {
+                pedido += """
+
+                - Em "Avisos", diz de cada PDF que páginas foram dadas nesta aula e quais ficaram de fora (por exemplo "PDF 2 (Tema 3): páginas 4–18; 19–30 ainda por dar"), ou que o PDF não corresponde a esta aula e foi ignorado.
+                """
+            }
         }
         return materiais(c) + [.texto(pedido)]
     }
 
-    /// Cabeçalho, glossário, slides (ou o PDF do professor) e transcrição: o que se sabe da aula.
+    /// Cabeçalho, glossário, PDFs do professor, capturas dos slides e transcrição: o que se sabe da aula.
     static func materiais(_ c: ContextoAula) -> [BlocoConteudo] {
         var cabecalho = """
         Cadeira: \(c.cadeira)
@@ -84,14 +103,26 @@ struct NotesGenerator: Sendable {
             cabecalho += "\n\nGlossário da cadeira (termos que costumam aparecer; usa-os para corrigir a transcrição):\n\(glossario)"
         }
         var blocos: [BlocoConteudo] = [.texto(cabecalho)]
-        if let pdf = c.pdfProfessor {
-            let paginas = PDFDocument(data: pdf)?.pageCount
-            blocos.append(.texto("Slides publicados pelo professor (PDF\(paginas.map { ", \($0) páginas" } ?? "")). Usa-os como fonte principal para a notação, as fórmulas, os valores e a ordem dos temas; a transcrição diz o que foi explicado sobre eles. O PDF pode trazer slides de outras aulas: usa só os que foram dados nesta."))
-            blocos.append(.documentoPDF(base64: pdf.base64EncodedString()))
-        } else if !c.slides.isEmpty {
-            blocos.append(.texto("Slides projetados na aula (\(c.slides.count)), cada um precedido do momento em que apareceu:"))
+        if !c.pdfsProfessor.isEmpty {
+            let quantos = c.pdfsProfessor.count == 1 ? "1 PDF" : "\(c.pdfsProfessor.count) PDFs"
+            let pelas = c.slides.isEmpty ? "pela transcrição" : "pela transcrição e pelas capturas do ecrã"
+            blocos.append(.texto("""
+            Slides publicados pelo professor (\(quantos)). Usa-os como fonte principal para a notação, as fórmulas, os valores e a ordem dos temas; a transcrição diz o que foi explicado sobre eles.
+            Cada PDF pode ter sido dado só em parte nesta aula, ou nada (pode trazer slides de outras aulas). Antes de escrever, identifica \(pelas) que páginas de cada PDF o professor deu nesta aula, e usa só essas: as outras não entram, nem como matéria nem como imagem. Um PDF sem nenhuma página dada nesta aula fica de fora por completo.
+            """))
+            for p in c.pdfsProfessor {
+                let paginas = PDFDocument(data: p.dados)?.pageCount
+                let nome = p.pdf.nome == nil ? "" : " \"\(p.pdf.titulo)\""
+                blocos.append(.texto("PDF \(p.pdf.numero)\(nome)\(paginas.map { " (\($0) páginas)" } ?? ""):"))
+                blocos.append(.documentoPDF(base64: p.dados.base64EncodedString()))
+            }
+        }
+        if !c.slides.isEmpty {
+            blocos.append(.texto(c.pdfsProfessor.isEmpty
+                ? "Slides projetados na aula (\(c.slides.count)), cada um precedido do momento em que apareceu:"
+                : "Capturas do ecrã durante a aula (\(c.slides.count)), cada uma precedida do momento em que apareceu. Mostram que páginas dos PDFs foram projetadas e quando:"))
             for (i, s) in c.slides.enumerated() {
-                var legenda = "[\(Timestamp.format(s.slide.inicio))] Slide \(i + 1)"
+                var legenda = "[\(Timestamp.format(s.slide.inicio))] \(c.pdfsProfessor.isEmpty ? "Slide" : "Captura") \(i + 1)"
                 if !s.slide.reaparicoes.isEmpty {
                     legenda += " (volta a aparecer em " + s.slide.reaparicoes.map { "[\(Timestamp.format($0))]" }.joined(separator: ", ") + ")"
                 }

@@ -7,35 +7,58 @@ struct SlidesView: View {
     let pasta: URL
     /// nil = ainda não extraídos.
     let slides: [Slide]?
-    /// PDF dos slides publicado pelo professor, se foi juntado à aula.
-    let pdf: URL?
+    /// PDFs dos slides publicados pelo professor juntados à aula.
+    let pdfs: [PDFProfessor]
     let podeExtrair: Bool
     let aoExtrair: () -> Void
     @State private var aberto: Slide?
-    @State private var verPDF = true
+    /// O que se escolheu ver; começa no primeiro PDF.
+    @State private var escolha: Origem?
+
+    /// Um PDF (pelo número) ou as capturas.
+    private enum Origem: Hashable { case pdf(Int), capturas }
+
+    /// A escolha, se ainda existe (o PDF pode ter sido removido).
+    private var origem: Origem {
+        switch escolha {
+        case .pdf(let n) where pdfs.contains(where: { $0.numero == n }): .pdf(n)
+        case .capturas where slides?.isEmpty == false: .capturas
+        default: pdfs.first.map { .pdf($0.numero) } ?? .capturas
+        }
+    }
 
     var body: some View {
-        if let pdf {
+        if pdfs.isEmpty {
+            capturas
+        } else {
             VStack(spacing: 0) {
-                if let slides, !slides.isEmpty {
-                    Picker("Origem", selection: $verPDF) {
-                        Text("PDF do professor").tag(true)
-                        Text("Capturas do vídeo (\(slides.count))").tag(false)
+                if pdfs.count > 1 || slides?.isEmpty == false {
+                    let seletor = Picker("Origem", selection: Binding(get: { origem }, set: { escolha = $0 })) {
+                        ForEach(pdfs) { pdf in
+                            Text(pdfs.count == 1 ? "PDF do professor" : pdf.titulo).tag(Origem.pdf(pdf.numero))
+                        }
+                        if let slides, !slides.isEmpty {
+                            Text("Capturas (\(slides.count))").tag(Origem.capturas)
+                        }
                     }
-                    .pickerStyle(.segmented)
                     .labelsHidden()
-                    .fixedSize()
+                    Group {
+                        // Vários PDFs, com nomes compridos, não cabem lado a lado: um menu com o escolhido.
+                        if pdfs.count == 1 {
+                            seletor.pickerStyle(.segmented).fixedSize()
+                        } else {
+                            seletor.pickerStyle(.menu).frame(maxWidth: 360)
+                        }
+                    }
                     .padding(.vertical, 8)
                     Divider()
                 }
-                if verPDF || slides?.isEmpty != false {
-                    VistaPDF(url: pdf)
+                if case .pdf(let n) = origem, let pdf = pdfs.first(where: { $0.numero == n }) {
+                    VistaPDF(url: pdf.url(em: pasta))
                 } else {
                     capturas
                 }
             }
-        } else {
-            capturas
         }
     }
 
