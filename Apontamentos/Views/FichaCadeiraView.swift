@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct FichaCadeiraView: View {
     let cadeira: Cadeira
     @Environment(Fichas.self) private var fichas
+    @Environment(Navegacao.self) private var navegacao
 
     @State private var ficha: String?
     @State private var controlador = ControladorNotas()
@@ -13,6 +14,11 @@ struct FichaCadeiraView: View {
     @State private var erro: String?
     @State private var escolherPrograma = false
     @State private var temPrograma = false
+    @State private var procurando = false
+    @State private var termoProcura = ""
+    @State private var pedidosProcura = 0
+    /// Texto a realçar (resultado da pesquisa em todas as aulas).
+    @State private var realce: [String] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -22,9 +28,14 @@ struct FichaCadeiraView: View {
                                 aoConcluir: { Task { await concluirEdicao() } })
                 Divider()
             }
+            if procurando {
+                BarraProcura(controlador: controlador, termo: $termoProcura, rotulo: "Procurar na ficha",
+                             pedidosFoco: pedidosProcura, aoFechar: fecharProcura)
+                Divider()
+            }
             estado
             if let ficha {
-                NotesWebView(markdown: ficha, controlador: controlador)
+                NotesWebView(markdown: ficha, controlador: controlador, realcar: controlador.editando ? [] : realce)
             } else {
                 ContentUnavailableView {
                     Label("Ainda sem informação sobre a cadeira", systemImage: "info.circle")
@@ -58,6 +69,15 @@ struct FichaCadeiraView: View {
                     .help("Corrigir ou acrescentar à ficha; as aulas seguintes juntam-se ao que escreveres")
                     .disabled(ficha == nil || controlador.editando || fichas.aAtualizar(cadeira) != nil)
             }
+        }
+        .focusedSceneValue(\.procurarNosApontamentos, ficha == nil ? nil : AcaoProcurar {
+            procurando = true
+            pedidosProcura += 1
+        })
+        .task(id: navegacao.destino) {
+            guard let d = navegacao.destino, d.pasta.mesmoCaminho(FichaCadeira.url(cadeira.pasta)) else { return }
+            navegacao.destino = nil
+            if !controlador.editando { realce = d.termos }
         }
         .task(id: fichas.versao) {
             if !controlador.editando { ficha = FichaCadeira.lerFicha(cadeira.pasta) }
@@ -101,6 +121,12 @@ struct FichaCadeiraView: View {
             .padding(.horizontal, 16).padding(.vertical, 8)
             Divider()
         }
+    }
+
+    private func fecharProcura() {
+        guard procurando else { return }
+        procurando = false
+        controlador.limparProcura()
     }
 
     private func removerPrograma() {

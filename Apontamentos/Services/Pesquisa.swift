@@ -34,6 +34,8 @@ struct ResultadoPesquisa: Identifiable, Sendable {
         case titulo
         case apontamentos
         case transcricao(Double)
+        /// Na ficha "Sobre a cadeira" (`pasta` é o ficheiro da ficha).
+        case ficha
     }
 
     var id = UUID()
@@ -46,7 +48,8 @@ struct ResultadoPesquisa: Identifiable, Sendable {
     var trecho: String
 }
 
-/// Pesquisa em todas as aulas: títulos, apontamentos (PT) e transcrições (ES), sem distinguir maiúsculas nem acentos.
+/// Pesquisa em todas as aulas e nas fichas das cadeiras: títulos, apontamentos (PT), transcrições (ES) e
+/// "Sobre a cadeira", sem distinguir maiúsculas nem acentos.
 /// Lê os ficheiros a cada pesquisa em vez de manter um índice em memória.
 enum Pesquisa {
     struct AulaRef: Sendable {
@@ -56,15 +59,30 @@ enum Pesquisa {
         var data: Date
     }
 
+    struct FichaRef: Sendable {
+        /// O ficheiro da ficha (`FichaCadeira.url`).
+        var url: URL
+        var cadeira: String
+    }
+
     static let maximoPorAula = 4
     static let maximoTotal = 200
     private static let opcoes: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
 
     @concurrent
-    static func procurar(_ termo: String, em aulas: [AulaRef]) async -> [ResultadoPesquisa] {
+    static func procurar(_ termo: String, em aulas: [AulaRef], fichas: [FichaRef] = []) async -> [ResultadoPesquisa] {
         let palavras = termo.split(whereSeparator: \.isWhitespace).map(String.init)
         guard !palavras.isEmpty else { return [] }
         var resultados: [ResultadoPesquisa] = []
+        // As fichas primeiro: é lá que estão datas, avaliação e regras, o que mais se procura assim.
+        for f in fichas {
+            guard let md = try? String(contentsOf: f.url, encoding: .utf8) else { continue }
+            let linhas = md.components(separatedBy: .newlines).filter { !$0.hasPrefix("# ") && contem($0, palavras) }
+            for linha in linhas.prefix(maximoPorAula) {
+                resultados.append(ResultadoPesquisa(pasta: f.url, titulo: FichaCadeira.tituloSeccao, cadeira: f.cadeira,
+                                                    data: .distantFuture, onde: .ficha, trecho: trecho(limparMarkdown(linha), palavras)))
+            }
+        }
         for aula in aulas.sorted(by: { $0.data > $1.data }) {
             if Task.isCancelled || resultados.count >= maximoTotal { break }
             func juntar(_ onde: ResultadoPesquisa.Onde, _ texto: String) {

@@ -114,3 +114,21 @@ struct FichaCadeiraTests {
         #expect(outra.contains("- Y") && outra.contains("já tinha entrado"))
     }
 }
+
+struct PesquisaFichaTests {
+    @Test func aPesquisaEncontraNaFichaPrimeiro() async throws {
+        let pasta = FileManager.default.temporaryDirectory.appending(path: "pesquisa-ficha-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: pasta, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: pasta) }
+        try FichaCadeira.escreverFicha("# Sobre a cadeira\n\n## Datas\n- Exame da 1.ª convocatória: 01/02/2027. (Aula 1)\n", em: pasta)
+        let ficha = Pesquisa.FichaRef(url: FichaCadeira.url(pasta), cadeira: "Probabilidade")
+
+        let r = await Pesquisa.procurar("EXAME convocatoria", em: [], fichas: [ficha])
+        #expect(r.count == 1)
+        #expect(r.first?.onde == .ficha)
+        #expect(r.first?.pasta == FichaCadeira.url(pasta))
+        #expect(r.first?.trecho.contains("01/02/2027") == true)
+        // O título da ficha não conta como resultado.
+        #expect(await Pesquisa.procurar("Sobre a cadeira", em: [], fichas: [ficha]).isEmpty)
+    }
+}

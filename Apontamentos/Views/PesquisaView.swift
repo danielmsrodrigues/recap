@@ -50,7 +50,8 @@ struct ResultadosPesquisaView: View {
             let aulas = library.cadeiras.flatMap(\.aulas).map {
                 Pesquisa.AulaRef(pasta: $0.pasta, titulo: $0.meta.titulo, cadeira: $0.cadeira, data: $0.meta.data)
             }
-            let encontrados = await Pesquisa.procurar(termo, em: aulas)
+            let fichas = library.cadeiras.map { Pesquisa.FichaRef(url: FichaCadeira.url($0.pasta), cadeira: $0.nome) }
+            let encontrados = await Pesquisa.procurar(termo, em: aulas, fichas: fichas)
             guard !Task.isCancelled else { return }
             resultados = encontrados
             aProcurar = false
@@ -62,13 +63,23 @@ struct ResultadosPesquisaView: View {
             switch r.onde {
             case .titulo: Image(systemName: "textformat").foregroundStyle(.secondary)
             case .apontamentos: Image(systemName: "doc.text").foregroundStyle(.secondary)
+            case .ficha: Image(systemName: "info.circle").foregroundStyle(.secondary)
             case .transcricao(let t):
                 Text(Timestamp.format(t)).font(.caption.monospacedDigit()).foregroundStyle(.tint)
             }
             Text(realcado(r.trecho)).font(.callout).lineLimit(3)
         }
         .contentShape(.rect)
-        .help(r.onde == .titulo ? "Título da aula" : (r.onde == .apontamentos ? "Nos apontamentos" : "Na transcrição"))
+        .help(ajuda(r.onde))
+    }
+
+    private func ajuda(_ onde: ResultadoPesquisa.Onde) -> String {
+        switch onde {
+        case .titulo: "Título da aula"
+        case .apontamentos: "Nos apontamentos"
+        case .ficha: "Na ficha da cadeira"
+        case .transcricao: "Na transcrição"
+        }
     }
 
     private func realcado(_ texto: String) -> AttributedString {
@@ -88,6 +99,8 @@ struct ResultadosPesquisaView: View {
             navegacao.destino = DestinoAula(pasta: r.pasta, separador: .apontamentos, termos: Pesquisa.termosParaRealcar(r.trecho, palavras))
         case .transcricao(let t):
             navegacao.destino = DestinoAula(pasta: r.pasta, separador: .transcricao, tempo: t)
+        case .ficha:
+            navegacao.destino = DestinoAula(pasta: r.pasta, separador: .apontamentos, termos: Pesquisa.termosParaRealcar(r.trecho, palavras))
         }
     }
 }

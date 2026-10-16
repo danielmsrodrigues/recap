@@ -4,6 +4,7 @@ import SwiftUI
 struct BarraProcura: View {
     let controlador: ControladorNotas
     @Binding var termo: String
+    var rotulo = "Procurar nos apontamentos"
     /// Cada pedido de ⌘F (com a barra já aberta) volta a pôr o cursor no campo.
     var pedidosFoco: Int
     let aoFechar: () -> Void
@@ -20,7 +21,7 @@ struct BarraProcura: View {
         HStack(spacing: 8) {
             HStack(spacing: 5) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("Procurar nos apontamentos", text: $termo)
+                TextField(rotulo, text: $termo)
                     .textFieldStyle(.plain)
                     .focused($focado)
                     .onKeyPress(.return, phases: .down) { tecla in
@@ -69,7 +70,7 @@ struct BarraProcura: View {
     }
 }
 
-/// A ação "Procurar nos apontamentos" (⌘F) da aula aberta, para o menu Editar.
+/// A ação "Procurar" (⌘F) da página aberta (apontamentos de uma aula ou ficha da cadeira), para o menu Editar.
 struct AcaoProcurar {
     let executar: () -> Void
 }
@@ -78,12 +79,12 @@ extension FocusedValues {
     @Entry var procurarNosApontamentos: AcaoProcurar?
 }
 
-/// Editar ▸ Procurar nos apontamentos… (⌘F), ativo quando há uma aula com apontamentos aberta.
+/// Editar ▸ Procurar… (⌘F), ativo quando há apontamentos ou uma ficha da cadeira abertos.
 struct ComandoProcurar: View {
     @FocusedValue(\.procurarNosApontamentos) private var procurar
 
     var body: some View {
-        Button("Procurar nos apontamentos…") { procurar?.executar() }
+        Button("Procurar…") { procurar?.executar() }
             .keyboardShortcut("f")
             .disabled(procurar == nil)
     }
