@@ -49,7 +49,12 @@ struct SidebarView: View {
                     }
                 } header: {
                     HStack {
+                        // O cabeçalho de secção do macOS é pequeno e cinzento; o nome da cadeira tem de se ler bem.
                         Text(cadeira.nome)
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                            .padding(.top, 4)
                         Spacer()
                         let porRever = Self.porRever(cadeira.aulas)
                         if porRever > 0 {
@@ -130,10 +135,17 @@ struct SidebarView: View {
                     }
                 }
             } label: {
-                HStack(spacing: 4) {
-                    Text(atual.nome).font(.headline)
+                // Uma cápsula, para se ler como seletor e não como mais um título acima das cadeiras.
+                HStack(spacing: 5) {
+                    Image(systemName: "calendar").foregroundStyle(.secondary)
+                    Text(atual.nome).fontWeight(.medium)
                     Image(systemName: "chevron.up.chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                 }
+                .font(.subheadline)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(.quaternary, in: .capsule)
+                .contentShape(.capsule)
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
@@ -142,8 +154,9 @@ struct SidebarView: View {
             .help("Mudar de semestre (a pesquisa procura em todos)")
             Spacer()
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 12)
+        .padding(.top, 4)
+        .padding(.bottom, 8)
     }
 
     private func expandida(_ cadeira: Cadeira) -> Binding<Bool> {
