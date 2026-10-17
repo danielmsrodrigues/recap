@@ -1,17 +1,30 @@
 import SwiftUI
 
-/// Definições de uma cadeira: o glossário que entra no prompt do Whisper e do Claude.
+/// Definições de uma cadeira: o semestre e o glossário que entra no prompt do Whisper e do Claude.
 struct CadeiraSheet: View {
     @Environment(Library.self) private var library
     @Environment(\.dismiss) private var dismiss
     let cadeira: Cadeira
     @State private var glossario = ""
     @State private var regiao: RegiaoIgnorar = .automatica
+    /// nil = deduzido da data das aulas.
+    @State private var semestre: Semestre?
     @State private var erro: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(cadeira.nome).font(.title2.bold())
+            Picker("Semestre", selection: $semestre) {
+                Text("Automático (\(cadeira.meta.semestre == nil ? cadeira.semestre.nome : "pela data das aulas"))").tag(Semestre?.none)
+                Divider()
+                ForEach(1...max(4, cadeira.semestre.ano), id: \.self) { ano in
+                    ForEach(1...2, id: \.self) { n in
+                        let s = Semestre(ano: ano, numero: n)
+                        Text(s.nome).tag(Optional(s))
+                    }
+                }
+            }
+            .fixedSize()
             Text("Glossário").font(.headline)
             Text("Um termo por linha, em espanhol, como o professor o diz. Podes acrescentar a tradução: `autovalor = valor próprio`. Os termos ajudam o Whisper a reconhecê-los (só cabem cerca de 30) e o Claude a traduzi-los.")
                 .font(.callout)
@@ -31,7 +44,11 @@ struct CadeiraSheet: View {
                 Button("Cancelar", role: .cancel) { dismiss() }
                 Button("Guardar") {
                     do {
-                        try library.guardarCadeira(CadeiraMeta(glossario: glossario, regiaoIgnorar: regiao), cadeira: cadeira)
+                        var meta = cadeira.meta
+                        meta.glossario = glossario
+                        meta.regiaoIgnorar = regiao
+                        meta.semestre = semestre
+                        try library.guardarCadeira(meta, cadeira: cadeira)
                         dismiss()
                     } catch {
                         erro = error.localizedDescription
@@ -45,6 +62,25 @@ struct CadeiraSheet: View {
         .onAppear {
             glossario = cadeira.meta.glossario
             regiao = cadeira.meta.regiaoIgnorar
+            semestre = cadeira.meta.semestre
+        }
+    }
+}
+
+/// As opções de um seletor de cadeira, agrupadas por semestre (o mais recente primeiro). A etiqueta é o nome da cadeira.
+struct OpcoesCadeira: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        let grupos = library.cadeirasPorSemestre
+        if grupos.count == 1 {
+            ForEach(grupos[0].cadeiras) { Text($0.nome).tag($0.nome) }
+        } else {
+            ForEach(grupos, id: \.semestre) { grupo in
+                Section(grupo.semestre.nome) {
+                    ForEach(grupo.cadeiras) { Text($0.nome).tag($0.nome) }
+                }
+            }
         }
     }
 }

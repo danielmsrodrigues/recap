@@ -19,7 +19,7 @@ struct EditarAulaSheet: View {
                 TextField("Título", text: $titulo)
                 DatePicker("Data", selection: $data, displayedComponents: .date)
                 Picker("Cadeira", selection: $cadeira) {
-                    ForEach(library.cadeiras) { Text($0.nome).tag($0.nome) }
+                    OpcoesCadeira()
                 }
             }
             .formStyle(.grouped)

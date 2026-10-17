@@ -35,7 +35,7 @@ struct NovaAulaSheet: View {
 
             Form {
                 Picker("Cadeira", selection: $cadeira) {
-                    ForEach(library.cadeiras) { Text($0.nome).tag($0.nome) }
+                    OpcoesCadeira()
                     if !library.cadeiras.isEmpty { Divider() }
                     Text("Nova cadeira…").tag(Self.novaCadeiraTag)
                 }
@@ -70,7 +70,7 @@ struct NovaAulaSheet: View {
 
     private func preencher() {
         if library.cadeira(nome: ultimaCadeira) != nil { cadeira = ultimaCadeira }
-        else if let primeira = library.cadeiras.first { cadeira = primeira.nome }
+        else if let primeira = library.cadeirasPorSemestre.first?.cadeiras.first { cadeira = primeira.nome }
         else { cadeira = Self.novaCadeiraTag }
 
         titulo = video.deletingPathExtension().lastPathComponent

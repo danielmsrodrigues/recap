@@ -40,6 +40,32 @@ struct GestaoTests {
         #expect(lib.cadeiras.map(\.nome) == ["Álgebra Lineal", "B"])
     }
 
+    @Test func semestreDeduzidoDasDatasOuEscolhido() throws {
+        let (lib, raiz) = try biblioteca()
+        defer { try? FileManager.default.removeItem(at: raiz) }
+        func data(_ texto: String) -> Date { try! Date(texto + "T12:00:00Z", strategy: .iso8601) }
+        #expect(Semestre.letivo(data("2026-10-14")) == (2026, 1))
+        #expect(Semestre.letivo(data("2027-01-20")) == (2026, 1))
+        #expect(Semestre.letivo(data("2027-02-15")) == (2026, 2))
+
+        _ = try lib.criarAula(cadeira: "Empresas", titulo: "A", data: data("2026-10-14"), video: nil)
+        _ = try lib.criarAula(cadeira: "Álgebra", titulo: "A", data: data("2027-03-02"), video: nil)
+        _ = try lib.criarAula(cadeira: "Redes", titulo: "A", data: data("2027-11-05"), video: nil)
+        try lib.criarCadeira(nome: "Vazia")
+        let cadeiras = try Library.ler(raiz: raiz, hoje: data("2028-04-01"))
+        func semestre(_ nome: String) -> Semestre? { cadeiras.first { $0.nome == nome }?.semestre }
+        #expect(semestre("Empresas") == Semestre(ano: 1, numero: 1))
+        #expect(semestre("Álgebra") == Semestre(ano: 1, numero: 2))
+        #expect(semestre("Redes") == Semestre(ano: 2, numero: 1))
+        #expect(semestre("Vazia") == Semestre(ano: 2, numero: 2))
+
+        var meta = try #require(lib.cadeira(nome: "Redes")).meta
+        meta.semestre = Semestre(ano: 3, numero: 1)
+        try lib.guardarCadeira(meta, cadeira: try #require(lib.cadeira(nome: "Redes")))
+        #expect(lib.cadeira(nome: "Redes")?.semestre == Semestre(ano: 3, numero: 1))
+        #expect(lib.semestres.first == Semestre(ano: 3, numero: 1))
+    }
+
     @Test func revistaEEdicoesManuais() throws {
         let (lib, raiz) = try biblioteca()
         defer { try? FileManager.default.removeItem(at: raiz) }

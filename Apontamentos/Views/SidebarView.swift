@@ -13,19 +13,33 @@ struct SidebarView: View {
     @State private var aRenomear: Cadeira?
     @State private var novoNome = ""
     @State private var erro: String?
+    /// nil = o semestre mais recente. Não fica guardado: ao abrir, a app mostra sempre o semestre em curso.
+    @State private var semestreEscolhido: Semestre?
+    /// Nomes das cadeiras recolhidas, um por linha.
+    @AppStorage("cadeirasRecolhidas") private var recolhidas = ""
+
+    private var semestre: Semestre? {
+        if let semestreEscolhido, library.semestres.contains(semestreEscolhido) { return semestreEscolhido }
+        return library.semestres.first
+    }
+
+    /// As aulas concluídas saem da fila; ficam as que esperam, correm ou falharam.
+    private var jobsPorAcabar: [Job] {
+        fila.jobs.filter { $0.estado != .concluido && $0.estado != .cancelado }
+    }
 
     var body: some View {
         List(selection: $selecao) {
-            if !fila.jobs.isEmpty {
+            if !jobsPorAcabar.isEmpty {
                 Section("Fila") {
-                    ForEach(fila.jobs) { job in
+                    ForEach(jobsPorAcabar) { job in
                         LinhaJob(job: job).tag(job.pastaAula)
                     }
                 }
             }
 
-            ForEach(library.cadeiras) { cadeira in
-                Section {
+            ForEach(library.cadeiras.filter { $0.semestre == semestre }) { cadeira in
+                Section(isExpanded: expandida(cadeira)) {
                     LinhaFicha(aAtualizar: fichas.aAtualizar(cadeira) != nil, comErro: fichas.erro(cadeira) != nil)
                         .tag(FichaCadeira.url(cadeira.pasta))
                     ForEach(cadeira.aulas) { aula in
@@ -37,7 +51,7 @@ struct SidebarView: View {
                     HStack {
                         Text(cadeira.nome)
                         Spacer()
-                        let porRever = cadeira.aulas.filter { !$0.meta.revista && $0.temApontamentos }.count
+                        let porRever = Self.porRever(cadeira.aulas)
                         if porRever > 0 {
                             Text("\(porRever) por rever").font(.caption2).foregroundStyle(.tint)
                         }
@@ -56,8 +70,17 @@ struct SidebarView: View {
                 Text(erro).foregroundStyle(.red).font(.caption)
             }
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let semestre { seletorSemestre(semestre) }
+        }
+        // Uma aula de outro semestre aberta pela pesquisa ou por um link: a lista muda para lá e abre a cadeira.
+        .onChange(of: selecao) { _, nova in
+            guard let nova, let cadeira = library.cadeiras.first(where: { nova.path.hasPrefix($0.pasta.path + "/") }) else { return }
+            if cadeira.semestre != semestre { semestreEscolhido = cadeira.semestre }
+            expandida(cadeira).wrappedValue = true
+        }
         .overlay {
-            if library.cadeiras.isEmpty && fila.jobs.isEmpty {
+            if library.cadeiras.isEmpty && jobsPorAcabar.isEmpty {
                 Text("Ainda não há aulas.\nAs cadeiras ficam em ~/Aulas.")
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
@@ -92,6 +115,49 @@ struct SidebarView: View {
         .alert("Erro", isPresented: Binding(get: { erro != nil }, set: { if !$0 { erro = nil } }), presenting: erro) { _ in
             Button("OK") {}
         } message: { Text($0) }
+    }
+
+    // MARK: Semestre
+
+    private func seletorSemestre(_ atual: Semestre) -> some View {
+        HStack {
+            Menu {
+                ForEach(library.semestres, id: \.self) { s in
+                    let porRever = Self.porRever(library.cadeiras.filter { $0.semestre == s }.flatMap(\.aulas))
+                    Toggle(isOn: Binding(get: { s == atual }, set: { if $0 { semestreEscolhido = s } })) {
+                        Text(s.nome)
+                        if porRever > 0 { Text("\(porRever) por rever") }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(atual.nome).font(.headline)
+                    Image(systemName: "chevron.up.chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                }
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Mudar de semestre (a pesquisa procura em todos)")
+            Spacer()
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 6)
+    }
+
+    private func expandida(_ cadeira: Cadeira) -> Binding<Bool> {
+        Binding {
+            !recolhidas.split(separator: "\n").contains { $0 == cadeira.nome }
+        } set: { aberta in
+            var nomes = Set(recolhidas.split(separator: "\n").map(String.init))
+            if aberta { nomes.remove(cadeira.nome) } else { nomes.insert(cadeira.nome) }
+            recolhidas = nomes.sorted().joined(separator: "\n")
+        }
+    }
+
+    private static func porRever(_ aulas: [Aula]) -> Int {
+        aulas.filter { !$0.meta.revista && $0.temApontamentos }.count
     }
 
     // MARK: Menus
@@ -147,12 +213,20 @@ private struct LinhaAula<Acoes: View>: View {
     @Environment(\.backgroundProminence) private var proeminencia
     private var cor: Color { proeminencia == .increased ? .white : .accentColor }
 
+    /// "Aula 3 · Tema" → o tema em cima e "Aula 3" ao lado da data, para o tema caber; outros títulos ficam inteiros.
+    private var partes: (numero: String?, tema: String) {
+        let p = aula.meta.titulo.components(separatedBy: " · ")
+        guard p.count >= 2, p[0].hasPrefix("Aula ") else { return (nil, aula.meta.titulo) }
+        return (p[0], p.dropFirst().joined(separator: " · "))
+    }
+
     var body: some View {
         HStack(spacing: 8) {
             estado.frame(width: 16)
             VStack(alignment: .leading, spacing: 1) {
-                Text(aula.meta.titulo).lineLimit(1)
-                Text(aula.meta.data.formatted(date: .abbreviated, time: .omitted))
+                Text(partes.tema).lineLimit(2)
+                Text([partes.numero, aula.meta.data.formatted(.dateTime.day().month(.wide).locale(Locale(identifier: "pt_PT")))]
+                        .compactMap { $0 }.joined(separator: " · "))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

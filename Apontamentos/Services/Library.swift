@@ -26,10 +26,10 @@ final class Library {
         versao += 1
     }
 
-    nonisolated static func ler(raiz: URL) throws -> [Cadeira] {
+    nonisolated static func ler(raiz: URL, hoje: Date = .now) throws -> [Cadeira] {
         let fm = FileManager.default
         let pastas = try fm.contentsOfDirectory(at: raiz, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles)
-        return pastas
+        let lidas = pastas
             .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
             .map { pasta in
                 let nome = pasta.lastPathComponent
@@ -45,7 +45,15 @@ final class Library {
                     )
                 }
                 .sorted { ($0.meta.data, $0.meta.criadaEm) > ($1.meta.data, $1.meta.criadaEm) }
-                return Cadeira(nome: nome, pasta: pasta, meta: Disco.lerCadeira(pasta), aulas: aulas)
+                return (nome: nome, pasta: pasta, meta: Disco.lerCadeira(pasta), aulas: aulas,
+                        letivo: Semestre.letivo(aulas.last?.meta.data ?? hoje))
+            }
+        // O 1.º ano é o ano letivo da aula mais antiga; uma cadeira ainda sem aulas fica no semestre de hoje.
+        let primeiro = lidas.map(\.letivo.inicio).min() ?? 0
+        return lidas
+            .map { c in
+                Cadeira(nome: c.nome, pasta: c.pasta, meta: c.meta, aulas: c.aulas,
+                        semestre: c.meta.semestre ?? Semestre(ano: c.letivo.inicio - primeiro + 1, numero: c.letivo.numero))
             }
             .sorted { $0.nome.localizedStandardCompare($1.nome) == .orderedAscending }
     }
@@ -64,6 +72,16 @@ final class Library {
 
     func cadeira(nome: String) -> Cadeira? {
         cadeiras.first { $0.nome == nome }
+    }
+
+    /// Os semestres que têm cadeiras, do mais recente para o mais antigo.
+    var semestres: [Semestre] {
+        Set(cadeiras.map(\.semestre)).sorted(by: >)
+    }
+
+    /// As cadeiras agrupadas por semestre, do mais recente para o mais antigo (para os seletores de cadeira).
+    var cadeirasPorSemestre: [(semestre: Semestre, cadeiras: [Cadeira])] {
+        semestres.map { s in (s, cadeiras.filter { $0.semestre == s }) }
     }
 
     /// Número da aula dentro da cadeira, pela ordem das datas (a primeira é 1).
