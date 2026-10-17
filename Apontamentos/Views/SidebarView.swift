@@ -60,7 +60,7 @@ struct SidebarView: View {
                             .menuStyle(.borderlessButton)
                             .menuIndicator(.hidden)
                             .fixedSize()
-                            .help("Glossário, renomear e outras opções da cadeira")
+                            .help("Semestre, glossário, renomear e outras opções da cadeira")
                     }
                     .contextMenu { menu(cadeira) }
                 }
@@ -180,6 +180,16 @@ struct SidebarView: View {
 
     @ViewBuilder private func menu(_ cadeira: Cadeira) -> some View {
         let ativa = fila.jobs.contains { $0.ativo && $0.pastaAula.path.hasPrefix(cadeira.pasta.path + "/") }
+        Menu("Semestre") {
+            Toggle("Automático, pela data das aulas", isOn: Binding(get: { cadeira.meta.semestre == nil }, set: { if $0 { definirSemestre(nil, cadeira) } }))
+            Divider()
+            ForEach(1...max(4, cadeira.semestre.ano), id: \.self) { ano in
+                ForEach(1...2, id: \.self) { n in
+                    let s = Semestre(ano: ano, numero: n)
+                    Toggle(s.nome, isOn: Binding(get: { cadeira.semestre == s }, set: { if $0 { definirSemestre(s, cadeira) } }))
+                }
+            }
+        }
         Button("Glossário e câmara do professor…") { aEditarCadeira = cadeira }
         Button("Renomear…") { novoNome = cadeira.nome; aRenomear = cadeira }.disabled(ativa)
         Button("Mostrar no Finder") { NSWorkspace.shared.activateFileViewerSelecting([cadeira.pasta]) }
@@ -197,6 +207,16 @@ struct SidebarView: View {
             if let s = selecao, s.path.hasPrefix(cadeira.pasta.path + "/") {
                 selecao = nova.appending(path: s.lastPathComponent, directoryHint: .isDirectory)
             }
+        }
+    }
+
+    /// nil = deduzido das datas das aulas. A lista acompanha a cadeira para o semestre novo.
+    private func definirSemestre(_ semestre: Semestre?, _ cadeira: Cadeira) {
+        var meta = cadeira.meta
+        meta.semestre = semestre
+        tentar {
+            try library.guardarCadeira(meta, cadeira: cadeira)
+            semestreEscolhido = library.cadeira(nome: cadeira.nome)?.semestre
         }
     }
 

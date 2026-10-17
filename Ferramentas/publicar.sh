@@ -26,3 +26,6 @@ if [[ "${1:-}" == "--github" ]]; then
   ditto -c -k --keepParent "$app" "$zip"
   gh release create "$versao" "$zip" --title "Recap $versao" --notes "Descarrega o Recap.zip, abre-o e arrasta o Recap para Aplicações. Instruções no README."
 fi
+
+# A cópia compilada ficava registada como mais uma app no macOS e aparecia no Spotlight ao lado da de /Applications.
+rm -rf "$app"
