@@ -26,8 +26,23 @@ struct ConfigDiretoSheet: View {
     private static let novaCadeiraTag = "\u{0}nova"
     @State private var novaCadeira = ""
 
+    @State private var verDicas = false
+
     private var nomeCadeira: String {
         (cadeira == Self.novaCadeiraTag ? novaCadeira : cadeira).trimmingCharacters(in: .whitespaces)
+    }
+
+    /// O que ainda falta para poder começar (nil quando está tudo).
+    private var falta: String? {
+        if fonte == nil { return "Escolhe a janela da aula" }
+        if nomeCadeira.isEmpty { return "Falta o nome da cadeira" }
+        if titulo.trimmingCharacters(in: .whitespaces).isEmpty { return "Falta o título da aula" }
+        return nil
+    }
+
+    /// Altura da lista de janelas quando há espaço: as filas das conhecidas, ou 330 com as outras abertas.
+    private var alturaJanelas: CGFloat {
+        verOutras ? 330 : min(330, CGFloat((fontes.filter(\.ehConhecida).count + 2) / 3) * 156 + 34)
     }
 
     var body: some View {
@@ -64,7 +79,9 @@ struct ConfigDiretoSheet: View {
                 }
                 .padding(2)
             }
-            .frame(height: verOutras ? 330 : min(330, CGFloat((fontes.filter(\.ehConhecida).count + 2) / 3) * 156 + 34))
+            // Num ecrã baixo é a lista que encolhe (até uma fila), não o formulário: o Form agrupado é uma lista
+            // com scroll e, sem altura fixa, ficava com altura zero e escondia o título, deixando o botão desativado.
+            .frame(minHeight: min(alturaJanelas, 150), idealHeight: alturaJanelas, maxHeight: alturaJanelas)
 
             Form {
                 Picker("Cadeira", selection: $cadeira) {
@@ -89,22 +106,30 @@ struct ConfigDiretoSheet: View {
                 Toggle("Gerar apontamentos no fim", isOn: $gerarApontamentos)
             }
             .formStyle(.grouped)
+            .scrollDisabled(true)
+            .fixedSize(horizontal: false, vertical: true)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Dicas").font(.callout.bold())
-                Text("• Gravação que já viste: podes pô-la a 1,5× ou 2× no leitor e escolher aqui a mesma velocidade, para os [mm:ss] baterem com o minuto da aula. Podes baixar o volume do Mac, mas não silencies o separador.")
-                Text("• Slides: a janela da aula tem de estar à vista, por exemplo no monitor. Atrás de outras janelas, noutro desktop ou minimizada, o Chrome deixa de desenhar o vídeo e as capturas saem pretas. Alternativa: o picture-in-picture do leitor (escolhe essa janela aqui).")
-                Text("• Para isolar um separador, arrasta-o para uma janela própria. O som é o da app inteira: não ponhas outro som a tocar.")
-                Text("• Quando a aula acabar, o Recap termina sozinho ao fim de 3 minutos de silêncio.")
+            DisclosureGroup("Dicas", isExpanded: $verDicas) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("• Gravação que já viste: podes pô-la a 1,5× ou 2× no leitor e escolher aqui a mesma velocidade, para os [mm:ss] baterem com o minuto da aula. Podes baixar o volume do Mac, mas não silencies o separador.")
+                    Text("• Slides: a janela da aula tem de estar à vista, por exemplo no monitor. Atrás de outras janelas, noutro desktop ou minimizada, o Chrome deixa de desenhar o vídeo e as capturas saem pretas. Alternativa: o picture-in-picture do leitor (escolhe essa janela aqui).")
+                    Text("• Para isolar um separador, arrasta-o para uma janela própria. O som é o da app inteira: não ponhas outro som a tocar.")
+                    Text("• Quando a aula acabar, o Recap termina sozinho ao fim de 3 minutos de silêncio.")
+                }
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 4)
             }
-            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            .font(.callout.bold())
 
             HStack {
+                if let falta {
+                    Label(falta, systemImage: "info.circle").font(.callout).foregroundStyle(.secondary)
+                }
                 Spacer()
                 Button("Cancelar", role: .cancel) { dismiss() }
                 Button("Começar a ouvir") { comecar() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(fonte == nil || nomeCadeira.isEmpty || titulo.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(falta != nil)
             }
         }
         .padding(20)
