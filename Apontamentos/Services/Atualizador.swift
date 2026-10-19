@@ -16,6 +16,8 @@ final class Atualizador {
         case aInstalar(versao: String)
         case emDia
         case falhou(String)
+        /// O macOS não deixou a app substituir-se (Definições → Privacidade e Segurança → Gestão de apps).
+        case semPermissao
     }
 
     nonisolated static let repositorio = "danielmsrodrigues/recap"
@@ -62,8 +64,13 @@ final class Atualizador {
         do {
             let nova = try await Self.descarregar(zip)
             try Self.verificarAssinatura(nova)
-            try Self.trocarEReabrir(por: nova)
+            // O script fica pronto antes da troca: depois dela a app tem de fechar, mesmo que algo falhe.
+            let reabrir = try Self.scriptReabrir(Bundle.main.bundleURL, descarregada: nova)
+            try await Self.trocar(por: nova)
+            try? reabrir.run()
             NSApp.terminate(nil)
+        } catch Erro.semPermissao {
+            estado = .semPermissao
         } catch {
             estado = .falhou("A atualização falhou: \(error.localizedDescription)")
         }
@@ -74,13 +81,16 @@ final class Atualizador {
     struct Release: Sendable { var versao: String; var zip: URL }
 
     enum Erro: LocalizedError {
-        case semZip, descompactar, assinatura, naoInstalada
+        case semZip, descompactar, assinatura, naoInstalada, semPermissao, copiar, copiarSemRepor
         var errorDescription: String? {
             switch self {
             case .semZip: "a versão publicada não tem o ficheiro Recap.zip."
             case .descompactar: "não foi possível abrir o ficheiro descarregado."
             case .assinatura: "a versão descarregada não está assinada pelo mesmo autor desta app."
             case .naoInstalada: "esta cópia do Recap não está numa pasta onde se possa atualizar."
+            case .semPermissao: "o macOS não deixou o Recap substituir-se."
+            case .copiar: "não foi possível copiar a versão nova. Ficou a versão que tinhas."
+            case .copiarSemRepor: "não foi possível copiar a versão nova, nem repor a anterior. Ela está em Recap.app.antiga, na mesma pasta: muda-lhe o nome para Recap.app."
             }
         }
     }
@@ -151,20 +161,53 @@ final class Atualizador {
         else { throw Erro.assinatura }
     }
 
-    /// Um script espera que esta app feche, põe a nova no lugar (repondo a antiga se falhar) e abre-a.
-    private static func trocarEReabrir(por nova: URL) throws {
+    /// Põe a versão nova no lugar desta; a app em execução continua a correr a partir da cópia antiga, ao lado.
+    /// A troca é feita aqui, e não no script que reabre a app, para que uma recusa apareça como erro: quando
+    /// o macOS a recusava (a app não tem Team ID, por isso precisa de "Gestão de apps"), o script saía calado
+    /// e a app fechava sem voltar a abrir, na versão antiga.
+    @concurrent
+    private static func trocar(por nova: URL) async throws {
+        let fm = FileManager.default
         let atual = Bundle.main.bundleURL
-        guard atual.pathExtension == "app", FileManager.default.isWritableFile(atPath: atual.deletingLastPathComponent().path) else {
+        guard atual.pathExtension == "app", fm.isWritableFile(atPath: atual.deletingLastPathComponent().path) else {
             throw Erro.naoInstalada
         }
-        let script = nova.deletingLastPathComponent().appending(path: "trocar.sh")
+        let antiga = URL(fileURLWithPath: atual.path + ".antiga")
+        try? fm.removeItem(at: antiga)
+        do {
+            try fm.moveItem(at: atual, to: antiga)
+        } catch {
+            throw semPermissao(error) ? Erro.semPermissao : error
+        }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        p.arguments = [nova.path, atual.path]
+        do {
+            try p.run()
+            p.waitUntilExit()
+            guard p.terminationStatus == 0 else { throw Erro.copiar }
+        } catch {
+            try? fm.removeItem(at: atual)
+            do { try fm.moveItem(at: antiga, to: atual) } catch { throw Erro.copiarSemRepor }
+            throw Erro.copiar
+        }
+    }
+
+    private nonisolated static func semPermissao(_ error: Error) -> Bool {
+        let e = error as NSError
+        if e.domain == NSCocoaErrorDomain && e.code == NSFileWriteNoPermissionError { return true }
+        let posix = (e.userInfo[NSUnderlyingErrorKey] as? NSError) ?? e
+        return posix.domain == NSPOSIXErrorDomain && [Int(EPERM), Int(EACCES)].contains(posix.code)
+    }
+
+    /// Um script que espera que esta app feche, apaga a cópia antiga e o que foi descarregado, e abre a nova.
+    private static func scriptReabrir(_ atual: URL, descarregada nova: URL) throws -> Process {
+        let script = nova.deletingLastPathComponent().appending(path: "reabrir.sh")
         let conteudo = """
         #!/bin/sh
         while kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null; do sleep 0.3; done
         ATUAL="$1"; NOVA="$2"
         rm -rf "${ATUAL}.antiga"
-        mv "${ATUAL}" "${ATUAL}.antiga" || exit 1
-        if /usr/bin/ditto "${NOVA}" "${ATUAL}"; then rm -rf "${ATUAL}.antiga"; else rm -rf "${ATUAL}"; mv "${ATUAL}.antiga" "${ATUAL}"; fi
         /usr/bin/open "${ATUAL}"
         rm -rf "$(dirname "${NOVA}")"
         """
@@ -172,6 +215,6 @@ final class Atualizador {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/sh")
         p.arguments = ["-c", "/bin/sh \"$0\" \"$1\" \"$2\" >/dev/null 2>&1 &", script.path, atual.path, nova.path]
-        try p.run()
+        return p
     }
 }

@@ -320,6 +320,16 @@ private struct AvisosAtualizacao: ViewModifier {
             .alert("Atualizações", isPresented: Binding(get: { mensagem != nil }, set: { if !$0 { atualizador.dispensar() } }), presenting: mensagem) { _ in
                 Button("OK") { atualizador.dispensar() }
             } message: { Text($0) }
+            .alert("O macOS não deixou o Recap atualizar-se",
+                   isPresented: Binding(get: { atualizador.estado == .semPermissao }, set: { if !$0 { atualizador.dispensar() } })) {
+                Button("Abrir Definições") {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AppBundles")!)
+                    atualizador.dispensar()
+                }
+                Button("OK", role: .cancel) { atualizador.dispensar() }
+            } message: {
+                Text("Em Definições do Sistema → Privacidade e Segurança → Gestão de apps, ativa o Recap e volta a tentar em Recap → Procurar atualizações… Continuas na versão \(Atualizador.versaoAtual).")
+            }
             .overlay {
                 if aInstalar {
                     VStack(spacing: 12) {
