@@ -72,9 +72,11 @@ enum FichaCadeira {
         return (resto.joined(separator: "\n"), corpo.isEmpty ? nil : corpo)
     }
 
+    /// Em qualquer língua dos apontamentos ("## Sobre a cadeira", "## About the course"…).
     private static func eTituloSobre(_ linha: String) -> Bool {
         guard linha.hasPrefix("## ") else { return false }
-        return linha.dropFirst(3).trimmingCharacters(in: .whitespaces).lowercased().hasPrefix(tituloSeccao.lowercased())
+        let titulo = linha.dropFirst(3).trimmingCharacters(in: .whitespaces).lowercased()
+        return RotulosApontamentos.todas(tituloSeccao).contains { titulo.hasPrefix($0.lowercased()) }
     }
 
     // MARK: Ficheiros
@@ -183,6 +185,7 @@ enum FichaCadeira {
 
     // MARK: Pedido
 
+    /// Com `{{regras_lingua}}` por substituir (`Definicoes.prompt`).
     static let sistema = """
     Manténs a ficha de uma cadeira universitária: o que um aluno precisa de consultar sobre a cadeira (avaliação, \
     datas, programa, regras…), não a matéria. Recebes a ficha atual (pode estar vazia) e o que uma aula disse sobre \
@@ -200,7 +203,7 @@ enum FichaCadeira {
     - Mantém tal como estão os tópicos que a aula não muda, incluindo o que o estudante escreveu ou corrigiu à mão. \
     Nunca apagues um tópico só porque a aula não fala dele.
     - "Slides dados": uma linha por aula com as páginas dadas de cada PDF e as que ficaram por dar.
-    - Português de Portugal.
+    {{regras_lingua}}
     """
 
     private static func fichaAtual(_ ficha: String?) -> String {
@@ -243,15 +246,15 @@ enum FichaCadeira {
         ]
     }
 
-    /// A resposta como ficha: sem cercas de código à volta e com o título certo.
-    static func limpar(_ resposta: String) -> String {
+    /// A resposta como ficha: sem cercas de código à volta e com o título certo (`titulo`, na língua dos apontamentos).
+    static func limpar(_ resposta: String, titulo: String = tituloSeccao) -> String {
         var t = resposta.trimmingCharacters(in: .whitespacesAndNewlines)
         if t.hasPrefix("```") {
             t = t.components(separatedBy: "\n").dropFirst().joined(separator: "\n")
             if t.hasSuffix("```") { t = String(t.dropLast(3)) }
             t = t.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        if !t.hasPrefix("# ") { t = "# \(tituloSeccao)\n\n" + t }
+        if !t.hasPrefix("# ") { t = "# \(titulo)\n\n" + t }
         return t + "\n"
     }
 }
@@ -349,10 +352,11 @@ final class Fichas {
         // Se a ficha mudar enquanto o Claude escreve (editada à mão), junta-se outra vez sobre a versão nova.
         for _ in 0..<3 {
             let base = FichaCadeira.lerFicha(cadeira.pasta)
-            let r = try await gerador.gerar(sistema: FichaCadeira.sistema, conteudo: conteudo(base),
+            let r = try await gerador.gerar(sistema: definicoes.prompt(FichaCadeira.sistema), conteudo: conteudo(base),
                                             aoRecomecar: {}, aoReceber: { _ in }, aoRepetir: { _, _, _ in })
             guard FichaCadeira.lerFicha(cadeira.pasta) == base else { continue }
-            try FichaCadeira.escreverFicha(FichaCadeira.limpar(r.markdown), em: cadeira.pasta)
+            let titulo = RotulosApontamentos.rotulo(FichaCadeira.tituloSeccao, definicoes.linguaApontamentos)
+            try FichaCadeira.escreverFicha(FichaCadeira.limpar(r.markdown, titulo: titulo), em: cadeira.pasta)
             var registo = FichaCadeira.lerRegisto(cadeira.pasta)
             registo.aulas[chave] = hash
             try FichaCadeira.escreverRegisto(registo, em: cadeira.pasta)

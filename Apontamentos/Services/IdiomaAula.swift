@@ -1,6 +1,7 @@
 import Foundation
 
-/// A língua em que as aulas são dadas. O Whisper transcreve nessa língua; os apontamentos saem sempre em PT-PT.
+/// A língua em que as aulas são dadas. O Whisper transcreve nessa língua; os apontamentos saem na língua
+/// dos apontamentos (`LinguaApontamentos`).
 enum IdiomaAula: String, CaseIterable, Identifiable, Sendable {
     case espanhol = "es", portugues = "pt", ingles = "en", frances = "fr", italiano = "it", alemao = "de"
 
@@ -61,12 +62,16 @@ enum IdiomaAula: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// O curso e a língua do utilizador, metidos nos prompts no lugar de `{{contexto}}` e `{{idioma}}`.
+/// O curso e as línguas do utilizador, metidos nos prompts no lugar de `{{contexto}}`, `{{idioma}}`,
+/// `{{lingua_apontamentos}}`, `{{regras_lingua}}` e `{{seccao_glossario}}`.
 /// Assim os prompts servem qualquer curso, e o prompt editável mantém-se legível.
 enum ContextoCurso {
-    static func aplicar(_ texto: String, idioma: IdiomaAula, contexto: String) -> String {
+    static func aplicar(_ texto: String, idioma: IdiomaAula, contexto: String, apontamentos: LinguaApontamentos = .ptPT) -> String {
         texto.replacingOccurrences(of: "{{contexto}}", with: frase(contexto))
             .replacingOccurrences(of: "{{idioma}}", with: idioma.nomeNoPrompt)
+            .replacingOccurrences(of: "{{lingua_apontamentos}}", with: apontamentos.nomeNoPrompt)
+            .replacingOccurrences(of: "{{regras_lingua}}", with: apontamentos.regras)
+            .replacingOccurrences(of: "{{seccao_glossario}}", with: apontamentos.seccaoGlossario(aulas: idioma))
     }
 
     /// "As aulas são de <o que o utilizador escreveu>." ou, sem nada escrito, uma frase genérica.

@@ -251,7 +251,7 @@ final class Estudo {
                  sistema: definicoes.prompt(Self.sistemaPerguntas)) { contexto in
             var blocos = contexto.map(NotesGenerator.materiais) ?? []
             if let notas = Disco.lerApontamentos(aula.pasta) {
-                blocos.append(.texto("Apontamentos já feitos desta aula (PT-PT):\n\n<apontamentos>\n\(notas)\n</apontamentos>"))
+                blocos.append(.texto("Apontamentos já feitos desta aula:\n\n<apontamentos>\n\(notas)\n</apontamentos>"))
                 let seccoes = Seccoes.lista(notas)
                 if !seccoes.isEmpty {
                     blocos.append(.texto("Secções dos apontamentos, já como links para usar nas respostas:\n\n<seccoes>\n\(Seccoes.indice(seccoes))\n</seccoes>"))
@@ -310,7 +310,7 @@ final class Estudo {
             return
         }
         let raiz = library.raiz
-        executar(aula, .ligacoes, comTranscricao: false, sistema: Self.sistemaLigacoes) { _ in
+        executar(aula, .ligacoes, comTranscricao: false, sistema: definicoes.prompt(Self.sistemaLigacoes)) { _ in
             let lista = outras.enumerated().map { i, o in
                 let data = o.meta.data.formatted(.dateTime.day().month(.wide).year().locale(Locale(identifier: "pt_PT")))
                 return "<aula id=\"A\(i + 1)\" titulo=\"\(o.meta.titulo)\" data=\"\(data)\"\(o.meta.data < aula.meta.data ? " anterior" : " seguinte")>\n\(Self.esqueleto(Disco.lerApontamentos(o.pasta) ?? ""))\n</aula>"
@@ -402,7 +402,7 @@ final class Estudo {
         var noResumo = false
         for linha in md.components(separatedBy: .newlines) {
             if linha.hasPrefix("#") {
-                noResumo = linha.lowercased().hasPrefix("## resumo")
+                noResumo = RotulosApontamentos.todas("Resumo").contains { linha.lowercased().hasPrefix("## " + $0.lowercased()) }
                 if !linha.hasPrefix("# ") { linhas.append(linha) }
             } else if noResumo, !linha.trimmingCharacters(in: .whitespaces).isEmpty {
                 linhas.append(linha)
@@ -419,7 +419,7 @@ final class Estudo {
 
     private static let comum = """
     ## Língua e formato
-    - Português europeu (PT-PT), nunca do Brasil ("ficheiro", "ecrã", "utilizador", "valor próprio", "vetor próprio").
+    {{regras_lingua}}
     - Markdown. Matemática em LaTeX: `$...$` inline e `$$...$$` em bloco, numa linha própria.
     - Momentos da aula como [mm:ss], só com timestamps que existam na transcrição.
     """
@@ -476,6 +476,7 @@ final class Estudo {
     \(comum)
     """
 
+    /// Com `{{lingua_apontamentos}}` por substituir (`Definicoes.prompt`).
     static let sistemaLigacoes = """
     Mostras a um estudante como uma aula se liga às outras aulas da mesma cadeira. Recebes os apontamentos completos da aula atual e, de cada outra aula, o resumo e os temas, com um id (A1, A2…) e a indicação "anterior" ou "seguinte".
 
@@ -502,6 +503,6 @@ final class Estudo {
     - `momento`: o mm:ss da aula atual onde a ligação aparece, tirado dos apontamentos, ou null.
     - Listas vazias se não houver ligações.
     - Nas explicações, refere as outras aulas pelo título ("na aula de Autovalores…"), nunca pelo id (A1).
-    - Português europeu (PT-PT). Sem LaTeX nem Markdown: símbolos em Unicode (λ, Σ, ∇, A⁻¹, x²).
+    - Explicações e conceitos em {{lingua_apontamentos}}. Sem LaTeX nem Markdown: símbolos em Unicode (λ, Σ, ∇, A⁻¹, x²).
     """
 }

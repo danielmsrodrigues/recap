@@ -215,7 +215,8 @@ final class PipelineRunner {
         // Lido de novo: o utilizador pode ter mudado o título à mão enquanto o Claude escrevia.
         let tituloManual = (try? Disco.lerMeta(job.pastaAula))?.tituloManual ?? aula.meta.tituloManual
         if tituloManual != true, let tema = TituloAula.tema(markdown) {
-            titulo = TituloAula.titulo(numero: library.numeroDaAula(aula), tema: tema)
+            titulo = TituloAula.titulo(numero: library.numeroDaAula(aula), tema: tema,
+                                       aula: RotulosApontamentos.rotulo("Aula", definicoes.linguaApontamentos))
             markdown = TituloAula.trocarCabecalho(markdown, por: titulo!)
         }
 

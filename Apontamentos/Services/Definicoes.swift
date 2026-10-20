@@ -49,6 +49,8 @@ final class Definicoes {
     var idiomaAulas: IdiomaAula { didSet { defaults.set(idiomaAulas.rawValue, forKey: "idiomaAulas") } }
     /// O curso, para o Claude saber para quem escreve: "licenciatura em X, 1.º ano, universidade Y". Vazio = genérico.
     var contextoCurso: String { didSet { defaults.set(contextoCurso, forKey: "contextoCurso") } }
+    /// A língua em que o Claude escreve. Português de Portugal por defeito, como até aqui.
+    var linguaApontamentos: LinguaApontamentos { didSet { defaults.set(linguaApontamentos.rawValue, forKey: "linguaApontamentos") } }
     var precosPersonalizados: [String: Preco] {
         didSet { defaults.set(try? JSONEncoder().encode(precosPersonalizados), forKey: "precosPersonalizados") }
     }
@@ -66,6 +68,7 @@ final class Definicoes {
         organizacao = defaults.string(forKey: "organizacao").flatMap(OrganizacaoCurso.init) ?? .anoESemestre
         idiomaAulas = defaults.string(forKey: "idiomaAulas").flatMap(IdiomaAula.init) ?? .espanhol
         contextoCurso = defaults.string(forKey: "contextoCurso") ?? ""
+        linguaApontamentos = defaults.string(forKey: "linguaApontamentos").flatMap(LinguaApontamentos.init) ?? .ptPT
         let padrao = ConfigSlides()
         slidesLimiar = defaults.object(forKey: "slidesLimiar") as? Double ?? padrao.limiar
         slidesIntervalo = defaults.object(forKey: "slidesIntervalo") as? Double ?? padrao.intervalo
@@ -85,9 +88,9 @@ final class Definicoes {
 
     var tabelaPrecos: TabelaPrecos { TabelaPrecos(personalizados: precosPersonalizados) }
 
-    /// Um prompt com `{{contexto}}` e `{{idioma}}` já substituídos pelo curso e pela língua escolhidos.
+    /// Um prompt com os marcadores (`{{contexto}}`, `{{idioma}}`…) já substituídos pelo curso e pelas línguas escolhidos.
     func prompt(_ texto: String) -> String {
-        ContextoCurso.aplicar(texto, idioma: idiomaAulas, contexto: contextoCurso)
+        ContextoCurso.aplicar(texto, idioma: idiomaAulas, contexto: contextoCurso, apontamentos: linguaApontamentos)
     }
 
     /// O prompt de sistema dos apontamentos, pronto a enviar.

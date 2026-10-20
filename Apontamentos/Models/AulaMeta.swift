@@ -93,14 +93,15 @@ struct AulaMeta: Codable, Hashable, Sendable {
 /// Título das aulas: o Claude escreve o tema no `# título` dos apontamentos e a app junta o número da aula,
 /// que ele não sabe (vem da ordem das datas dentro da cadeira).
 enum TituloAula {
-    static func titulo(numero: Int, tema: String) -> String { "Aula \(numero) · \(tema)" }
+    /// `aula` é a palavra na língua dos apontamentos ("Aula", "Clase", "Lecture").
+    static func titulo(numero: Int, tema: String, aula: String = "Aula") -> String { "\(aula) \(numero) · \(tema)" }
 
     /// O tema no primeiro `# título`, sem o nome da cadeira nem um "Aula N" que o Claude tenha posto à frente.
     static func tema(_ markdown: String) -> String? {
         guard let linha = markdown.split(separator: "\n", omittingEmptySubsequences: true).first,
               linha.hasPrefix("# ") else { return nil }
         var tema = linha.dropFirst(2).trimmingCharacters(in: .whitespaces)
-        if let r = tema.range(of: #"^(.*[—–-]\s*)?(Aula|Clase|Sesi[oó]n)\s+\d+(\s*[:·—–-]\s*|$)"#, options: [.regularExpression, .caseInsensitive]) {
+        if let r = tema.range(of: #"^(.*[—–-]\s*)?(Aula|Clase|Sesi[oó]n|Lecture|Class|Session|Li[cç][aã]o)\s+\d+(\s*[:·—–-]\s*|$)"#, options: [.regularExpression, .caseInsensitive]) {
             tema.removeSubrange(r)
         }
         tema = tema.trimmingCharacters(in: .whitespaces.union(CharacterSet(charactersIn: ".")))
