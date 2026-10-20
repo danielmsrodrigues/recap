@@ -83,11 +83,6 @@ struct ContentView: View {
                 }
                 .help("Importar vídeos de aulas ou criar uma cadeira")
             }
-            // Em ecrã inteiro a barra de menus do Mac esconde-se; assim as definições continuam à mão.
-            ToolbarItem(placement: .navigation) {
-                SettingsLink { Label("Definições", systemImage: "gearshape") }
-                    .help("Definições (⌘,)")
-            }
         }
         .dropDestination(for: URL.self) { urls, _ in
             receber(urls)
@@ -239,6 +234,8 @@ private struct EcraInicial: View {
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Sem aula aberta, a janela não se chama como a app: diz onde se está.
+        .navigationTitle("Aulas")
     }
 }
 

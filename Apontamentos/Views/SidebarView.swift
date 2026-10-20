@@ -40,34 +40,17 @@ struct SidebarView: View {
 
             ForEach(library.cadeiras.filter { $0.semestre == semestre }) { cadeira in
                 Section(isExpanded: expandida(cadeira)) {
-                    LinhaFicha(aAtualizar: fichas.aAtualizar(cadeira) != nil, comErro: fichas.erro(cadeira) != nil)
-                        .tag(FichaCadeira.url(cadeira.pasta))
                     ForEach(cadeira.aulas) { aula in
-                        LinhaAula(aula: aula, job: fila.job(para: aula.pasta)) { menu(aula) }
+                        LinhaAula(aula: aula, job: fila.job(para: aula.pasta))
                             .tag(aula.pasta)
                             .contextMenu { menu(aula) }
                     }
                 } header: {
-                    HStack {
-                        // O cabeçalho de secção do macOS é pequeno e cinzento; o nome da cadeira tem de se ler bem.
-                        Text(cadeira.nome)
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(.primary)
-                            .lineLimit(2)
-                            .padding(.top, 4)
-                        Spacer()
-                        let porRever = Self.porRever(cadeira.aulas)
-                        if porRever > 0 {
-                            Text("\(porRever) por rever").font(.caption2).foregroundStyle(.tint)
-                        }
-                        Menu("Cadeira", systemImage: "ellipsis.circle") { menu(cadeira) }
-                            .labelStyle(.iconOnly)
-                            .menuStyle(.borderlessButton)
-                            .menuIndicator(.hidden)
-                            .fixedSize()
-                            .help(library.organizacao == .nenhuma ? "Glossário, renomear e outras opções da cadeira" : "\(library.organizacao.rotulo), glossário, renomear e outras opções da cadeira")
-                    }
-                    .contextMenu { menu(cadeira) }
+                    CabecalhoCadeira(cadeira: cadeira, porRever: Self.porRever(cadeira.aulas),
+                                     aAtualizar: fichas.aAtualizar(cadeira) != nil, comErro: fichas.erro(cadeira) != nil,
+                                     selecionada: selecao?.mesmoCaminho(FichaCadeira.url(cadeira.pasta)) == true,
+                                     aoAbrir: { selecao = FichaCadeira.url(cadeira.pasta) }) { menu(cadeira) }
+                        .contextMenu { menu(cadeira) }
                 }
             }
 
@@ -82,7 +65,7 @@ struct SidebarView: View {
         .onChange(of: selecao) { _, nova in
             guard let nova, let cadeira = library.cadeiras.first(where: { nova.path.hasPrefix($0.pasta.path + "/") }) else { return }
             if cadeira.semestre != semestre { semestreEscolhido = cadeira.semestre }
-            expandida(cadeira).wrappedValue = true
+            if !nova.mesmoCaminho(FichaCadeira.url(cadeira.pasta)) { expandida(cadeira).wrappedValue = true }
         }
         .overlay {
             if library.cadeiras.isEmpty && jobsPorAcabar.isEmpty {
@@ -237,10 +220,60 @@ struct SidebarView: View {
     }
 }
 
-private struct LinhaAula<Acoes: View>: View {
+/// O nome da cadeira é o cabeçalho do grupo e abre a ficha da cadeira ("Sobre a cadeira"): avaliação, datas,
+/// programa e avisos juntados de todas as aulas. As opções da cadeira ficam no "…" e no menu de contexto.
+private struct CabecalhoCadeira<Acoes: View>: View {
+    let cadeira: Cadeira
+    let porRever: Int
+    let aAtualizar: Bool
+    let comErro: Bool
+    let selecionada: Bool
+    let aoAbrir: () -> Void
+    @ViewBuilder let acoes: () -> Acoes
+    @State private var sobreposto = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button(action: aoAbrir) {
+                HStack(spacing: 6) {
+                    // O cabeçalho de secção do macOS é pequeno e cinzento; o nome da cadeira tem de se ler bem.
+                    Text(cadeira.nome)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(selecionada ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+                        .lineLimit(2)
+                    if aAtualizar {
+                        ProgressView().controlSize(.mini)
+                    } else if comErro {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.caption)
+                    } else {
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(selecionada ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
+                            .opacity(sobreposto || selecionada ? 1 : 0)
+                    }
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .help("Sobre a cadeira: avaliação, datas, programa e avisos, juntados de todas as aulas")
+            Spacer()
+            if porRever > 0 {
+                Text("\(porRever) por rever").font(.caption2).foregroundStyle(.tint)
+            }
+            Menu("Cadeira", systemImage: "ellipsis.circle", content: acoes)
+                .labelStyle(.iconOnly)
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+        }
+        .padding(.top, 4)
+        .onHover { sobreposto = $0 }
+    }
+}
+
+private struct LinhaAula: View {
     let aula: Aula
     let job: Job?
-    @ViewBuilder let acoes: () -> Acoes
     /// Linha selecionada (fundo azul): os ícones azuis passam a brancos para não desaparecerem.
     @Environment(\.backgroundProminence) private var proeminencia
     private var cor: Color { proeminencia == .increased ? .white : .accentColor }
@@ -263,20 +296,10 @@ private struct LinhaAula<Acoes: View>: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
-            // Como no Mail: ponto azul = por rever.
+            // Como no Mail: ponto azul = por rever. As ações estão no menu de contexto.
             if aula.temApontamentos && !aula.meta.revista {
                 Circle().fill(cor).frame(width: 7, height: 7).help("Por rever")
             }
-            // Rótulo desenhado à mão: o estilo de menu do macOS ignorava a cor e o ícone saía preto.
-            Menu(content: acoes) {
-                Image(systemName: "ellipsis.circle")
-                    .foregroundStyle(proeminencia == .increased ? Color.white : Color.secondary)
-            }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("Marcar como revista, editar, Finder, Lixo")
         }
     }
 
@@ -292,27 +315,6 @@ private struct LinhaAula<Acoes: View>: View {
         } else {
             Image(systemName: "clock").foregroundStyle(.tertiary)
         }
-    }
-}
-
-/// "Sobre a cadeira", sempre a primeira linha de cada cadeira.
-private struct LinhaFicha: View {
-    let aAtualizar: Bool
-    let comErro: Bool
-    @Environment(\.backgroundProminence) private var proeminencia
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Group {
-                if aAtualizar { ProgressView().controlSize(.mini) }
-                else if comErro { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange) }
-                else { Image(systemName: "info.circle").foregroundStyle(proeminencia == .increased ? Color.white : Color.secondary) }
-            }
-            .frame(width: 16)
-            Text(FichaCadeira.tituloSeccao)
-            Spacer(minLength: 0)
-        }
-        .help("Avaliação, datas, programa e avisos da cadeira, juntando o que se disse em todas as aulas")
     }
 }
 
