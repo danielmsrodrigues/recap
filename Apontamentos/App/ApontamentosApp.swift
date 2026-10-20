@@ -12,8 +12,8 @@ struct ApontamentosApp: App {
     @State private var atualizador = Atualizador()
 
     init() {
-        let library = Library(raiz: Self.raiz)
         let definicoes = Definicoes()
+        let library = Library(raiz: definicoes.raizAulas, organizacao: definicoes.organizacao)
         _library = State(initialValue: library)
         _definicoes = State(initialValue: definicoes)
         let fichas = Fichas(library: library, definicoes: definicoes)
@@ -22,14 +22,6 @@ struct ApontamentosApp: App {
         _estudo = State(initialValue: Estudo(library: library, definicoes: definicoes))
         // O painel das perguntas abre sempre ao arrancar; fechá-lo só vale até sair da app.
         UserDefaults.standard.set(true, forKey: "mostrarPerguntas")
-    }
-
-    /// Em DEBUG, `APONTAMENTOS_RAIZ` troca `~/Aulas` por outra pasta (testes manuais sem tocar nas aulas reais).
-    private static var raiz: URL {
-        #if DEBUG
-        if let p = ProcessInfo.processInfo.environment["APONTAMENTOS_RAIZ"] { return URL(fileURLWithPath: p) }
-        #endif
-        return Disco.raizPorDefeito
     }
 
     var body: some Scene {
@@ -76,6 +68,9 @@ struct ApontamentosApp: App {
         Settings {
             SettingsView()
                 .environment(definicoes)
+                .environment(library)
+                .environment(fila)
+                .environment(direto)
         }
     }
 }

@@ -1,24 +1,27 @@
 import Foundation
 import Observation
 
-/// Cadeiras e aulas lidas de `~/Aulas`. Não há base de dados: cada `recarregar()` volta a ler o disco.
+/// Cadeiras e aulas lidas da pasta das aulas (`~/Aulas` por defeito). Não há base de dados: cada `recarregar()` volta a ler o disco.
 @MainActor @Observable
 final class Library {
-    let raiz: URL
+    private(set) var raiz: URL
+    /// Muda os grupos da barra lateral; o que está em `cadeira.json` não é tocado.
+    var organizacao: OrganizacaoCurso { didSet { if organizacao != oldValue { recarregar() } } }
     private(set) var cadeiras: [Cadeira] = []
     /// Muda a cada leitura do disco; as vistas usam-no para recarregar ficheiros.
     private(set) var versao = 0
     private(set) var erro: String?
 
-    init(raiz: URL = Disco.raizPorDefeito) {
+    init(raiz: URL = Disco.raizPorDefeito, organizacao: OrganizacaoCurso = .anoESemestre) {
         self.raiz = raiz
+        self.organizacao = organizacao
         recarregar()
     }
 
     func recarregar() {
         do {
             try FileManager.default.createDirectory(at: raiz, withIntermediateDirectories: true)
-            cadeiras = try Self.ler(raiz: raiz)
+            cadeiras = try Self.ler(raiz: raiz, organizacao: organizacao)
             erro = nil
         } catch {
             erro = "Não foi possível ler \(raiz.path): \(error.localizedDescription)"
@@ -26,7 +29,33 @@ final class Library {
         versao += 1
     }
 
-    nonisolated static func ler(raiz: URL, hoje: Date = .now) throws -> [Cadeira] {
+    /// Passa a ler outra pasta. Com `mover`, as cadeiras da pasta atual vão para lá primeiro.
+    func mudarRaiz(para nova: URL, mover: Bool) throws {
+        let nova = nova.standardizedFileURL
+        guard !nova.mesmoCaminho(raiz) else { return }
+        if mover { try Self.moverCadeiras(de: raiz, para: nova) }
+        raiz = nova
+        recarregar()
+    }
+
+    /// Move cada pasta de `origem` para `destino`. Recusa antes de mexer em nada se uma já existir lá
+    /// ou se uma pasta estiver dentro da outra.
+    nonisolated static func moverCadeiras(de origem: URL, para destino: URL) throws {
+        let fm = FileManager.default
+        let o = origem.standardizedFileURL.resolvingSymlinksInPath().path + "/"
+        let d = destino.standardizedFileURL.resolvingSymlinksInPath().path + "/"
+        guard !d.hasPrefix(o), !o.hasPrefix(d) else { throw ErroPasta.dentroDaOutra }
+        guard fm.fileExists(atPath: origem.path) else { return }
+        let itens = try fm.contentsOfDirectory(at: origem, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
+        let repetidos = itens.map(\.lastPathComponent).filter { fm.fileExists(atPath: destino.appending(path: $0).path) }
+        guard repetidos.isEmpty else { throw ErroPasta.jaExiste(repetidos) }
+        try fm.createDirectory(at: destino, withIntermediateDirectories: true)
+        for item in itens {
+            try fm.moveItem(at: item, to: destino.appending(path: item.lastPathComponent))
+        }
+    }
+
+    nonisolated static func ler(raiz: URL, organizacao: OrganizacaoCurso = .anoESemestre, hoje: Date = .now) throws -> [Cadeira] {
         let fm = FileManager.default
         let pastas = try fm.contentsOfDirectory(at: raiz, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles)
         let lidas = pastas
@@ -53,7 +82,9 @@ final class Library {
         return lidas
             .map { c in
                 Cadeira(nome: c.nome, pasta: c.pasta, meta: c.meta, aulas: c.aulas,
-                        semestre: c.meta.semestre ?? Semestre(ano: c.letivo.inicio - primeiro + 1, numero: c.letivo.numero))
+                        semestre: Semestre.grupo(escolhido: c.meta.semestre,
+                                                 deduzido: Semestre(ano: c.letivo.inicio - primeiro + 1, numero: c.letivo.numero),
+                                                 organizacao: organizacao))
             }
             .sorted { $0.nome.localizedStandardCompare($1.nome) == .orderedAscending }
     }
@@ -185,5 +216,17 @@ extension URL {
                 .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         }
         return self == outro || chave(self) == chave(outro)
+    }
+}
+
+enum ErroPasta: LocalizedError {
+    case dentroDaOutra
+    case jaExiste([String])
+
+    var errorDescription: String? {
+        switch self {
+        case .dentroDaOutra: "A pasta nova não pode estar dentro da atual, nem a atual dentro da nova."
+        case .jaExiste(let nomes): "A pasta nova já tem \(nomes.joined(separator: ", ")). Nada foi movido."
+        }
     }
 }
