@@ -60,8 +60,11 @@ jobs:
           security find-identity -v -p codesigning ci.keychain-db
 
       - name: Testes
+        env:
+          # O xcodebuild só passa ao processo dos testes as variáveis com prefixo TEST_RUNNER_: assim os testes veem CI=true
+          # e o dos slides do mesmo modelo desliga-se (depende dos modelos do Vision, que mudam com o macOS).
+          TEST_RUNNER_CI: "true"
         run: |
-          # (O teste dos slides do mesmo modelo desliga-se sozinho com CI=true: depende dos modelos do Vision.)
           extra=()
           if [[ "$TEM_CERTIFICADO" != "true" ]]; then
             # Sem o certificado a app assina-se ad-hoc, e o teste da assinatura do atualizador não faz sentido.
