@@ -106,7 +106,7 @@ struct SidebarView: View {
                 ForEach(library.semestres, id: \.self) { s in
                     let porRever = Self.porRever(library.cadeiras.filter { $0.semestre == s }.flatMap(\.aulas))
                     Toggle(isOn: Binding(get: { s == atual }, set: { if $0 { semestreEscolhido = s } })) {
-                        Text(s.nome)
+                        Text(library.nome(s))
                         if porRever > 0 { Text("\(porRever) por rever") }
                     }
                 }
@@ -114,7 +114,7 @@ struct SidebarView: View {
                 // Uma cápsula, para se ler como seletor e não como mais um título acima das cadeiras.
                 HStack(spacing: 5) {
                     Image(systemName: "calendar").foregroundStyle(.secondary)
-                    Text(atual.nome).fontWeight(.medium)
+                    Text(library.nome(atual)).fontWeight(.medium)
                     Image(systemName: "chevron.up.chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                 }
                 .font(.subheadline)
@@ -127,7 +127,7 @@ struct SidebarView: View {
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .fixedSize()
-            .help(library.organizacao == .ano ? "Mudar de ano (a procura é em todos)" : "Mudar de semestre (a procura é em todos)")
+            .help("Mudar de \(library.organizacao == .ano ? "ano" : library.nomePeriodo) (a procura é em todos)")
             Spacer()
         }
         .padding(.horizontal, 12)

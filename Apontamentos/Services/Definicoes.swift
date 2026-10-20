@@ -45,6 +45,10 @@ final class Definicoes {
     /// Vazio = `~/Aulas`.
     var pastaAulas: String { didSet { defaults.set(pastaAulas, forKey: "pastaAulas") } }
     var organizacao: OrganizacaoCurso { didSet { defaults.set(organizacao.rawValue, forKey: "organizacao") } }
+    /// Os meses em que começa cada período do ano letivo (`CalendarioLetivo`). Setembro e fevereiro por defeito.
+    var iniciosPeriodos: [Int] { didSet { defaults.set(iniciosPeriodos, forKey: "iniciosPeriodos") } }
+    /// Anos do curso, para as escolhas manuais de ano de cada cadeira. 4 por defeito, como até aqui.
+    var duracaoCurso: Int { didSet { defaults.set(duracaoCurso, forKey: "duracaoCurso") } }
     /// A língua em que as aulas são dadas (o Whisper transcreve nela). Espanhol por defeito, como até aqui.
     var idiomaAulas: IdiomaAula { didSet { defaults.set(idiomaAulas.rawValue, forKey: "idiomaAulas") } }
     /// O curso, para o Claude saber para quem escreve: "licenciatura em X, 1.º ano, universidade Y". Vazio = genérico.
@@ -66,6 +70,9 @@ final class Definicoes {
         modeloWhisper = defaults.string(forKey: "modeloWhisper").flatMap(WhisperModelo.init) ?? .largeV3Turbo
         pastaAulas = defaults.string(forKey: "pastaAulas") ?? ""
         organizacao = defaults.string(forKey: "organizacao").flatMap(OrganizacaoCurso.init) ?? .anoESemestre
+        iniciosPeriodos = (defaults.array(forKey: "iniciosPeriodos") as? [Int]).flatMap { CalendarioLetivo.valido($0) ? $0 : nil }
+            ?? CalendarioLetivo.porDefeito
+        duracaoCurso = max(1, defaults.object(forKey: "duracaoCurso") as? Int ?? 4)
         idiomaAulas = defaults.string(forKey: "idiomaAulas").flatMap(IdiomaAula.init) ?? .espanhol
         contextoCurso = defaults.string(forKey: "contextoCurso") ?? ""
         linguaApontamentos = defaults.string(forKey: "linguaApontamentos").flatMap(LinguaApontamentos.init) ?? .ptPT

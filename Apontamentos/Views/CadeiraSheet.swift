@@ -24,11 +24,11 @@ struct CadeiraSheet: View {
             Form {
                 TextField("Nome", text: $nome, prompt: Text("ex.: Álgebra Linear"))
                 if let cadeira, library.organizacao != .nenhuma {
-                    Picker(library.organizacao.rotulo, selection: $semestre) {
-                        Text("Automático (\(cadeira.meta.semestre == nil ? cadeira.semestre.nome : "pela data das aulas"))").tag(Semestre?.none)
+                    Picker(library.rotuloPeriodo, selection: $semestre) {
+                        Text("Automático (\(cadeira.meta.semestre == nil ? library.nome(cadeira.semestre) : "pela data das aulas"))").tag(Semestre?.none)
                         Divider()
-                        ForEach(library.organizacao.opcoes(ate: cadeira.semestre.ano), id: \.self) { s in
-                            Text(s.nome).tag(Optional(s))
+                        ForEach(library.opcoesSemestre(cadeira), id: \.self) { s in
+                            Text(library.nome(s)).tag(Optional(s))
                         }
                     }
                 }
@@ -109,7 +109,7 @@ struct OpcoesCadeira: View {
             ForEach(grupos[0].cadeiras) { Text($0.nome).tag($0.nome) }
         } else {
             ForEach(grupos, id: \.semestre) { grupo in
-                Section(grupo.semestre.nome) {
+                Section(library.nome(grupo.semestre)) {
                     ForEach(grupo.cadeiras) { Text($0.nome).tag($0.nome) }
                 }
             }
