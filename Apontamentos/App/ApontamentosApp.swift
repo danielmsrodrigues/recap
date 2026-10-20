@@ -20,8 +20,8 @@ struct ApontamentosApp: App {
         _fichas = State(initialValue: fichas)
         _fila = State(initialValue: ProcessingQueue(runner: PipelineRunner(library: library, definicoes: definicoes, fichas: fichas)))
         _estudo = State(initialValue: Estudo(library: library, definicoes: definicoes))
-        // O painel das perguntas abre sempre ao arrancar; fechá-lo só vale até sair da app.
-        UserDefaults.standard.set(true, forKey: "mostrarPerguntas")
+        // O painel Estudo abre sempre ao arrancar; fechá-lo só vale até sair da app.
+        UserDefaults.standard.set(true, forKey: "mostrarEstudo")
     }
 
     var body: some Scene {
@@ -59,6 +59,8 @@ struct ApontamentosApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {}
             CommandGroup(after: .textEditing) { ComandoProcurar() }
+            MenuAula()
+            MenuVer()
             CommandGroup(after: .appSettings) {
                 Button("Preparar o Recap…") { NotificationCenter.default.post(name: .abrirPreparacao, object: nil) }
                 Button("Procurar atualizações…") { Task { await atualizador.procurar() } }

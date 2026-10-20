@@ -244,7 +244,7 @@ private struct EcraInicial: View {
 private struct AulaComPainel: View {
     let aula: Aula
     @Environment(Navegacao.self) private var navegacao
-    @AppStorage("mostrarPerguntas") private var mostrarPerguntas = true
+    @AppStorage("mostrarEstudo") private var mostrarEstudo = true
     @AppStorage("larguraPerguntas") private var larguraGuardada = 320.0
     /// A largura durante o arrasto; só no fim é gravada (gravar a cada pixel escrevia nas preferências dezenas de vezes por segundo).
     @State private var aArrastar: Double?
@@ -255,16 +255,18 @@ private struct AulaComPainel: View {
         HStack(spacing: 0) {
             AulaDetailView(aula: aula).id(aula.pasta)
                 .frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
-            if mostrarPerguntas {
+            if mostrarEstudo {
                 let largura = aArrastar ?? larguraGuardada
                 DivisoriaPainel(largura: Binding(get: { largura }, set: { aArrastar = $0 })) {
                     if let final = aArrastar { larguraGuardada = final }
                     aArrastar = nil
                 }
-                PerguntasView(aula: aula) { segundos in
+                PainelEstudo(aula: aula) { segundos in
                     navegacao.destino = DestinoAula(pasta: aula.pasta, separador: .transcricao, tempo: segundos)
                 } aoClicarSeccao: { ligacao in
                     navegacao.destino = DestinoAula(pasta: aula.pasta, separador: .apontamentos, seccao: ligacao)
+                } aoAbrirAula: { pasta in
+                    navegacao.destino = DestinoAula(pasta: pasta, separador: .apontamentos)
                 }
                 .id(aula.pasta)
                 .frame(width: largura)

@@ -12,8 +12,8 @@ struct AulaDetailView: View {
     private typealias Tab = SeparadorAula
 
     @State private var tab: Tab = .apontamentos
-    /// Painel das perguntas à aula, à direita (está na ContentView; aqui só o botão).
-    @AppStorage("mostrarPerguntas") private var mostrarPerguntas = true
+    /// Painel Estudo, à direita (está na ContentView; aqui só o botão).
+    @AppStorage("mostrarEstudo") private var mostrarEstudo = true
     /// Momento a mostrar na transcrição e texto a realçar nos apontamentos (pesquisa global, `[mm:ss]` clicado).
     @State private var salto: SaltoTempo?
     @State private var realce: [String] = []
@@ -66,6 +66,7 @@ struct AulaDetailView: View {
         .task(id: aula) { carregar() }
         .task(id: navegacao.destino) { aplicarDestino() }
         .focusedSceneValue(\.procurarNosApontamentos, apontamentos == nil || aGerar ? nil : AcaoProcurar { abrirProcura() })
+        .focusedSceneValue(\.comandosAula, comandos)
         .onChange(of: tab) { if tab != .apontamentos { fecharProcura() } }
         #if DEBUG
         .task {
@@ -180,10 +181,28 @@ struct AulaDetailView: View {
     private var subtitulo: String {
         var partes = [aula.cadeira, aula.meta.data.formatted(date: .long, time: .omitted)]
         if let d = aula.meta.duracao { partes.append(Timestamp.duracao(d)) }
-        if let g = aula.meta.geracoes.last {
-            partes.append("última geração: \(g.resumo)")
-        }
         return partes.joined(separator: " · ")
+    }
+
+    /// Sem job ativo nem edição em curso: pode-se gerar, extrair e exportar.
+    private var livre: Bool { job?.ativo != true && !controlador.editando }
+
+    /// As mesmas ações da toolbar, para os menus Aula e Ver.
+    private var comandos: ComandosAula {
+        ComandosAula(
+            editar: apontamentos != nil && !controlador.editando && !aGerar ? { comecarEdicao() } : nil,
+            gerarApontamentos: transcricao != nil && livre && definicoes.faltaParaGerar == nil
+                ? { if apontamentos == nil { gerar() } else { confirmarRegenerar = true } } : nil,
+            temApontamentos: apontamentos != nil,
+            extrairSlides: urlVideo != nil && livre ? { extrairSlides() } : nil,
+            guardarPDF: apontamentos != nil && pdfPronto ? { exportar(pdf: true) } : nil,
+            guardarMarkdown: apontamentos != nil ? { exportar(pdf: false) } : nil,
+            revista: aula.meta.revista,
+            marcarRevista: { marcarRevista($0) },
+            mostrarNoFinder: { NSWorkspace.shared.activateFileViewerSelecting([aula.pasta]) },
+            separador: Binding(get: { tab }, set: { if !controlador.editando { tab = $0 } }),
+            separadores: tabs
+        )
     }
 
     // MARK: Conteúdo
@@ -215,17 +234,9 @@ struct AulaDetailView: View {
             } else {
                 vazioApontamentos
             }
-        case .exercicios:
-            ExerciciosView(aula: aula, aoClicarTimestamp: irParaTranscricao)
-        case .ligacoes:
-            LigacoesView(aula: aula, aoClicarTimestamp: irParaTranscricao) { pasta in
-                navegacao.destino = DestinoAula(pasta: pasta, separador: .apontamentos)
-            }
         case .slides:
-            SlidesView(pasta: aula.pasta, slides: slides, pdfs: pdfsProfessor, podeExtrair: urlVideo != nil && job?.ativo != true) {
-                try? FileManager.default.removeItem(at: aula.pasta.appending(path: Disco.slidesJSON))
-                fila.adicionar(Job(pastaAula: aula.pasta, titulo: aula.meta.titulo, video: urlVideo, gerarApontamentos: false))
-            }
+            SlidesView(pasta: aula.pasta, slides: slides, pdfs: pdfsProfessor, podeExtrair: urlVideo != nil && job?.ativo != true,
+                       aoExtrair: extrairSlides, aoJuntarPDF: { escolherPDF = true }, aoRemoverPDF: removerPDFProfessor)
         case .transcricao:
             if let transcricao {
                 TranscricaoView(transcricao: transcricao, irPara: salto, aoPerguntar: perguntarSobre)
@@ -275,48 +286,44 @@ struct AulaDetailView: View {
 
     // MARK: Barra
 
+    /// Editar · Gerar ▾ · Exportar ▾ | Estudo | Revista. Tudo isto está também no menu Aula.
     @ToolbarContentBuilder private var barra: some ToolbarContent {
         ToolbarItemGroup {
             Button("Editar", systemImage: "pencil") { comecarEdicao() }
                 .labelStyle(.titleAndIcon)
-                .help("Editar os apontamentos diretamente, como num processador de texto")
                 .disabled(apontamentos == nil || controlador.editando || aGerar)
-            Button("Regenerar apontamentos", systemImage: "arrow.clockwise") { confirmarRegenerar = true }
-                .help("Gerar de novo os apontamentos a partir da transcrição guardada")
-                .disabled(transcricao == nil || apontamentos == nil || job?.ativo == true || definicoes.faltaParaGerar != nil || controlador.editando)
-            ShareLink(item: aula.pasta.appending(path: Disco.apontamentosPDF),
-                      preview: SharePreview(aula.meta.titulo, icon: Image(systemName: "doc.richtext"))) {
-                Label("Partilhar PDF", systemImage: "square.and.arrow.up")
-            }
-            .help("Enviar o PDF para o Freeform, AirDrop (iPad/iPhone), Notas…")
-            .disabled(!pdfPronto)
-            Menu("Slides do professor", systemImage: "doc.richtext") {
-                Button(pdfsProfessor.isEmpty ? "Juntar PDFs dos slides…" : "Juntar mais PDFs…") { escolherPDF = true }
-                if !pdfsProfessor.isEmpty {
+            Menu("Gerar", systemImage: "sparkles") {
+                Button(apontamentos == nil ? "Gerar apontamentos" : "Gerar apontamentos de novo…") {
+                    if apontamentos == nil { gerar() } else { confirmarRegenerar = true }
+                }
+                .disabled(transcricao == nil || definicoes.faltaParaGerar != nil)
+                Button("Extrair slides de novo") { extrairSlides() }
+                    .disabled(urlVideo == nil)
+                if let g = aula.meta.geracoes.last {
                     Divider()
-                    ForEach(pdfsProfessor) { pdf in
-                        Button("Remover \"\(pdf.titulo)\"", role: .destructive) { removerPDFProfessor(pdf) }
-                    }
+                    Text("Última geração: \(g.resumo)")
                 }
             }
-            .help("Juntar os slides em PDF publicados pelo professor (um ou mais); o Claude usa só as páginas dadas na aula")
-            Menu("Exportar", systemImage: "arrow.down.doc") {
-                Button("PDF…") { exportar(pdf: true) }.disabled(!pdfPronto)
-                Button("Markdown (.md)…") { exportar(pdf: false) }
+            .labelStyle(.titleAndIcon)
+            .disabled(!livre)
+            Menu("Exportar", systemImage: "square.and.arrow.up") {
+                ShareLink(item: aula.pasta.appending(path: Disco.apontamentosPDF),
+                          preview: SharePreview(aula.meta.titulo, icon: Image(systemName: "doc.richtext"))) {
+                    Label("Partilhar PDF…", systemImage: "square.and.arrow.up")
+                }
+                .disabled(!pdfPronto)
+                Divider()
+                Button("Guardar PDF…") { exportar(pdf: true) }.disabled(!pdfPronto)
+                Button("Guardar Markdown…") { exportar(pdf: false) }
             }
-            .help("Guardar uma cópia dos apontamentos")
+            .labelStyle(.titleAndIcon)
             .disabled(apontamentos == nil)
-            Button("Mostrar no Finder", systemImage: "folder") {
-                NSWorkspace.shared.activateFileViewerSelecting([aula.pasta])
-            }
-            .help("Abrir a pasta da aula no Finder")
         }
         ToolbarItem {
-            Toggle(isOn: $mostrarPerguntas) {
-                Label("Perguntas", systemImage: "bubble.left.and.text.bubble.right")
+            Toggle(isOn: $mostrarEstudo) {
+                Label("Estudo", systemImage: "bubble.left.and.text.bubble.right")
             }
-            .help("Perguntar o que quiseres sobre esta aula (⌥⌘P)")
-            .keyboardShortcut("p", modifiers: [.command, .option])
+            .help("Perguntas, exercícios e ligações desta aula (⌥⌘P)")
         }
         ToolbarItem {
             if aula.meta.revista {
@@ -325,12 +332,11 @@ struct AulaDetailView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.green)
-                .help("Aula revista. Clica para voltar a marcar como por rever.")
+                .help("Clica para voltar a marcar como por rever")
             } else {
                 Button { marcarRevista(true) } label: {
                     Label("Marcar como revista", systemImage: "checkmark.circle").labelStyle(.titleAndIcon)
                 }
-                .help("Já estudaste esta aula? Marca-a como revista.")
             }
         }
     }
@@ -343,10 +349,11 @@ struct AulaDetailView: View {
         return { irParaTranscricao($0) }
     }
 
-    /// Leva o trecho selecionado para o painel das perguntas (e abre-o), à espera da pergunta.
+    /// Leva o trecho selecionado para o painel Estudo (e abre-o, nas perguntas), à espera da pergunta.
     private func perguntarSobre(_ citacao: CitacaoPergunta) {
         estudo.citar(citacao, em: aula)
-        mostrarPerguntas = true
+        UserDefaults.standard.set(SeccaoEstudo.perguntas.rawValue, forKey: "seccaoEstudo")
+        mostrarEstudo = true
     }
 
     private func irParaTranscricao(_ segundos: Double) {
@@ -413,6 +420,12 @@ struct AulaDetailView: View {
     private func gerar() {
         fila.adicionar(Job(pastaAula: aula.pasta, titulo: aula.meta.titulo, video: urlVideo,
                            gerarApontamentos: true, soApontamentos: true))
+    }
+
+    /// Volta a analisar o vídeo com as definições atuais (Definições → Slides e câmara do professor da cadeira).
+    private func extrairSlides() {
+        try? FileManager.default.removeItem(at: aula.pasta.appending(path: Disco.slidesJSON))
+        fila.adicionar(Job(pastaAula: aula.pasta, titulo: aula.meta.titulo, video: urlVideo, gerarApontamentos: false))
     }
 
     private func estimar() async {

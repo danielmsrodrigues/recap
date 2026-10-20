@@ -2,11 +2,9 @@ import Foundation
 import Observation
 import Synchronization
 
-/// Separadores da vista de uma aula.
+/// Separadores da vista de uma aula: o conteúdo da aula. Perguntas, exercícios e ligações vivem no painel Estudo.
 enum SeparadorAula: String, CaseIterable, Identifiable, Sendable {
     case apontamentos = "Apontamentos"
-    case exercicios = "Exercícios"
-    case ligacoes = "Ligações"
     case transcricao = "Transcrição"
     case slides = "Slides"
     var id: String { rawValue }
