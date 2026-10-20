@@ -2,7 +2,7 @@ import Foundation
 
 /// A língua em que as aulas são dadas. O Whisper transcreve nessa língua; os apontamentos saem na língua
 /// dos apontamentos (`LinguaApontamentos`).
-enum IdiomaAula: String, CaseIterable, Identifiable, Sendable {
+enum IdiomaAula: String, Codable, CaseIterable, Identifiable, Sendable {
     case espanhol = "es", portugues = "pt", ingles = "en", frances = "fr", italiano = "it", alemao = "de"
 
     var id: String { rawValue }

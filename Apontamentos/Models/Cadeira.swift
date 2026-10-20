@@ -9,11 +9,14 @@ struct CadeiraMeta: Codable, Hashable, Sendable {
     /// Escolhido à mão na folha da cadeira. Sem ele, vem da data da primeira aula (`Library.ler`).
     /// Escolhido em "Só por ano", fica com `numero` 0 e o semestre continua a vir das datas.
     var semestre: Semestre?
+    /// Para uma cadeira dada noutra língua; nil = a língua das aulas das Definições.
+    var idioma: IdiomaAula?
 
-    init(glossario: String = "", regiaoIgnorar: RegiaoIgnorar = .automatica, semestre: Semestre? = nil) {
+    init(glossario: String = "", regiaoIgnorar: RegiaoIgnorar = .automatica, semestre: Semestre? = nil, idioma: IdiomaAula? = nil) {
         self.glossario = glossario
         self.regiaoIgnorar = regiaoIgnorar
         self.semestre = semestre
+        self.idioma = idioma
     }
 
     init(from decoder: any Decoder) throws {
@@ -21,6 +24,7 @@ struct CadeiraMeta: Codable, Hashable, Sendable {
         glossario = try c.decodeIfPresent(String.self, forKey: .glossario) ?? ""
         regiaoIgnorar = try c.decodeIfPresent(RegiaoIgnorar.self, forKey: .regiaoIgnorar) ?? .automatica
         semestre = try c.decodeIfPresent(Semestre.self, forKey: .semestre)
+        idioma = try c.decodeIfPresent(IdiomaAula.self, forKey: .idioma)
     }
 }
 

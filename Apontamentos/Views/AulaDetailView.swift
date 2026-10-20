@@ -439,7 +439,7 @@ struct AulaDetailView: View {
                                     glossario: library.cadeira(nome: aula.cadeira)?.meta.glossario ?? "",
                                     transcricao: transcricao)
         do {
-            guard let e = try await gerador.estimar(contexto, prompt: definicoes.promptApontamentos) else { return }
+            guard let e = try await gerador.estimar(contexto, prompt: definicoes.promptApontamentos(idioma: IdiomaAula(codigo: transcricao.idioma))) else { return }
             estimativa = "Entrada: \(e.tokens.formatted()) tokens (≈ \(TabelaPrecos.formatar(e.custoEntrada))), mais a saída."
         } catch {
             estimativa = "Não foi possível estimar o custo: \(error.localizedDescription)"
