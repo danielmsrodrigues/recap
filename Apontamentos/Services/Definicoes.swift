@@ -42,6 +42,9 @@ final class Definicoes {
     var slidesLimiar: Double { didSet { defaults.set(slidesLimiar, forKey: "slidesLimiar") } }
     var slidesIntervalo: Double { didSet { defaults.set(slidesIntervalo, forKey: "slidesIntervalo") } }
     var slidesMaximo: Int { didSet { defaults.set(slidesMaximo, forKey: "slidesMaximo") } }
+    /// Vazio = `~/Aulas`.
+    var pastaAulas: String { didSet { defaults.set(pastaAulas, forKey: "pastaAulas") } }
+    var organizacao: OrganizacaoCurso { didSet { defaults.set(organizacao.rawValue, forKey: "organizacao") } }
     var precosPersonalizados: [String: Preco] {
         didSet { defaults.set(try? JSONEncoder().encode(precosPersonalizados), forKey: "precosPersonalizados") }
     }
@@ -55,6 +58,8 @@ final class Definicoes {
         modeloClaude = defaults.string(forKey: "modeloClaude") ?? Self.modeloClaudePorDefeito
         esforco = defaults.string(forKey: "esforco").flatMap(Esforco.init) ?? .high
         modeloWhisper = defaults.string(forKey: "modeloWhisper").flatMap(WhisperModelo.init) ?? .largeV3Turbo
+        pastaAulas = defaults.string(forKey: "pastaAulas") ?? ""
+        organizacao = defaults.string(forKey: "organizacao").flatMap(OrganizacaoCurso.init) ?? .anoESemestre
         let padrao = ConfigSlides()
         slidesLimiar = defaults.object(forKey: "slidesLimiar") as? Double ?? padrao.limiar
         slidesIntervalo = defaults.object(forKey: "slidesIntervalo") as? Double ?? padrao.intervalo
@@ -62,6 +67,14 @@ final class Definicoes {
         precosPersonalizados = defaults.data(forKey: "precosPersonalizados")
             .flatMap { try? JSONDecoder().decode([String: Preco].self, from: $0) } ?? [:]
         temChaveAPI = KeychainStore.temChave()
+    }
+
+    /// Em DEBUG, `APONTAMENTOS_RAIZ` ganha a tudo (testes manuais sem tocar nas aulas reais).
+    var raizAulas: URL {
+        #if DEBUG
+        if let p = ProcessInfo.processInfo.environment["APONTAMENTOS_RAIZ"] { return URL(fileURLWithPath: p, isDirectory: true) }
+        #endif
+        return pastaAulas.isEmpty ? Disco.raizPorDefeito : URL(fileURLWithPath: pastaAulas, isDirectory: true)
     }
 
     var tabelaPrecos: TabelaPrecos { TabelaPrecos(personalizados: precosPersonalizados) }

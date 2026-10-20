@@ -65,7 +65,7 @@ struct SidebarView: View {
                             .menuStyle(.borderlessButton)
                             .menuIndicator(.hidden)
                             .fixedSize()
-                            .help("Semestre, glossário, renomear e outras opções da cadeira")
+                            .help(library.organizacao == .nenhuma ? "Glossário, renomear e outras opções da cadeira" : "\(library.organizacao.rotulo), glossário, renomear e outras opções da cadeira")
                     }
                     .contextMenu { menu(cadeira) }
                 }
@@ -76,7 +76,7 @@ struct SidebarView: View {
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            if let semestre { seletorSemestre(semestre) }
+            if let semestre, library.organizacao != .nenhuma { seletorSemestre(semestre) }
         }
         // Uma aula de outro semestre aberta pela pesquisa ou por um link: a lista muda para lá e abre a cadeira.
         .onChange(of: selecao) { _, nova in
@@ -86,7 +86,7 @@ struct SidebarView: View {
         }
         .overlay {
             if library.cadeiras.isEmpty && jobsPorAcabar.isEmpty {
-                Text("Ainda não há aulas.\nAs cadeiras ficam em ~/Aulas.")
+                Text("Ainda não há aulas.\nAs cadeiras ficam em \((library.raiz.path as NSString).abbreviatingWithTildeInPath).")
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
             }
@@ -151,7 +151,7 @@ struct SidebarView: View {
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .fixedSize()
-            .help("Mudar de semestre (a pesquisa procura em todos)")
+            .help(library.organizacao == .ano ? "Mudar de ano (a pesquisa procura em todos)" : "Mudar de semestre (a pesquisa procura em todos)")
             Spacer()
         }
         .padding(.horizontal, 12)
@@ -193,12 +193,11 @@ struct SidebarView: View {
 
     @ViewBuilder private func menu(_ cadeira: Cadeira) -> some View {
         let ativa = fila.jobs.contains { $0.ativo && $0.pastaAula.path.hasPrefix(cadeira.pasta.path + "/") }
-        Menu("Semestre") {
-            Toggle("Automático, pela data das aulas", isOn: Binding(get: { cadeira.meta.semestre == nil }, set: { if $0 { definirSemestre(nil, cadeira) } }))
-            Divider()
-            ForEach(1...max(4, cadeira.semestre.ano), id: \.self) { ano in
-                ForEach(1...2, id: \.self) { n in
-                    let s = Semestre(ano: ano, numero: n)
+        if library.organizacao != .nenhuma {
+            Menu(library.organizacao.rotulo) {
+                Toggle("Automático, pela data das aulas", isOn: Binding(get: { cadeira.meta.semestre == nil }, set: { if $0 { definirSemestre(nil, cadeira) } }))
+                Divider()
+                ForEach(library.organizacao.opcoes(ate: cadeira.semestre.ano), id: \.self) { s in
                     Toggle(s.nome, isOn: Binding(get: { cadeira.semestre == s }, set: { if $0 { definirSemestre(s, cadeira) } }))
                 }
             }

@@ -3,12 +3,96 @@ import SwiftUI
 struct SettingsView: View {
     var body: some View {
         TabView {
+            Tab("Aulas", systemImage: "folder") { AulasSettings() }
             Tab("Geração", systemImage: "sparkles") { GeracaoSettings() }
             Tab("Transcrição", systemImage: "waveform") { TranscricaoSettings() }
             Tab("Slides", systemImage: "rectangle.on.rectangle") { SlidesSettings() }
             Tab("Prompt", systemImage: "text.quote") { PromptSettings() }
         }
         .frame(width: 640)
+    }
+}
+
+// MARK: Aulas
+
+private struct AulasSettings: View {
+    @Environment(Definicoes.self) private var definicoes
+    @Environment(Library.self) private var library
+    @Environment(ProcessingQueue.self) private var fila
+    @Environment(SessaoDireto.self) private var direto
+    @State private var escolher = false
+    /// A pasta escolhida, à espera de saber se as aulas vão para lá.
+    @State private var nova: URL?
+    @State private var erro: String?
+
+    /// Uma aula a processar ou em direto escreve na pasta atual: não se troca a meio.
+    private var ocupada: Bool { fila.jobs.contains(where: \.ativo) || direto.ativa }
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("Pasta") {
+                    Text((library.raiz.path as NSString).abbreviatingWithTildeInPath)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+                HStack {
+                    Button("Escolher…") { escolher = true }
+                    Button("Repor ~/Aulas") { pedir(Disco.raizPorDefeito) }
+                        .disabled(library.raiz.mesmoCaminho(Disco.raizPorDefeito))
+                    Spacer()
+                    Button("Mostrar no Finder") { NSWorkspace.shared.activateFileViewerSelecting([library.raiz]) }
+                }
+                .disabled(ocupada)
+                if let erro { Text(erro).foregroundStyle(.red).font(.callout) }
+            } header: {
+                Text("Pasta das aulas")
+            } footer: {
+                Text(ocupada
+                     ? "Espera que a aula em curso acabe para mudar de pasta."
+                     : "Numa pasta do iCloud Drive (a de Documentos, se estiver sincronizada), as aulas ficam em todos os teus dispositivos. Os vídeos originais ficam onde estão.")
+            }
+
+            Section {
+                Picker("Organização", selection: Binding(get: { definicoes.organizacao }, set: {
+                    definicoes.organizacao = $0
+                    library.organizacao = $0
+                })) {
+                    ForEach(OrganizacaoCurso.allCases) { Text($0.nome).tag($0) }
+                }
+                .pickerStyle(.radioGroup)
+            } header: {
+                Text("Barra lateral")
+            } footer: {
+                Text("Por defeito, o ano e o semestre vêm das datas das aulas (setembro a janeiro é o 1.º semestre). Num curso de um ano ou sem semestres, escolhe \"Só por ano\" ou \"Sem divisão\". Os semestres escolhidos à mão em cada cadeira não se perdem.")
+            }
+        }
+        .formStyle(.grouped)
+        .fileImporter(isPresented: $escolher, allowedContentTypes: [.folder]) { resultado in
+            if case .success(let url) = resultado { pedir(url) }
+        }
+        .confirmationDialog("Mover as aulas para a pasta nova?", isPresented: Binding(get: { nova != nil }, set: { if !$0 { nova = nil } }), presenting: nova) { url in
+            Button("Mover as aulas") { mudar(para: url, mover: true) }
+            Button("Usar a pasta sem mover") { mudar(para: url, mover: false) }
+            Button("Cancelar", role: .cancel) {}
+        } message: { url in
+            Text("As \(library.cadeiras.count) cadeira(s) de \((library.raiz.path as NSString).abbreviatingWithTildeInPath) passam para \((url.path as NSString).abbreviatingWithTildeInPath). Sem mover, o Recap passa a ler só a pasta nova e as aulas atuais ficam onde estão.")
+        }
+    }
+
+    private func pedir(_ url: URL) {
+        guard !url.mesmoCaminho(library.raiz) else { return }
+        if library.cadeiras.isEmpty { mudar(para: url, mover: false) } else { nova = url }
+    }
+
+    private func mudar(para url: URL, mover: Bool) {
+        do {
+            try library.mudarRaiz(para: url, mover: mover)
+            definicoes.pastaAulas = url.mesmoCaminho(Disco.raizPorDefeito) ? "" : url.standardizedFileURL.path
+            erro = nil
+        } catch {
+            erro = error.localizedDescription
+        }
     }
 }
 

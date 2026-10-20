@@ -14,17 +14,16 @@ struct CadeiraSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(cadeira.nome).font(.title2.bold())
-            Picker("Semestre", selection: $semestre) {
-                Text("Automático (\(cadeira.meta.semestre == nil ? cadeira.semestre.nome : "pela data das aulas"))").tag(Semestre?.none)
-                Divider()
-                ForEach(1...max(4, cadeira.semestre.ano), id: \.self) { ano in
-                    ForEach(1...2, id: \.self) { n in
-                        let s = Semestre(ano: ano, numero: n)
+            if library.organizacao != .nenhuma {
+                Picker(library.organizacao.rotulo, selection: $semestre) {
+                    Text("Automático (\(cadeira.meta.semestre == nil ? cadeira.semestre.nome : "pela data das aulas"))").tag(Semestre?.none)
+                    Divider()
+                    ForEach(library.organizacao.opcoes(ate: cadeira.semestre.ano), id: \.self) { s in
                         Text(s.nome).tag(Optional(s))
                     }
                 }
+                .fixedSize()
             }
-            .fixedSize()
             Text("Glossário").font(.headline)
             Text("Um termo por linha, em espanhol, como o professor o diz. Podes acrescentar a tradução: `autovalor = valor próprio`. Os termos ajudam o Whisper a reconhecê-los (só cabem cerca de 30) e o Claude a traduzi-los.")
                 .font(.callout)

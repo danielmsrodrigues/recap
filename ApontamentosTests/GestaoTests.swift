@@ -66,6 +66,62 @@ struct GestaoTests {
         #expect(lib.semestres.first == Semestre(ano: 3, numero: 1))
     }
 
+    @Test func organizacaoSoPorAnoOuSemDivisao() throws {
+        let (lib, raiz) = try biblioteca()
+        defer { try? FileManager.default.removeItem(at: raiz) }
+        func data(_ texto: String) -> Date { try! Date(texto + "T12:00:00Z", strategy: .iso8601) }
+        _ = try lib.criarAula(cadeira: "Empresas", titulo: "A", data: data("2026-10-14"), video: nil)
+        _ = try lib.criarAula(cadeira: "Álgebra", titulo: "A", data: data("2027-03-02"), video: nil)
+        _ = try lib.criarAula(cadeira: "Redes", titulo: "A", data: data("2027-11-05"), video: nil)
+
+        func semestres(_ o: OrganizacaoCurso) throws -> [String: Semestre] {
+            Dictionary(uniqueKeysWithValues: try Library.ler(raiz: raiz, organizacao: o).map { ($0.nome, $0.semestre) })
+        }
+        let porAno = try semestres(.ano)
+        #expect(porAno["Empresas"] == Semestre(ano: 1, numero: 0))
+        #expect(porAno["Álgebra"] == Semestre(ano: 1, numero: 0))
+        #expect(porAno["Redes"] == Semestre(ano: 2, numero: 0))
+        #expect(porAno["Empresas"]?.nome == "1.º ano")
+        #expect(Set(try semestres(.nenhuma).values) == [.todas])
+
+        // Um ano escolhido em "Só por ano" guarda numero 0; com semestres, o semestre volta a vir das datas.
+        var meta = try #require(lib.cadeira(nome: "Álgebra")).meta
+        meta.semestre = Semestre(ano: 2, numero: 0)
+        try lib.guardarCadeira(meta, cadeira: try #require(lib.cadeira(nome: "Álgebra")))
+        #expect(try semestres(.ano)["Álgebra"] == Semestre(ano: 2, numero: 0))
+        #expect(try semestres(.anoESemestre)["Álgebra"] == Semestre(ano: 2, numero: 2))
+
+        lib.organizacao = .nenhuma
+        #expect(lib.semestres == [.todas])
+        #expect(OrganizacaoCurso.nenhuma.opcoes(ate: 1).isEmpty)
+        #expect(OrganizacaoCurso.ano.opcoes(ate: 1).count == 4)
+        #expect(OrganizacaoCurso.anoESemestre.opcoes(ate: 5).count == 10)
+    }
+
+    @Test func mudarAPastaDasAulas() throws {
+        let (lib, raiz) = try biblioteca()
+        let outra = FileManager.default.temporaryDirectory.appending(path: "gestao-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: raiz); try? FileManager.default.removeItem(at: outra) }
+        let pasta = try lib.criarAula(cadeira: "Cálculo", titulo: "Límites", data: .now, video: nil)
+        try Disco.escreverApontamentos("# x", em: pasta)
+
+        try lib.mudarRaiz(para: outra, mover: true)
+        #expect(lib.raiz.mesmoCaminho(outra))
+        #expect(Disco.lerApontamentos(try #require(lib.cadeira(nome: "Cálculo")?.aulas.first).pasta) == "# x")
+        #expect(!FileManager.default.fileExists(atPath: pasta.path))
+
+        // Sem mover, a pasta antiga fica como estava e a lista passa a ser a da pasta nova.
+        _ = try lib.criarAula(cadeira: "Álgebra", titulo: "A", data: .now, video: nil)
+        try lib.mudarRaiz(para: raiz, mover: false)
+        #expect(lib.cadeiras.isEmpty)
+
+        // Nada se move se a pasta nova já tiver uma cadeira com o mesmo nome, nem para dentro da atual.
+        try FileManager.default.createDirectory(at: raiz.appending(path: "Cálculo"), withIntermediateDirectories: true)
+        #expect(throws: ErroPasta.self) { try Library.moverCadeiras(de: outra, para: raiz) }
+        #expect(FileManager.default.fileExists(atPath: outra.appending(path: "Álgebra").path))
+        #expect(throws: ErroPasta.self) { try Library.moverCadeiras(de: outra, para: outra.appending(path: "sub")) }
+    }
+
     @Test func revistaEEdicoesManuais() throws {
         let (lib, raiz) = try biblioteca()
         defer { try? FileManager.default.removeItem(at: raiz) }
