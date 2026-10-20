@@ -91,13 +91,13 @@ enum ErroClaude: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .semChave:
-            return "Falta a chave API da Anthropic. Adiciona-a em Definições → API."
+            return "Falta a chave API da Anthropic. Adiciona-a em Definições → Claude."
         case .http(let status, let tipo, let mensagem, _):
             let detalhe = mensagem.map { " (\($0))" } ?? ""
             switch status {
-            case 401: return "A chave API foi rejeitada. Verifica-a em Definições → API."
+            case 401: return "A chave API foi rejeitada. Verifica-a em Definições → Claude."
             case 403: return "A chave API não tem permissão para este pedido\(detalhe)."
-            case 404: return "Modelo não encontrado. Verifica o nome do modelo em Definições → API\(detalhe)."
+            case 404: return "Modelo não encontrado. Verifica o nome do modelo em Definições → Claude\(detalhe)."
             case 413: return "O pedido é demasiado grande para a API\(detalhe)."
             case 429: return "Limite de pedidos da API atingido\(detalhe)."
             case 529: return "Os servidores da Anthropic estão sobrecarregados. Tenta de novo daqui a pouco."

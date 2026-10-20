@@ -1,67 +1,100 @@
 import SwiftUI
 
-/// Definições de uma cadeira: o semestre e o glossário que entra no prompt do Whisper e do Claude.
+/// Editar uma cadeira (nome, semestre, glossário e câmara do professor), ou criar uma nova (`cadeira` nil).
 struct CadeiraSheet: View {
     @Environment(Library.self) private var library
+    @Environment(Definicoes.self) private var definicoes
     @Environment(\.dismiss) private var dismiss
-    let cadeira: Cadeira
+    let cadeira: Cadeira?
+    /// A pasta mudou de nome: quem tem a aula aberta acerta a seleção.
+    var aoRenomear: ((_ antiga: URL, _ nova: URL) -> Void)?
+
+    @State private var nome = ""
     @State private var glossario = ""
     @State private var regiao: RegiaoIgnorar = .automatica
     /// nil = deduzido da data das aulas.
     @State private var semestre: Semestre?
     @State private var erro: String?
 
+    private var nomeLimpo: String { nome.trimmingCharacters(in: .whitespaces) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(cadeira.nome).font(.title2.bold())
-            if library.organizacao != .nenhuma {
-                Picker(library.organizacao.rotulo, selection: $semestre) {
-                    Text("Automático (\(cadeira.meta.semestre == nil ? cadeira.semestre.nome : "pela data das aulas"))").tag(Semestre?.none)
-                    Divider()
-                    ForEach(library.organizacao.opcoes(ate: cadeira.semestre.ano), id: \.self) { s in
-                        Text(s.nome).tag(Optional(s))
+            Text(cadeira == nil ? "Nova cadeira" : "Editar cadeira").font(.title2.bold())
+            Form {
+                TextField("Nome", text: $nome, prompt: Text("ex.: Álgebra Linear"))
+                if let cadeira, library.organizacao != .nenhuma {
+                    Picker(library.organizacao.rotulo, selection: $semestre) {
+                        Text("Automático (\(cadeira.meta.semestre == nil ? cadeira.semestre.nome : "pela data das aulas"))").tag(Semestre?.none)
+                        Divider()
+                        ForEach(library.organizacao.opcoes(ate: cadeira.semestre.ano), id: \.self) { s in
+                            Text(s.nome).tag(Optional(s))
+                        }
                     }
                 }
-                .fixedSize()
+                Picker("Câmara do professor", selection: $regiao) {
+                    ForEach(RegiaoIgnorar.allCases) { Text($0.nome).tag($0) }
+                }
             }
+            .formStyle(.grouped)
+            .scrollDisabled(true)
+            .fixedSize(horizontal: false, vertical: true)
             Text("Glossário").font(.headline)
-            Text("Um termo por linha, em espanhol, como o professor o diz. Podes acrescentar a tradução: `autovalor = valor próprio`. Os termos ajudam o Whisper a reconhecê-los (só cabem cerca de 30) e o Claude a traduzi-los.")
+            Text("Um termo por linha, em \(definicoes.idiomaAulas.nomeNoPrompt), como o professor o diz. Podes acrescentar a tradução: `autovalor = valor próprio`. Os termos ajudam o Whisper a reconhecê-los (só cabem cerca de 30) e o Claude a traduzi-los.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             TextEditor(text: $glossario)
                 .font(.body.monospaced())
-                .frame(minHeight: 240)
+                .frame(minHeight: 200)
                 .border(.separator)
-            Picker("Câmara do professor (ignorar nos slides)", selection: $regiao) {
-                ForEach(RegiaoIgnorar.allCases) { Text($0.nome).tag($0) }
-            }
+            Text("A câmara do professor é a zona do ecrã que se ignora ao procurar slides nos vídeos desta cadeira.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             if let erro { Text(erro).foregroundStyle(.red).font(.callout) }
             HStack {
-                Button("Mostrar no Finder") { NSWorkspace.shared.activateFileViewerSelecting([cadeira.pasta]) }
                 Spacer()
                 Button("Cancelar", role: .cancel) { dismiss() }
-                Button("Guardar") {
-                    do {
-                        var meta = cadeira.meta
-                        meta.glossario = glossario
-                        meta.regiaoIgnorar = regiao
-                        meta.semestre = semestre
-                        try library.guardarCadeira(meta, cadeira: cadeira)
-                        dismiss()
-                    } catch {
-                        erro = error.localizedDescription
-                    }
-                }
-                .keyboardShortcut(.defaultAction)
+                Button(cadeira == nil ? "Criar" : "Guardar") { guardar() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(nomeLimpo.isEmpty)
             }
         }
         .padding(20)
         .frame(width: 520)
         .onAppear {
+            guard let cadeira else { return }
+            nome = cadeira.nome
             glossario = cadeira.meta.glossario
             regiao = cadeira.meta.regiaoIgnorar
             semestre = cadeira.meta.semestre
+        }
+    }
+
+    private func guardar() {
+        do {
+            var meta = cadeira?.meta ?? CadeiraMeta()
+            meta.glossario = glossario
+            meta.regiaoIgnorar = regiao
+            meta.semestre = semestre
+            if let cadeira {
+                var atual = cadeira
+                if nomeLimpo != cadeira.nome {
+                    let nova = try library.renomearCadeira(cadeira, para: nomeLimpo)
+                    aoRenomear?(cadeira.pasta, nova)
+                    guard let renomeada = library.cadeiras.first(where: { $0.pasta.mesmoCaminho(nova) }) else { dismiss(); return }
+                    atual = renomeada
+                }
+                try library.guardarCadeira(meta, cadeira: atual)
+            } else {
+                let pasta = try library.criarCadeira(nome: nomeLimpo)
+                if let nova = library.cadeiras.first(where: { $0.pasta.mesmoCaminho(pasta) }) {
+                    try library.guardarCadeira(meta, cadeira: nova)
+                }
+            }
+            dismiss()
+        } catch {
+            erro = error.localizedDescription
         }
     }
 }

@@ -91,6 +91,7 @@ actor Transcriber {
         ficheiro url: URL,
         duracao: Double,
         glossario: String,
+        idioma: IdiomaAula = .espanhol,
         progresso: @escaping @Sendable (Double) -> Void
     ) async throws -> [Segmento] {
         let taxa = AudioExtractor.taxa
@@ -105,13 +106,13 @@ actor Transcriber {
                 amostras.removeLast(amostras.count - corte)
             }
             let base = inicio, tamanho = Double(amostras.count) / taxa
-            let segs = try await transcreverBloco(amostras, glossario: glossario) { p in
+            let segs = try await transcreverBloco(amostras, glossario: glossario, idioma: idioma) { p in
                 progresso(min(1, (base + p * tamanho) / duracao))
             }
             todos += segs.map { Segmento(inicio: $0.inicio + base, fim: $0.fim + base, texto: $0.texto, orador: $0.orador) }
             inicio += max(tamanho, 1)
         }
-        let segmentos = Self.limpar(todos)
+        let segmentos = Self.limpar(todos, idioma: idioma)
         guard !segmentos.isEmpty else { throw ErroTranscricao.semFala }
         progresso(1)
         return segmentos
@@ -121,9 +122,10 @@ actor Transcriber {
     func transcrever(
         _ amostras: [Float],
         glossario: String,
+        idioma: IdiomaAula = .espanhol,
         progresso: @escaping @Sendable (Double) -> Void
     ) async throws -> [Segmento] {
-        let segmentos = Self.limpar(try await transcreverBloco(amostras, glossario: glossario, progresso: progresso))
+        let segmentos = Self.limpar(try await transcreverBloco(amostras, glossario: glossario, idioma: idioma, progresso: progresso), idioma: idioma)
         guard !segmentos.isEmpty else { throw ErroTranscricao.semFala }
         progresso(1)
         return segmentos
@@ -132,13 +134,14 @@ actor Transcriber {
     private func transcreverBloco(
         _ amostras: [Float],
         glossario: String,
+        idioma: IdiomaAula,
         progresso: @escaping @Sendable (Double) -> Void
     ) async throws -> [Segmento] {
         guard let kit else { throw ErroTranscricao.modeloNaoCarregado }
 
         var opcoes = DecodingOptions(
             task: .transcribe,
-            language: "es",
+            language: idioma.rawValue,
             temperature: 0,
             usePrefillPrompt: true,
             detectLanguage: false,
@@ -149,7 +152,7 @@ actor Transcriber {
             concurrentWorkerCount: Self.descodificadores,
             chunkingStrategy: .vad
         )
-        let prompt = Self.promptDoGlossario(glossario)
+        let prompt = Self.promptDoGlossario(glossario, idioma: idioma)
         if !prompt.isEmpty, let tokenizer = kit.tokenizer {
             // O decoder só aceita ~224 tokens de prompt e fica com os últimos; cortamos nós para manter os primeiros termos.
             let tokens = tokenizer.encode(text: " " + prompt)
@@ -220,8 +223,8 @@ actor Transcriber {
         return melhor
     }
 
-    /// Só os termos em espanhol: cada linha do glossário até ao primeiro `=`, `→`, `->` ou `|`.
-    static func promptDoGlossario(_ glossario: String) -> String {
+    /// Só os termos na língua da aula: cada linha do glossário até ao primeiro `=`, `→`, `->` ou `|`.
+    static func promptDoGlossario(_ glossario: String, idioma: IdiomaAula = .espanhol) -> String {
         let termos = glossario
             .split(whereSeparator: \.isNewline)
             .compactMap { linha -> String? in
@@ -232,26 +235,19 @@ actor Transcriber {
                 termo = termo.trimmingCharacters(in: .whitespaces.union(CharacterSet(charactersIn: "-*•")))
                 return termo.isEmpty ? nil : termo
             }
-        return termos.isEmpty ? "" : "Glosario: " + termos.joined(separator: ", ") + "."
+        return termos.isEmpty ? "" : "\(idioma.glossario): " + termos.joined(separator: ", ") + "."
     }
 
-    /// Frases que o Whisper inventa em silêncio quando transcreve espanhol.
-    private static let alucinacoes = [
-        "amara.org", "subtítulos realizados por", "subtitulado por", "subtítulos por la comunidad",
-        "¡suscríbete", "gracias por ver el video",
-    ]
-
-    /// Segmentos que, sozinhos, costumam ser o Whisper a preencher silêncio.
-    private static let sozinhosEmSilencio: Set<String> = ["gracias.", "gracias", "¡gracias!", "gracias!", "...", "…"]
-
-    /// Ordena, tira segmentos vazios ou alucinados e junta repetições consecutivas.
-    static func limpar(_ segmentos: [Segmento]) -> [Segmento] {
+    /// Ordena, tira segmentos vazios ou alucinados (as frases que o Whisper inventa em silêncio nessa língua)
+    /// e junta repetições consecutivas.
+    static func limpar(_ segmentos: [Segmento], idioma: IdiomaAula = .espanhol) -> [Segmento] {
+        let alucinacoes = idioma.alucinacoes, sozinhos = idioma.sozinhosEmSilencio
         var saida: [Segmento] = []
         for var s in segmentos.sorted(by: { $0.inicio < $1.inicio }) {
             s.texto = s.texto.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !s.texto.isEmpty else { continue }
             let minusculas = s.texto.lowercased()
-            if alucinacoes.contains(where: minusculas.contains) || sozinhosEmSilencio.contains(minusculas) { continue }
+            if alucinacoes.contains(where: minusculas.contains) || sozinhos.contains(minusculas) { continue }
             if let ultimo = saida.last, ultimo.texto == s.texto {
                 saida[saida.count - 1].fim = max(ultimo.fim, s.fim)
                 continue

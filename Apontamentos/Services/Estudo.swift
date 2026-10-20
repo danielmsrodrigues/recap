@@ -249,7 +249,7 @@ final class Estudo {
         let chave = Self.chave(aula, .pergunta)
         defer { if let citacao, emCurso[chave]?.citacao == citacao { citacoes[chave] = nil } }
         executar(aula, .pergunta, pergunta: pergunta, citacao: citacao, esforco: .medium,
-                 sistema: Self.sistemaPerguntas) { contexto in
+                 sistema: definicoes.prompt(Self.sistemaPerguntas)) { contexto in
             var blocos = contexto.map(NotesGenerator.materiais) ?? []
             if let notas = Disco.lerApontamentos(aula.pasta) {
                 blocos.append(.texto("Apontamentos já feitos desta aula (PT-PT):\n\n<apontamentos>\n\(notas)\n</apontamentos>"))
@@ -291,7 +291,7 @@ final class Estudo {
     }
 
     func gerarExercicios(_ aula: Aula) {
-        executar(aula, .exercicios, sistema: Self.sistemaExercicios) { contexto in
+        executar(aula, .exercicios, sistema: definicoes.prompt(Self.sistemaExercicios)) { contexto in
             var blocos = contexto.map(NotesGenerator.materiais) ?? []
             if let notas = Disco.lerApontamentos(aula.pasta) {
                 blocos.append(.texto("Apontamentos desta aula:\n\n<apontamentos>\n\(notas)\n</apontamentos>"))
@@ -425,15 +425,16 @@ final class Estudo {
     - Momentos da aula como [mm:ss], só com timestamps que existam na transcrição.
     """
 
+    /// Com `{{contexto}}` e `{{idioma}}` por substituir (`Definicoes.prompt`).
     static let sistemaPerguntas = """
-    Respondes às perguntas de um estudante sobre uma aula universitária que ele assistiu (Ciência de Dados e IA, numa universidade espanhola; muita matemática). Recebes a transcrição automática (espanhol, com erros do reconhecimento de voz), os slides ou o PDF do professor, e os apontamentos já feitos.
+    Respondes às perguntas de um estudante sobre uma aula universitária que ele assistiu. {{contexto}} Recebes a transcrição automática (em {{idioma}}, com erros do reconhecimento de voz), os slides ou o PDF do professor, e os apontamentos já feitos.
 
     ## Como responder
     - Responde diretamente à pergunta, de forma clara e curta, para quem está a ver a matéria pela primeira vez.
     - Baseia-te no que foi dito e mostrado na aula, e indica onde: "aos [12:34] o professor…".
     - Quando referires uma secção ou tópico dos apontamentos (por exemplo, "em que parte se fala de X"), põe o link dessa secção tal como vem na lista de secções, ex.: [Cadeia de valor](#cadeia-de-valor). O estudante clica e vai para lá. Só links da lista, nunca âncoras inventadas.
     - Se a pergunta vier com um trecho selecionado (dos apontamentos ou da transcrição), responde sobre esse trecho e situa-o na aula. Num trecho da transcrição, usa o momento indicado para encontrar o contexto.
-    - Se a pergunta for sobre um trecho confuso, diz o que o professor disse (podes citar a frase em espanhol e traduzi-la) e explica-o.
+    - Se a pergunta for sobre um trecho confuso, diz o que o professor disse (podes citar a frase na língua original e traduzi-la) e explica-o.
     - Podes acrescentar explicações que o professor não deu, se forem conhecimento padrão e estiverem certas; põe-nas num bloco `> 💡 **Explicação extra:** ...`.
     - Se a aula não falar do assunto, diz isso claramente antes de responder com conhecimento geral.
     - Nunca inventes o que o professor disse.
@@ -442,8 +443,9 @@ final class Estudo {
     \(comum)
     """
 
+    /// Com `{{contexto}}` por substituir (`Definicoes.prompt`).
     static let sistemaExercicios = """
-    Crias exercícios de treino sobre uma aula universitária (Ciência de Dados e IA, numa universidade espanhola; muita matemática). Recebes a transcrição, os slides ou o PDF do professor, e os apontamentos.
+    Crias exercícios de treino sobre uma aula universitária. {{contexto}} Recebes a transcrição, os slides ou o PDF do professor, e os apontamentos.
 
     ## Exercícios
     - 6 a 8 exercícios parecidos com os exemplos e exercícios da aula, com os mesmos métodos e notação, por ordem crescente de dificuldade.

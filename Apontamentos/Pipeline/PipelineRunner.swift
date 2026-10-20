@@ -100,7 +100,7 @@ final class PipelineRunner {
         let glossario = library.cadeira(nome: library.aula(em: job.pastaAula)?.cadeira ?? "")?.meta.glossario ?? ""
         let inicio = Date.now
         let captados = try await VideoResolver.comAcesso(fonte) {
-            try await transcriber.transcrever(ficheiro: fonte, duracao: duracaoAudio, glossario: glossario) { p in
+            try await transcriber.transcrever(ficheiro: fonte, duracao: duracaoAudio, glossario: glossario, idioma: definicoes.idiomaAulas) { p in
                 Task { @MainActor in job.atualizar(.transcricao, progresso: p) }
             }
         }
@@ -108,7 +108,7 @@ final class PipelineRunner {
         let segmentos = Self.ajustarVelocidade(captados, job.velocidade)
         let duracao = duracaoAudio * job.velocidade
 
-        let transcricao = Transcricao(idioma: "es", modelo: modelo.rawValue, duracao: duracao, criadaEm: .now, segmentos: segmentos)
+        let transcricao = Transcricao(idioma: definicoes.idiomaAulas.rawValue, modelo: modelo.rawValue, duracao: duracao, criadaEm: .now, segmentos: segmentos)
         try Disco.escreverTranscricao(transcricao, em: job.pastaAula)
         try library.atualizarMeta(em: job.pastaAula) {
             $0.duracao = duracao
@@ -188,7 +188,7 @@ final class PipelineRunner {
         // As páginas dos PDFs viram imagens antes do pedido, para os slides poderem entrar nos apontamentos.
         let paginasPDF = await SlidesNosApontamentos.garantirPaginasEmFundo(em: job.pastaAula)
         let contexto = await ContextoAula.carregar(aula, cadeira: library.cadeira(nome: aula.cadeira), transcricao: transcricao)
-        let prompt = PromptStore.ler()
+        let prompt = definicoes.promptApontamentos
 
         job.iniciar(.apontamentos, detalhe: "A preparar o pedido…")
         var detalheBase = "A gerar com \(definicoes.modeloClaude) via \(definicoes.motor.nome)"

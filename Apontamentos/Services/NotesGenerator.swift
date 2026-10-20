@@ -158,7 +158,7 @@ struct NotesGenerator: Sendable {
             ? "A identificação de voz marcou com (aluno) as linhas ditas por alunos; as restantes são do professor. Pode falhar."
             : "Esta transcrição não tem identificação de voz: deduz pelo contexto quem fala."
         let transcricao = """
-        Transcrição automática da aula (espanhol), um segmento por linha com o seu timestamp. \(vozes)
+        Transcrição automática da aula (\(IdiomaAula(codigo: c.transcricao.idioma).nomeNoPrompt)), um segmento por linha com o seu timestamp. \(vozes)
 
         <transcricao>
         \(c.transcricao.textoComTimestamps)

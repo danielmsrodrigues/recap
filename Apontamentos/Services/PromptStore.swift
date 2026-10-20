@@ -2,7 +2,8 @@ import CryptoKit
 import Foundation
 
 /// O prompt de sistema vive num ficheiro editável em Application Support.
-/// Na primeira utilização é copiado do bundle.
+/// Na primeira utilização é copiado do bundle. `{{contexto}}` e `{{idioma}}` são substituídos ao enviar
+/// (`Definicoes.prompt`), pelo curso e pela língua das aulas das Definições.
 enum PromptStore {
     static var pastaApp: URL {
         URL.applicationSupportDirectory.appending(path: "Recap", directoryHint: .isDirectory)
@@ -24,6 +25,7 @@ enum PromptStore {
         "57a47886b9e4a71f8f01122e5b3a7f3af9c9aab00c8d534e83974bd2cfddfe63",
         "276b739eee9dc9a7af6de6d727ffd6182943fc2148fb5b71434a5c3727adf2cc",
         "cbb5b78db8a926614ea49e70a4036936d4640f4bea72c18c60710c1419d59ba3",
+        "80cbd786859057d0c7ae2b2aaa66e8c4c3c876aa944021d7a13cc6e79a157b15",
     ]
 
     static func ler() -> String {

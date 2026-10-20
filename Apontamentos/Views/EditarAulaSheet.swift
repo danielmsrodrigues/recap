@@ -7,20 +7,14 @@ struct EditarAulaSheet: View {
     let aula: Aula
     let aoGuardar: (URL) -> Void
 
-    @State private var titulo = ""
-    @State private var data = Date.now
-    @State private var cadeira = ""
+    @State private var dados = DadosAula()
     @State private var erro: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Editar aula").font(.headline)
             Form {
-                TextField("Título", text: $titulo)
-                DatePicker("Data", selection: $data, displayedComponents: .date)
-                Picker("Cadeira", selection: $cadeira) {
-                    OpcoesCadeira()
-                }
+                FormularioAula(dados: $dados)
             }
             .formStyle(.grouped)
             if let erro { Text(erro).foregroundStyle(.red).font(.callout) }
@@ -29,7 +23,7 @@ struct EditarAulaSheet: View {
                 Button("Cancelar", role: .cancel) { dismiss() }
                 Button("Guardar") {
                     do {
-                        let nova = try library.editarAula(aula, titulo: titulo.trimmingCharacters(in: .whitespaces), data: data, cadeira: cadeira)
+                        let nova = try library.editarAula(aula, titulo: dados.tituloLimpo, data: dados.data, cadeira: dados.nomeCadeira)
                         aoGuardar(nova)
                         dismiss()
                     } catch {
@@ -37,15 +31,15 @@ struct EditarAulaSheet: View {
                     }
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(titulo.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(!dados.valido)
             }
         }
         .padding(20)
         .frame(width: 460)
         .onAppear {
-            titulo = aula.meta.titulo
-            data = aula.meta.data
-            cadeira = aula.cadeira
+            dados.titulo = aula.meta.titulo
+            dados.data = aula.meta.data
+            dados.cadeira = aula.cadeira
         }
     }
 }

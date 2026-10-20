@@ -18,27 +18,10 @@ struct ConfigDiretoSheet: View {
     @State private var miniaturas: [CGWindowID: CGImage] = [:]
     @State private var verOutras = false
     @State private var fonte: FonteAudio?
-    @State private var cadeira = ""
-    @State private var titulo = ""
-    @State private var data = Date.now
+    @State private var dados = DadosAula()
     @State private var erro: String?
-
-    private static let novaCadeiraTag = "\u{0}nova"
-    @State private var novaCadeira = ""
-
-    @State private var verDicas = false
-
-    private var nomeCadeira: String {
-        (cadeira == Self.novaCadeiraTag ? novaCadeira : cadeira).trimmingCharacters(in: .whitespaces)
-    }
-
-    /// O que ainda falta para poder começar (nil quando está tudo).
-    private var falta: String? {
-        if fonte == nil { return "Escolhe a janela da aula" }
-        if nomeCadeira.isEmpty { return "Falta o nome da cadeira" }
-        if titulo.trimmingCharacters(in: .whitespaces).isEmpty { return "Falta o título da aula" }
-        return nil
-    }
+    /// Primeiro a janela, depois a aula: cada passo é curto e cabe em qualquer ecrã.
+    @State private var passo = 1
 
     /// Altura da lista de janelas quando há espaço: as filas das conhecidas, ou 330 com as outras abertas.
     private var alturaJanelas: CGFloat {
@@ -48,6 +31,17 @@ struct ConfigDiretoSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Transcrever em direto").font(.title2.bold())
+            if passo == 1 { passoJanela } else { passoAula }
+        }
+        .padding(20)
+        .frame(width: 660)
+        .task { await carregarFontes() }
+        .onAppear { dados.escolherCadeira(library: library, ultima: ultimaCadeira) }
+    }
+
+    /// Passo 1: que janela ouvir.
+    private var passoJanela: some View {
+        Group {
             Text("O Recap ouve o som da aplicação dessa janela enquanto a aula toca e transcreve-o no fim. Não guarda vídeo nem áudio.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
 
@@ -79,66 +73,70 @@ struct ConfigDiretoSheet: View {
                 }
                 .padding(2)
             }
-            // Num ecrã baixo é a lista que encolhe (até uma fila), não o formulário: o Form agrupado é uma lista
-            // com scroll e, sem altura fixa, ficava com altura zero e escondia o título, deixando o botão desativado.
             .frame(minHeight: min(alturaJanelas, 150), idealHeight: alturaJanelas, maxHeight: alturaJanelas)
 
+            Text("A janela tem de ficar à vista para os slides saírem (atrás de outras ou minimizada, as capturas saem pretas). O som é o da aplicação inteira: não ponhas outro som a tocar.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                if fonte == nil {
+                    Label("Escolhe a janela da aula", systemImage: "info.circle").font(.callout).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Cancelar", role: .cancel) { dismiss() }
+                Button("Continuar") { passo = 2 }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(fonte == nil)
+            }
+        }
+    }
+
+    /// Passo 2: que aula é, e como.
+    private var passoAula: some View {
+        Group {
+            if let fonte {
+                HStack(spacing: 6) {
+                    if let icone = NSRunningApplication(processIdentifier: fonte.pid)?.icon {
+                        Image(nsImage: icone).resizable().frame(width: 16, height: 16)
+                    }
+                    Text(fonte.tituloJanela).lineLimit(1).truncationMode(.middle)
+                    Spacer()
+                    Button("Mudar de janela") { passo = 1 }.buttonStyle(.link)
+                }
+                .font(.callout)
+            }
+
             Form {
-                Picker("Cadeira", selection: $cadeira) {
-                    OpcoesCadeira()
-                    if !library.cadeiras.isEmpty { Divider() }
-                    Text("Nova cadeira…").tag(Self.novaCadeiraTag)
+                FormularioAula(dados: $dados, rotuloData: "Data da aula")
+                Section {
+                    Picker("A aula é", selection: $modo) {
+                        Text("Ao vivo").tag("vivo")
+                        Divider()
+                        Text("Gravação a 1×").tag("1")
+                        Text("Gravação a 1,25×").tag("1.25")
+                        Text("Gravação a 1,5×").tag("1.5")
+                        Text("Gravação a 2×").tag("2")
+                    }
+                    Toggle("Capturar os slides", isOn: $capturarSlides)
+                    Toggle("Gerar apontamentos no fim", isOn: $gerarApontamentos)
+                } footer: {
+                    Text("Numa gravação, põe o leitor à velocidade escolhida aqui: assim os [mm:ss] batem com o minuto da aula. O Recap termina sozinho ao fim de 3 minutos de silêncio.")
                 }
-                if cadeira == Self.novaCadeiraTag {
-                    TextField("Nome da cadeira", text: $novaCadeira, prompt: Text("ex.: Álgebra Lineal"))
-                }
-                TextField("Título da aula", text: $titulo, prompt: Text("ex.: Tema 3 – Diagonalización"))
-                DatePicker("Data da aula", selection: $data, displayedComponents: .date)
-                Picker("A aula é", selection: $modo) {
-                    Text("Ao vivo").tag("vivo")
-                    Divider()
-                    Text("Gravação a 1×").tag("1")
-                    Text("Gravação a 1,25×").tag("1.25")
-                    Text("Gravação a 1,5×").tag("1.5")
-                    Text("Gravação a 2×").tag("2")
-                }
-                Toggle("Capturar os slides", isOn: $capturarSlides)
-                Toggle("Gerar apontamentos no fim", isOn: $gerarApontamentos)
             }
             .formStyle(.grouped)
             .scrollDisabled(true)
             .fixedSize(horizontal: false, vertical: true)
 
-            DisclosureGroup("Dicas", isExpanded: $verDicas) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("• Gravação que já viste: podes pô-la a 1,5× ou 2× no leitor e escolher aqui a mesma velocidade, para os [mm:ss] baterem com o minuto da aula. Podes baixar o volume do Mac, mas não silencies o separador.")
-                    Text("• Slides: a janela da aula tem de estar à vista, por exemplo no monitor. Atrás de outras janelas, noutro desktop ou minimizada, o Chrome deixa de desenhar o vídeo e as capturas saem pretas. Alternativa: o picture-in-picture do leitor (escolhe essa janela aqui).")
-                    Text("• Para isolar um separador, arrasta-o para uma janela própria. O som é o da app inteira: não ponhas outro som a tocar.")
-                    Text("• Quando a aula acabar, o Recap termina sozinho ao fim de 3 minutos de silêncio.")
-                }
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 4)
-            }
-            .font(.callout.bold())
-
             HStack {
-                if let falta {
+                if let falta = dados.falta {
                     Label(falta, systemImage: "info.circle").font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("Cancelar", role: .cancel) { dismiss() }
                 Button("Começar a ouvir") { comecar() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(falta != nil)
+                    .disabled(!dados.valido || fonte == nil)
             }
-        }
-        .padding(20)
-        .frame(width: 660)
-        .task { await carregarFontes() }
-        .onAppear {
-            if library.cadeira(nome: ultimaCadeira) != nil { cadeira = ultimaCadeira }
-            else if let primeira = library.cadeirasPorSemestre.first?.cadeiras.first { cadeira = primeira.nome }
-            else { cadeira = Self.novaCadeiraTag }
         }
     }
 
@@ -169,10 +167,10 @@ struct ConfigDiretoSheet: View {
 
     private func comecar() {
         guard let fonte else { return }
-        ultimaCadeira = nomeCadeira
-        let titulo = titulo.trimmingCharacters(in: .whitespaces)
+        ultimaCadeira = dados.nomeCadeira
+        let titulo = dados.tituloLimpo
         Task {
-            await sessao.comecar(fonte: fonte, cadeira: nomeCadeira, titulo: titulo, data: data, velocidade: velocidade,
+            await sessao.comecar(fonte: fonte, cadeira: dados.nomeCadeira, titulo: titulo, data: dados.data, velocidade: velocidade,
                                  gerarApontamentos: gerarApontamentos, capturarSlides: capturarSlides, library: library, fila: fila)
             if case .falhou(let mensagem) = sessao.estado {
                 erro = mensagem

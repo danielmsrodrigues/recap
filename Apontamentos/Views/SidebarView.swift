@@ -10,8 +10,6 @@ struct SidebarView: View {
     @State private var paraLixo: Aula?
     @State private var cadeiraParaLixo: Cadeira?
     @State private var aEditarAula: Aula?
-    @State private var aRenomear: Cadeira?
-    @State private var novoNome = ""
     @State private var erro: String?
     /// nil = o semestre mais recente. Não fica guardado: ao abrir, a app mostra sempre o semestre em curso.
     @State private var semestreEscolhido: Semestre?
@@ -76,11 +74,6 @@ struct SidebarView: View {
         }
         .sheet(item: $aEditarAula) { aula in
             EditarAulaSheet(aula: aula) { nova in if selecao == aula.pasta { selecao = nova } }
-        }
-        .alert("Renomear cadeira", isPresented: Binding(get: { aRenomear != nil }, set: { if !$0 { aRenomear = nil } }), presenting: aRenomear) { cadeira in
-            TextField("Nome", text: $novoNome)
-            Button("Renomear") { renomear(cadeira) }
-            Button("Cancelar", role: .cancel) {}
         }
         .confirmationDialog("Mover a aula para o Lixo?", isPresented: Binding(get: { paraLixo != nil }, set: { if !$0 { paraLixo = nil } }), presenting: paraLixo) { aula in
             Button("Mover para o Lixo", role: .destructive) {
@@ -176,44 +169,13 @@ struct SidebarView: View {
 
     @ViewBuilder private func menu(_ cadeira: Cadeira) -> some View {
         let ativa = fila.jobs.contains { $0.ativo && $0.pastaAula.path.hasPrefix(cadeira.pasta.path + "/") }
-        if library.organizacao != .nenhuma {
-            Menu(library.organizacao.rotulo) {
-                Toggle("Automático, pela data das aulas", isOn: Binding(get: { cadeira.meta.semestre == nil }, set: { if $0 { definirSemestre(nil, cadeira) } }))
-                Divider()
-                ForEach(library.organizacao.opcoes(ate: cadeira.semestre.ano), id: \.self) { s in
-                    Toggle(s.nome, isOn: Binding(get: { cadeira.semestre == s }, set: { if $0 { definirSemestre(s, cadeira) } }))
-                }
-            }
-        }
-        Button("Glossário e câmara do professor…") { aEditarCadeira = cadeira }
-        Button("Renomear…") { novoNome = cadeira.nome; aRenomear = cadeira }.disabled(ativa)
+        Button("Editar cadeira…") { aEditarCadeira = cadeira }.disabled(ativa)
         Button("Mostrar no Finder") { NSWorkspace.shared.activateFileViewerSelecting([cadeira.pasta]) }
         Divider()
         Button("Mover para o Lixo…", role: .destructive) { cadeiraParaLixo = cadeira }.disabled(ativa)
     }
 
     // MARK: Ações
-
-    private func renomear(_ cadeira: Cadeira) {
-        let nome = novoNome.trimmingCharacters(in: .whitespaces)
-        guard !nome.isEmpty else { return }
-        tentar {
-            let nova = try library.renomearCadeira(cadeira, para: nome)
-            if let s = selecao, s.path.hasPrefix(cadeira.pasta.path + "/") {
-                selecao = nova.appending(path: s.lastPathComponent, directoryHint: .isDirectory)
-            }
-        }
-    }
-
-    /// nil = deduzido das datas das aulas. A lista acompanha a cadeira para o semestre novo.
-    private func definirSemestre(_ semestre: Semestre?, _ cadeira: Cadeira) {
-        var meta = cadeira.meta
-        meta.semestre = semestre
-        tentar {
-            try library.guardarCadeira(meta, cadeira: cadeira)
-            semestreEscolhido = library.cadeira(nome: cadeira.nome)?.semestre
-        }
-    }
 
     private func tentar(_ acao: () throws -> Void) {
         do { try acao() } catch { erro = error.localizedDescription }
