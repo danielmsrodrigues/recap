@@ -33,6 +33,14 @@ struct NotesWebTests {
         #expect(md?.contains("[01:05]") == true)
     }
 
+    /// A resolução dos exercícios fica escondida em qualquer língua dos apontamentos.
+    @Test func resolucaoEscondidaNoutrasLinguas() async throws {
+        let pagina = try await Pagina.carregar()
+        try await pagina.render("## Exercise 1\n\n> **Solution**\n> x = 2\n\n## Ejercicio 2\n\n> **Resolución**\n> y = 3")
+        let n = try await pagina.web.evaluateJavaScript("document.querySelectorAll('details.resolucao').length") as? Int
+        #expect(n == 2)
+    }
+
     /// A mesma fórmula renderiza uma vez (cache do KaTeX) e dá o mesmo HTML nas duas.
     @Test func formulasRepetidasSaemIguais() async throws {
         let pagina = try await Pagina.carregar()

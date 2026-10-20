@@ -1,8 +1,8 @@
 import Foundation
 
 /// O prompt de sistema vive num ficheiro editável em Application Support.
-/// Na primeira utilização é copiado do bundle. `{{contexto}}` e `{{idioma}}` são substituídos ao enviar
-/// (`Definicoes.prompt`), pelo curso e pela língua das aulas das Definições.
+/// Na primeira utilização é copiado do bundle. Os marcadores (`{{contexto}}`, `{{idioma}}`, `{{regras_lingua}}`…)
+/// são substituídos ao enviar (`Definicoes.prompt`), pelo curso e pelas línguas das Definições.
 enum PromptStore {
     static var pastaApp: URL {
         URL.applicationSupportDirectory.appending(path: "Recap", directoryHint: .isDirectory)
@@ -25,6 +25,7 @@ enum PromptStore {
         "276b739eee9dc9a7af6de6d727ffd6182943fc2148fb5b71434a5c3727adf2cc",
         "cbb5b78db8a926614ea49e70a4036936d4640f4bea72c18c60710c1419d59ba3",
         "80cbd786859057d0c7ae2b2aaa66e8c4c3c876aa944021d7a13cc6e79a157b15",
+        "30ca986fbd45aaa9d40653252621f2daf543f02d2fd9e6954dd48fdc997d997d",
     ]
 
     static func ler() -> String {

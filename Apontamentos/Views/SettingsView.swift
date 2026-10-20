@@ -37,10 +37,13 @@ private struct GeralSettings: View {
                 Picker("Língua das aulas", selection: $definicoes.idiomaAulas) {
                     ForEach(IdiomaAula.allCases) { Text($0.nome).tag($0) }
                 }
+                Picker("Língua dos apontamentos", selection: $definicoes.linguaApontamentos) {
+                    ForEach(LinguaApontamentos.allCases) { Text($0.nome).tag($0) }
+                }
             } header: {
                 Text("O teu curso")
             } footer: {
-                Text("O curso diz ao Claude para quem escreve (os apontamentos saem sempre em português de Portugal). A língua é a em que o professor dá as aulas: o Whisper transcreve nela.")
+                Text("O curso diz ao Claude para quem escreve. A língua das aulas é a em que o professor fala: o Whisper transcreve nela. Os apontamentos, as respostas, os exercícios e a ficha da cadeira saem na língua dos apontamentos.")
             }
 
             Section {

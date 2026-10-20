@@ -183,8 +183,9 @@
       if (t.startsWith("💡")) q.classList.add("extra");
       else if (t.startsWith("⭐")) q.classList.add("importante");
       else if (t.startsWith("⚠")) q.classList.add("erro-comum");
-      // Resolução dos exercícios: escondida até o estudante a abrir (o estado sobrevive ao streaming).
-      else if (/^Resolução\b/.test(t)) {
+      // Resolução dos exercícios (em qualquer língua dos apontamentos): escondida até o estudante a abrir
+      // (o estado sobrevive ao streaming).
+      else if (/^(Resolução|Resolución|Solution)\b/.test(t)) {
         const d = document.createElement("details");
         d.className = "resolucao";
         const indice = resolucoes++;
