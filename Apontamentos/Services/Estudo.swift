@@ -248,7 +248,7 @@ final class Estudo {
         let chave = Self.chave(aula, .pergunta)
         defer { if let citacao, emCurso[chave]?.citacao == citacao { citacoes[chave] = nil } }
         executar(aula, .pergunta, pergunta: pergunta, citacao: citacao, esforco: .medium,
-                 sistema: definicoes.prompt(Self.sistemaPerguntas)) { contexto in
+                 sistema: definicoes.prompt(Self.sistemaPerguntas, idioma: definicoes.idioma(da: library.cadeira(nome: aula.cadeira)))) { contexto in
             var blocos = contexto.map(NotesGenerator.materiais) ?? []
             if let notas = Disco.lerApontamentos(aula.pasta) {
                 blocos.append(.texto("Apontamentos já feitos desta aula:\n\n<apontamentos>\n\(notas)\n</apontamentos>"))
@@ -290,7 +290,7 @@ final class Estudo {
     }
 
     func gerarExercicios(_ aula: Aula) {
-        executar(aula, .exercicios, sistema: definicoes.prompt(Self.sistemaExercicios)) { contexto in
+        executar(aula, .exercicios, sistema: definicoes.prompt(Self.sistemaExercicios, idioma: definicoes.idioma(da: library.cadeira(nome: aula.cadeira)))) { contexto in
             var blocos = contexto.map(NotesGenerator.materiais) ?? []
             if let notas = Disco.lerApontamentos(aula.pasta) {
                 blocos.append(.texto("Apontamentos desta aula:\n\n<apontamentos>\n\(notas)\n</apontamentos>"))

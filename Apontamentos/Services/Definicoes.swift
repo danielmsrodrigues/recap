@@ -96,12 +96,18 @@ final class Definicoes {
     var tabelaPrecos: TabelaPrecos { TabelaPrecos(personalizados: precosPersonalizados) }
 
     /// Um prompt com os marcadores (`{{contexto}}`, `{{idioma}}`…) já substituídos pelo curso e pelas línguas escolhidos.
-    func prompt(_ texto: String) -> String {
-        ContextoCurso.aplicar(texto, idioma: idiomaAulas, contexto: contextoCurso, apontamentos: linguaApontamentos)
+    /// `idioma` é o da aula, quando não é o das Definições (uma cadeira dada noutra língua).
+    func prompt(_ texto: String, idioma: IdiomaAula? = nil) -> String {
+        ContextoCurso.aplicar(texto, idioma: idioma ?? idiomaAulas, contexto: contextoCurso, apontamentos: linguaApontamentos)
     }
 
-    /// O prompt de sistema dos apontamentos, pronto a enviar.
-    var promptApontamentos: String { prompt(PromptStore.ler()) }
+    /// A língua em que a cadeira é dada: a dela, se a tiver, ou a das Definições.
+    func idioma(da cadeira: Cadeira?) -> IdiomaAula {
+        cadeira?.meta.idioma ?? idiomaAulas
+    }
+
+    /// O prompt de sistema dos apontamentos de uma aula transcrita em `idioma`, pronto a enviar.
+    func promptApontamentos(idioma: IdiomaAula) -> String { prompt(PromptStore.ler(), idioma: idioma) }
 
     func configSlides(regiao: RegiaoIgnorar) -> ConfigSlides {
         ConfigSlides(intervalo: slidesIntervalo, limiar: slidesLimiar, maximo: slidesMaximo, regiao: regiao)

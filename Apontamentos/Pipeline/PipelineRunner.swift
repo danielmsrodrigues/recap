@@ -97,10 +97,12 @@ final class PipelineRunner {
         try Task.checkCancellation()
 
         job.atualizar(.transcricao, progresso: 0, detalhe: "A transcrever…")
-        let glossario = library.cadeira(nome: library.aula(em: job.pastaAula)?.cadeira ?? "")?.meta.glossario ?? ""
+        let cadeira = library.cadeira(nome: library.aula(em: job.pastaAula)?.cadeira ?? "")
+        let glossario = cadeira?.meta.glossario ?? ""
+        let idioma = definicoes.idioma(da: cadeira)
         let inicio = Date.now
         let captados = try await VideoResolver.comAcesso(fonte) {
-            try await transcriber.transcrever(ficheiro: fonte, duracao: duracaoAudio, glossario: glossario, idioma: definicoes.idiomaAulas) { p in
+            try await transcriber.transcrever(ficheiro: fonte, duracao: duracaoAudio, glossario: glossario, idioma: idioma) { p in
                 Task { @MainActor in job.atualizar(.transcricao, progresso: p) }
             }
         }
@@ -108,7 +110,7 @@ final class PipelineRunner {
         let segmentos = Self.ajustarVelocidade(captados, job.velocidade)
         let duracao = duracaoAudio * job.velocidade
 
-        let transcricao = Transcricao(idioma: definicoes.idiomaAulas.rawValue, modelo: modelo.rawValue, duracao: duracao, criadaEm: .now, segmentos: segmentos)
+        let transcricao = Transcricao(idioma: idioma.rawValue, modelo: modelo.rawValue, duracao: duracao, criadaEm: .now, segmentos: segmentos)
         try Disco.escreverTranscricao(transcricao, em: job.pastaAula)
         try library.atualizarMeta(em: job.pastaAula) {
             $0.duracao = duracao
@@ -188,7 +190,7 @@ final class PipelineRunner {
         // As páginas dos PDFs viram imagens antes do pedido, para os slides poderem entrar nos apontamentos.
         let paginasPDF = await SlidesNosApontamentos.garantirPaginasEmFundo(em: job.pastaAula)
         let contexto = await ContextoAula.carregar(aula, cadeira: library.cadeira(nome: aula.cadeira), transcricao: transcricao)
-        let prompt = definicoes.promptApontamentos
+        let prompt = definicoes.promptApontamentos(idioma: IdiomaAula(codigo: transcricao.idioma))
 
         job.iniciar(.apontamentos, detalhe: "A preparar o pedido…")
         var detalheBase = "A gerar com \(definicoes.modeloClaude) via \(definicoes.motor.nome)"

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Editar uma cadeira (nome, semestre, glossário e câmara do professor), ou criar uma nova (`cadeira` nil).
+/// Editar uma cadeira (nome, semestre, língua, glossário e câmara do professor), ou criar uma nova (`cadeira` nil).
 struct CadeiraSheet: View {
     @Environment(Library.self) private var library
     @Environment(Definicoes.self) private var definicoes
@@ -14,6 +14,8 @@ struct CadeiraSheet: View {
     @State private var regiao: RegiaoIgnorar = .automatica
     /// nil = deduzido da data das aulas.
     @State private var semestre: Semestre?
+    /// nil = a língua das aulas das Definições.
+    @State private var idioma: IdiomaAula?
     @State private var erro: String?
 
     private var nomeLimpo: String { nome.trimmingCharacters(in: .whitespaces) }
@@ -32,6 +34,11 @@ struct CadeiraSheet: View {
                         }
                     }
                 }
+                Picker("Língua das aulas", selection: $idioma) {
+                    Text("A das Definições (\(definicoes.idiomaAulas.nome))").tag(IdiomaAula?.none)
+                    Divider()
+                    ForEach(IdiomaAula.allCases) { Text($0.nome).tag(Optional($0)) }
+                }
                 Picker("Câmara do professor", selection: $regiao) {
                     ForEach(RegiaoIgnorar.allCases) { Text($0.nome).tag($0) }
                 }
@@ -40,7 +47,7 @@ struct CadeiraSheet: View {
             .scrollDisabled(true)
             .fixedSize(horizontal: false, vertical: true)
             Text("Glossário").font(.headline)
-            Text("Um termo por linha, em \(definicoes.idiomaAulas.nomeNoPrompt), como o professor o diz. Podes acrescentar a tradução: `autovalor = valor próprio`. Os termos ajudam o Whisper a reconhecê-los (só cabem cerca de 30) e o Claude a traduzi-los.")
+            Text("Um termo por linha, em \((idioma ?? definicoes.idiomaAulas).nomeNoPrompt), como o professor o diz. Podes acrescentar a tradução: `autovalor = valor próprio`. Os termos ajudam o Whisper a reconhecê-los (só cabem cerca de 30) e o Claude a traduzi-los.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -68,6 +75,7 @@ struct CadeiraSheet: View {
             glossario = cadeira.meta.glossario
             regiao = cadeira.meta.regiaoIgnorar
             semestre = cadeira.meta.semestre
+            idioma = cadeira.meta.idioma
         }
     }
 
@@ -77,6 +85,7 @@ struct CadeiraSheet: View {
             meta.glossario = glossario
             meta.regiaoIgnorar = regiao
             meta.semestre = semestre
+            meta.idioma = idioma
             if let cadeira {
                 var atual = cadeira
                 if nomeLimpo != cadeira.nome {
