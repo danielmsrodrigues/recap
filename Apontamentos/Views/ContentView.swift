@@ -20,7 +20,6 @@ struct ContentView: View {
     @State private var erro: String?
     @State private var configurarDireto = false
     @State private var criarCadeira = false
-    @State private var nomeCadeira = ""
 
     static let extensoes: Set<String> = ["mp4", "mov", "m4v", "mkv"]
     static let tiposVideo: [UTType] = [.mpeg4Movie, .quickTimeMovie, .movie] + [UTType(filenameExtension: "mkv")].compactMap { $0 }
@@ -79,7 +78,7 @@ struct ContentView: View {
                 Menu("Adicionar", systemImage: "plus") {
                     Button("Transcrever em direto…") { configurarDireto = true }.keyboardShortcut("l", modifiers: [.command, .shift])
                     Button("Importar vídeo…") { importar = true }.keyboardShortcut("o")
-                    Button("Nova cadeira…") { nomeCadeira = ""; criarCadeira = true }
+                    Button("Nova cadeira…") { criarCadeira = true }
                 }
                 .help("Importar vídeos de aulas ou criar uma cadeira")
             }
@@ -104,19 +103,18 @@ struct ContentView: View {
         .sheet(item: $atual, onDismiss: avancar) { pendente in
             NovaAulaSheet(video: pendente.url, restantes: videosPendentes.count) { cadeira, titulo, data, gerar in
                 Task { await criar(video: pendente.url, cadeira: cadeira, titulo: titulo, data: data, gerar: gerar) }
-            } aoSaltar: {}
-        }
-        .sheet(item: $aEditarCadeira) { CadeiraSheet(cadeira: $0) }
-        .sheet(isPresented: $configurarDireto) { ConfigDiretoSheet() }
-        .alert("Nova cadeira", isPresented: $criarCadeira) {
-            TextField("Nome", text: $nomeCadeira, prompt: Text("ex.: Álgebra Lineal"))
-            Button("Criar") {
-                let nome = nomeCadeira.trimmingCharacters(in: .whitespaces)
-                guard !nome.isEmpty else { return }
-                do { try library.criarCadeira(nome: nome) } catch { erro = error.localizedDescription }
             }
-            Button("Cancelar", role: .cancel) {}
         }
+        .sheet(item: $aEditarCadeira) { cadeira in
+            CadeiraSheet(cadeira: cadeira) { antiga, nova in
+                // A aula aberta mudou de pasta com a cadeira: a seleção acompanha.
+                if let s = selecao, s.path.hasPrefix(antiga.path + "/") {
+                    selecao = nova.appending(path: s.lastPathComponent, directoryHint: .isDirectory)
+                }
+            }
+        }
+        .sheet(isPresented: $criarCadeira) { CadeiraSheet(cadeira: nil) }
+        .sheet(isPresented: $configurarDireto) { ConfigDiretoSheet() }
         .alert("Não foi possível adicionar o vídeo", isPresented: Binding(get: { erro != nil }, set: { if !$0 { erro = nil } }), presenting: erro) { _ in
             Button("OK") { erro = nil }
         } message: { Text($0) }

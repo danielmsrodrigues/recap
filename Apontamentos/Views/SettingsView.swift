@@ -1,21 +1,21 @@
 import SwiftUI
 
+/// Geral (pasta, organização, curso e língua) · Claude (motor, modelo, prompt) · Transcrição · Slides.
 struct SettingsView: View {
     var body: some View {
         TabView {
-            Tab("Aulas", systemImage: "folder") { AulasSettings() }
-            Tab("Geração", systemImage: "sparkles") { GeracaoSettings() }
+            Tab("Geral", systemImage: "gearshape") { GeralSettings() }
+            Tab("Claude", systemImage: "sparkles") { ClaudeSettings() }
             Tab("Transcrição", systemImage: "waveform") { TranscricaoSettings() }
             Tab("Slides", systemImage: "rectangle.on.rectangle") { SlidesSettings() }
-            Tab("Prompt", systemImage: "text.quote") { PromptSettings() }
         }
         .frame(width: 640)
     }
 }
 
-// MARK: Aulas
+// MARK: Geral
 
-private struct AulasSettings: View {
+private struct GeralSettings: View {
     @Environment(Definicoes.self) private var definicoes
     @Environment(Library.self) private var library
     @Environment(ProcessingQueue.self) private var fila
@@ -29,7 +29,20 @@ private struct AulasSettings: View {
     private var ocupada: Bool { fila.jobs.contains(where: \.ativo) || direto.ativa }
 
     var body: some View {
+        @Bindable var definicoes = definicoes
         Form {
+            Section {
+                TextField("Curso", text: $definicoes.contextoCurso, prompt: Text("ex.: licenciatura em Ciência de Dados, 1.º ano, numa universidade espanhola"), axis: .vertical)
+                    .lineLimit(1...3)
+                Picker("Língua das aulas", selection: $definicoes.idiomaAulas) {
+                    ForEach(IdiomaAula.allCases) { Text($0.nome).tag($0) }
+                }
+            } header: {
+                Text("O teu curso")
+            } footer: {
+                Text("O curso diz ao Claude para quem escreve (os apontamentos saem sempre em português de Portugal). A língua é a em que o professor dá as aulas: o Whisper transcreve nela.")
+            }
+
             Section {
                 LabeledContent("Pasta") {
                     Text((library.raiz.path as NSString).abbreviatingWithTildeInPath)
@@ -96,21 +109,22 @@ private struct AulasSettings: View {
     }
 }
 
-// MARK: Geração
+// MARK: Claude
 
-private struct GeracaoSettings: View {
+private struct ClaudeSettings: View {
     @Environment(Definicoes.self) private var definicoes
     @State private var versaoClaude: String?
     @State private var chave = ""
     @State private var mensagem: String?
     @State private var entrada = ""
     @State private var saida = ""
+    @State private var editarPrompt = false
 
     var body: some View {
         @Bindable var definicoes = definicoes
         Form {
             Section {
-                Picker("Motor", selection: $definicoes.motor) {
+                Picker("Por onde", selection: $definicoes.motor) {
                     ForEach(MotorTipo.allCases) { Text($0.nome).tag($0) }
                 }
                 .pickerStyle(.radioGroup)
@@ -142,19 +156,24 @@ private struct GeracaoSettings: View {
                 precosSecao
             }
 
-            Section("Modelo") {
+            Section {
                 TextField("Modelo", text: $definicoes.modeloClaude, prompt: Text(Definicoes.modeloClaudePorDefeito))
                 Picker("Esforço", selection: $definicoes.esforco) {
                     ForEach(Esforco.allCases) { Text($0.nome).tag($0) }
                 }
-                Text("Mais esforço dá apontamentos mais cuidados, mas gasta mais tokens de saída. \"Alto\" é o valor por defeito do Sonnet 5.5.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                LabeledContent("Instruções dos apontamentos") {
+                    Button("Editar…") { editarPrompt = true }
+                }
+            } header: {
+                Text("Modelo")
+            } footer: {
+                Text("Mais esforço dá apontamentos mais cuidados, mas gasta mais tokens de saída. \"Alto\" é o valor por defeito do Sonnet 5.5. As instruções são o prompt de sistema que o Claude recebe para escrever os apontamentos.")
             }
         }
         .formStyle(.grouped)
         .onAppear(perform: carregarPrecos)
         .onChange(of: definicoes.modeloClaude) { carregarPrecos() }
+        .sheet(isPresented: $editarPrompt) { PromptSheet() }
     }
 
     @ViewBuilder private var apiSecao: some View {
@@ -162,7 +181,7 @@ private struct GeracaoSettings: View {
             if definicoes.temChaveAPI {
                 LabeledContent("Chave API") {
                     HStack {
-                        Text("Guardada na Keychain").foregroundStyle(.secondary)
+                        Text("Guardada no Porta-chaves").foregroundStyle(.secondary)
                         Button("Remover", role: .destructive) {
                             do { try definicoes.apagarChaveAPI(); mensagem = nil } catch { mensagem = error.localizedDescription }
                         }
@@ -170,7 +189,7 @@ private struct GeracaoSettings: View {
                 }
             } else {
                 SecureField("Chave API", text: $chave, prompt: Text("sk-ant-…"))
-                Button("Guardar na Keychain") {
+                Button("Guardar no Porta-chaves") {
                     do {
                         try definicoes.guardarChaveAPI(chave)
                         chave = ""
@@ -185,7 +204,7 @@ private struct GeracaoSettings: View {
         } header: {
             Text("Anthropic")
         } footer: {
-            Text("Cria uma chave em platform.claude.com → API Keys. Fica só na Keychain deste Mac.")
+            Text("Cria uma chave em platform.claude.com → API Keys. Fica só no Porta-chaves deste Mac.")
         }
     }
 
@@ -227,6 +246,58 @@ private struct GeracaoSettings: View {
     }
 }
 
+/// O prompt de sistema dos apontamentos, editável. Grava ao fechar.
+private struct PromptSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var texto = ""
+    @State private var guardado = ""
+    @State private var erro: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Instruções dos apontamentos").font(.title2.bold())
+            Text("O prompt de sistema que o Claude recebe em cada geração. `{{contexto}}` e `{{idioma}}` são substituídos pelo curso e pela língua das Definições. Fica em \(PromptStore.url.path).")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+            TextEditor(text: $texto)
+                .font(.body.monospaced())
+                .frame(minHeight: 380)
+                .border(.separator)
+            if let erro { Text(erro).foregroundStyle(.red).font(.callout) }
+            HStack {
+                Button("Repor original") {
+                    do { try PromptStore.repor(); carregar() } catch { erro = error.localizedDescription }
+                }
+                Button("Abrir no editor") { NSWorkspace.shared.open(PromptStore.url) }
+                Spacer()
+                Button("Cancelar", role: .cancel) { dismiss() }
+                Button("Guardar") { guardar() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(texto == guardado)
+            }
+        }
+        .padding(20)
+        .frame(width: 720)
+        .onAppear(perform: carregar)
+    }
+
+    private func carregar() {
+        texto = PromptStore.ler()
+        guardado = texto
+    }
+
+    private func guardar() {
+        do {
+            try PromptStore.guardar(texto)
+            dismiss()
+        } catch {
+            erro = error.localizedDescription
+        }
+    }
+}
+
 // MARK: Transcrição
 
 private struct TranscricaoSettings: View {
@@ -262,7 +333,7 @@ private struct TranscricaoSettings: View {
                 }
                 if let erro { Text(erro).foregroundStyle(.red).font(.callout) }
             } footer: {
-                Text("O modelo é descarregado na primeira transcrição, se ainda não estiver aqui. Fica em \(store.base.path).")
+                Text("O modelo é descarregado na primeira transcrição, se ainda não estiver aqui. Fica em \(store.base.path). A língua das aulas escolhe-se em Geral.")
             }
         }
         .formStyle(.grouped)
@@ -318,51 +389,9 @@ private struct SlidesSettings: View {
                     definicoes.slidesMaximo = p.maximo
                 }
             } footer: {
-                Text("A zona da câmara do professor define-se por cadeira, no glossário (ícone de livro na barra lateral).")
+                Text("A zona da câmara do professor define-se por cadeira, em Editar cadeira… (no menu … da cadeira).")
             }
         }
         .formStyle(.grouped)
-    }
-}
-
-// MARK: Prompt
-
-private struct PromptSettings: View {
-    @State private var texto = ""
-    @State private var guardado = ""
-    @State private var erro: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Prompt de sistema enviado ao Claude em cada geração. Fica em \(PromptStore.url.path).")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-            TextEditor(text: $texto)
-                .font(.body.monospaced())
-                .frame(minHeight: 380)
-                .border(.separator)
-            if let erro { Text(erro).foregroundStyle(.red).font(.callout) }
-            HStack {
-                Button("Repor original") {
-                    do { try PromptStore.repor(); carregar() } catch { erro = error.localizedDescription }
-                }
-                Button("Abrir no editor") { NSWorkspace.shared.open(PromptStore.url) }
-                Spacer()
-                Button("Descartar") { texto = guardado }.disabled(texto == guardado)
-                Button("Guardar") {
-                    do { try PromptStore.guardar(texto); guardado = texto; erro = nil } catch { erro = error.localizedDescription }
-                }
-                .keyboardShortcut("s")
-                .disabled(texto == guardado)
-            }
-        }
-        .padding(20)
-        .onAppear(perform: carregar)
-    }
-
-    private func carregar() {
-        texto = PromptStore.ler()
-        guardado = texto
     }
 }

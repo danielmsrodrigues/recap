@@ -11,7 +11,7 @@ enum ErroClaudeCode: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .naoEncontrado:
-            "Não encontrei o Claude Code (comando claude). Instala-o ou indica o caminho em Definições → Geração."
+            "Não encontrei o Claude Code (comando claude). Instala-o ou indica o caminho em Definições → Claude."
         case .semSessao(let detalhe):
             "O Claude Code não tem sessão iniciada. Abre o Terminal, corre claude e faz login com a tua conta. (\(detalhe))"
         case .limite(let data):
@@ -21,7 +21,7 @@ enum ErroClaudeCode: LocalizedError, Equatable {
                 "Atingiste o limite de utilização da tua subscrição. Volta a tentar mais tarde."
             }
         case .modelo(let detalhe):
-            "O Claude Code não aceitou o modelo. Verifica-o em Definições → Geração. (\(detalhe))"
+            "O Claude Code não aceitou o modelo. Verifica-o em Definições → Claude. (\(detalhe))"
         case .falhou(let detalhe):
             "O Claude Code falhou: \(detalhe)"
         }
