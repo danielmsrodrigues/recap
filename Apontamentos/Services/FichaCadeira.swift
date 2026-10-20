@@ -24,6 +24,25 @@ enum FichaCadeira {
     /// Aulas já juntadas à ficha: nome da pasta da aula (ou `chavePrograma`) → hash do que se juntou.
     struct Registo: Codable, Equatable, Sendable {
         var aulas: [String: String] = [:]
+        /// Aulas já vistas pela migração dos apontamentos antigos (não voltam a ser lidas ao arrancar).
+        var migradas: Set<String> = []
+        /// O programa tal como foi visto da última vez, para não o ler e resumir a cada arranque.
+        var programa: ProgramaVisto?
+
+        struct ProgramaVisto: Codable, Equatable, Sendable {
+            var tamanho: Int
+            var modificado: Date
+            var hash: String
+        }
+
+        init(aulas: [String: String] = [:]) { self.aulas = aulas }
+
+        init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            aulas = try c.decodeIfPresent([String: String].self, forKey: .aulas) ?? [:]
+            migradas = try c.decodeIfPresent(Set<String>.self, forKey: .migradas) ?? []
+            programa = try c.decodeIfPresent(ProgramaVisto.self, forKey: .programa)
+        }
     }
 
     // MARK: Separar dos apontamentos
@@ -124,8 +143,23 @@ enum FichaCadeira {
 
     /// Há um programa que a ficha ainda não tem (novo ou trocado).
     static func programaPendente(_ cadeira: URL) -> Bool {
-        guard let dados = try? Data(contentsOf: urlPrograma(cadeira)) else { return false }
-        return lerRegisto(cadeira).aulas[chavePrograma] != hash(dados)
+        guard let hash = hashDoPrograma(cadeira) else { return false }
+        return lerRegisto(cadeira).aulas[chavePrograma] != hash
+    }
+
+    /// O SHA-256 do programa, calculado só quando o ficheiro muda de tamanho ou de data (pode ter 24 MB).
+    static func hashDoPrograma(_ cadeira: URL) -> String? {
+        let url = urlPrograma(cadeira)
+        guard let valores = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
+              let tamanho = valores.fileSize, let modificado = valores.contentModificationDate
+        else { return nil }
+        var registo = lerRegisto(cadeira)
+        if let visto = registo.programa, visto.tamanho == tamanho, visto.modificado == modificado { return visto.hash }
+        guard let dados = try? Data(contentsOf: url) else { return nil }
+        let h = hash(dados)
+        registo.programa = Registo.ProgramaVisto(tamanho: tamanho, modificado: modificado, hash: h)
+        try? escreverRegisto(registo, em: cadeira)
+        return h
     }
 
     /// Aulas anteriores à ficha (apontamentos ainda com a secção): passa a secção para o excerto.
@@ -255,8 +289,15 @@ final class Fichas {
         guard let cadeira = library.cadeira(nome: nomeCadeira) else { return }
         let chave = Self.chave(cadeira.pasta)
         guard emCurso[chave] == nil else { repetir.insert(chave); return }
-        let migradas = cadeira.aulas.filter { (try? FichaCadeira.migrar($0.pasta)) == true }
-        if !migradas.isEmpty { library.recarregar() }
+        // A migração dos apontamentos antigos (com a secção "Sobre a cadeira") só se tenta uma vez por aula.
+        var registo = FichaCadeira.lerRegisto(cadeira.pasta)
+        let porVer = cadeira.aulas.filter { !registo.migradas.contains($0.pasta.lastPathComponent) }
+        if !porVer.isEmpty {
+            let migradas = porVer.filter { (try? FichaCadeira.migrar($0.pasta)) == true }
+            registo.migradas.formUnion(porVer.map(\.pasta.lastPathComponent))
+            try? FichaCadeira.escreverRegisto(registo, em: cadeira.pasta)
+            if !migradas.isEmpty { library.recarregar() }
+        }
         guard FichaCadeira.programaPendente(cadeira.pasta) || !FichaCadeira.pendentes(cadeira).isEmpty else { return }
         erros[chave] = nil
         emCurso[chave] = ""
@@ -296,7 +337,7 @@ final class Fichas {
     private func juntarPrograma(a cadeira: Cadeira) async throws {
         let pdf = try Data(contentsOf: FichaCadeira.urlPrograma(cadeira.pasta))
         let jaJuntado = FichaCadeira.lerRegisto(cadeira.pasta).aulas[FichaCadeira.chavePrograma] != nil
-        try await juntar(em: cadeira, chave: FichaCadeira.chavePrograma, hash: FichaCadeira.hash(pdf)) { ficha in
+        try await juntar(em: cadeira, chave: FichaCadeira.chavePrograma, hash: FichaCadeira.hashDoPrograma(cadeira.pasta) ?? FichaCadeira.hash(pdf)) { ficha in
             FichaCadeira.conteudoPrograma(ficha: ficha, pdf: pdf, jaJuntado: jaJuntado)
         }
     }

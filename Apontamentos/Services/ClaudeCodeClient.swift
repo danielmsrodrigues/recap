@@ -84,13 +84,16 @@ struct ClaudeCodeClient: Sendable {
         return env
     }
 
+    /// Corre fora do fio principal: codificar o pedido (PDFs e imagens em base64, dezenas de MB) e ler o stream
+    /// linha a linha bloqueava a interface. O texto chega a `aoReceber` em lotes, não token a token.
+    @concurrent
     func gerar(
         sistema: String,
         conteudo: [BlocoConteudo],
         modelo: String,
         esforco: Esforco,
-        aoRecomecar: () -> Void,
-        aoReceber: (String) -> Void
+        aoRecomecar: @MainActor @Sendable () -> Void,
+        aoReceber: @MainActor @Sendable (String) -> Void
     ) async throws -> RespostaClaudeCode {
         let pasta = FileManager.default.temporaryDirectory.appending(path: "Recap-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: pasta, withIntermediateDirectories: true)
@@ -141,6 +144,7 @@ struct ClaudeCodeClient: Sendable {
         var resultado: [String: Any]?
         var uso5h: Double?
         var reinicio: Date?
+        var lote = LoteDeTexto()
 
         try await withTaskCancellationHandler {
             for await linha in Self.linhas(saida.fileHandleForReading) {
@@ -154,10 +158,10 @@ struct ClaudeCodeClient: Sendable {
                     if evento["type"] as? String == "message_start" {
                         mensagens += 1
                         // Só esperamos uma mensagem; se o Claude Code repetir o pedido, recomeça o texto.
-                        if mensagens > 1 { acumulador = AcumuladorStream(); aoRecomecar() }
+                        if mensagens > 1 { acumulador = AcumuladorStream(); lote = LoteDeTexto(); await aoRecomecar() }
                     }
                     let json = try JSONSerialization.data(withJSONObject: evento)
-                    if let novo = try acumulador.processar(json) { aoReceber(novo) }
+                    if let novo = try acumulador.processar(json), let pronto = lote.juntar(novo) { await aoReceber(pronto) }
                 case "rate_limit_event":
                     let info = obj["rate_limit_info"] as? [String: Any]
                     let janela = (info?["unifiedWindows"] as? [String: Any])?["five_hour"] as? [String: Any]
@@ -172,6 +176,7 @@ struct ClaudeCodeClient: Sendable {
         } onCancel: {
             controlo.terminar()
         }
+        if let resto = lote.esvaziar() { await aoReceber(resto) }
         _ = await escrita.value
         var estado: Int32 = 0
         for await s in fim { estado = s }

@@ -231,14 +231,13 @@ struct ExerciciosView: View {
                 barra
                 Divider()
             }
-            if let emCurso, !emCurso.texto.isEmpty {
-                NotesWebView(markdown: emCurso.texto, emStreaming: true, aoClicarTimestamp: aoClicarTimestamp)
+            // A mesma vista web para o texto a chegar e para o guardado (ver AulaDetailView).
+            if let texto = emCurso?.texto.isEmpty == false ? emCurso?.texto : (emCurso == nil ? markdown : nil) {
+                NotesWebView(markdown: texto, emStreaming: emCurso != nil, aoClicarTimestamp: aoClicarTimestamp)
             } else if emCurso != nil {
                 ContentUnavailableView("A criar exercícios…", systemImage: "hourglass",
                                        description: Text("O texto aparece aqui à medida que chega."))
                     .frame(maxHeight: .infinity)
-            } else if let markdown {
-                NotesWebView(markdown: markdown, aoClicarTimestamp: aoClicarTimestamp)
             } else {
                 vazio.frame(maxHeight: .infinity)
             }

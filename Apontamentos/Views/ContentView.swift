@@ -11,10 +11,6 @@ struct ContentView: View {
     @State private var preparar = false
     @Environment(Definicoes.self) private var definicoes
     @Environment(Atualizador.self) private var atualizador
-    /// Painel das perguntas à aula, à direita.
-    @AppStorage("mostrarPerguntas") private var mostrarPerguntas = true
-    @AppStorage("larguraPerguntas") private var larguraPerguntas = 320.0
-
     @State private var selecao: URL?
     @State private var videosPendentes: [URL] = []
     @State private var atual: VideoPendente?
@@ -45,23 +41,7 @@ struct ContentView: View {
                let cadeira = library.cadeiras.first(where: { $0.pasta.mesmoCaminho(selecao.deletingLastPathComponent()) }) {
                 FichaCadeiraView(cadeira: cadeira).id(cadeira.pasta)
             } else if let selecao, let aula = library.aula(em: selecao) {
-                // Uma divisão feita à mão e não o .inspector do SwiftUI: com a barra sempre visível em ecrã inteiro,
-                // o inspector entrava num ciclo de layout e a app fechava. (O HSplitView abria o painel largo demais.)
-                HStack(spacing: 0) {
-                    AulaDetailView(aula: aula).id(aula.pasta)
-                        .frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
-                    if mostrarPerguntas {
-                        DivisoriaPainel(largura: $larguraPerguntas)
-                        PerguntasView(aula: aula) { segundos in
-                            navegacao.destino = DestinoAula(pasta: aula.pasta, separador: .transcricao, tempo: segundos)
-                        } aoClicarSeccao: { ligacao in
-                            navegacao.destino = DestinoAula(pasta: aula.pasta, separador: .apontamentos, seccao: ligacao)
-                        }
-                        .id(aula.pasta)
-                        .frame(width: larguraPerguntas)
-                        .frame(maxHeight: .infinity)
-                    }
-                }
+                AulaComPainel(aula: aula)
             } else {
                 EcraInicial(aCaptar: direto.ativa, aoTranscrever: { configurarDireto = true }, aoEscolherVideo: { importar = true })
             }
@@ -147,6 +127,7 @@ struct ContentView: View {
         } message: { Text($0) }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             library.recarregar()
+            definicoes.esquecerClaudeCode()
         }
         #if DEBUG
         // `APONTAMENTOS_IMPORTAR="<vídeo>|<cadeira>|<título>|<0/1 gerar apontamentos>"`: o mesmo que confirmar a folha.
@@ -261,9 +242,45 @@ private struct EcraInicial: View {
     }
 }
 
-/// Divisória arrastável à esquerda do painel das perguntas (a largura fica guardada).
+/// A aula com o painel das perguntas à direita. Vive numa vista própria para o arrasto da divisória
+/// só redesenhar isto, e não a janela inteira.
+private struct AulaComPainel: View {
+    let aula: Aula
+    @Environment(Navegacao.self) private var navegacao
+    @AppStorage("mostrarPerguntas") private var mostrarPerguntas = true
+    @AppStorage("larguraPerguntas") private var larguraGuardada = 320.0
+    /// A largura durante o arrasto; só no fim é gravada (gravar a cada pixel escrevia nas preferências dezenas de vezes por segundo).
+    @State private var aArrastar: Double?
+
+    var body: some View {
+        // Uma divisão feita à mão e não o .inspector do SwiftUI: com a barra sempre visível em ecrã inteiro,
+        // o inspector entrava num ciclo de layout e a app fechava. (O HSplitView abria o painel largo demais.)
+        HStack(spacing: 0) {
+            AulaDetailView(aula: aula).id(aula.pasta)
+                .frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
+            if mostrarPerguntas {
+                let largura = aArrastar ?? larguraGuardada
+                DivisoriaPainel(largura: Binding(get: { largura }, set: { aArrastar = $0 })) {
+                    if let final = aArrastar { larguraGuardada = final }
+                    aArrastar = nil
+                }
+                PerguntasView(aula: aula) { segundos in
+                    navegacao.destino = DestinoAula(pasta: aula.pasta, separador: .transcricao, tempo: segundos)
+                } aoClicarSeccao: { ligacao in
+                    navegacao.destino = DestinoAula(pasta: aula.pasta, separador: .apontamentos, seccao: ligacao)
+                }
+                .id(aula.pasta)
+                .frame(width: largura)
+                .frame(maxHeight: .infinity)
+            }
+        }
+    }
+}
+
+/// Divisória arrastável à esquerda do painel das perguntas.
 private struct DivisoriaPainel: View {
     @Binding var largura: Double
+    let aoTerminar: () -> Void
     @State private var inicio: Double?
     static let limites = 260.0...620.0
 
@@ -284,7 +301,7 @@ private struct DivisoriaPainel: View {
                         // Arrastar para a esquerda alarga o painel.
                         largura = min(Self.limites.upperBound, max(Self.limites.lowerBound, base - g.translation.width))
                     }
-                    .onEnded { _ in inicio = nil }
+                    .onEnded { _ in inicio = nil; aoTerminar() }
             )
     }
 }

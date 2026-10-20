@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import Synchronization
 
 /// Separadores da vista de uma aula.
 enum SeparadorAula: String, CaseIterable, Identifiable, Sendable {
@@ -50,8 +51,45 @@ struct ResultadoPesquisa: Identifiable, Sendable {
 
 /// Pesquisa em todas as aulas e nas fichas das cadeiras: títulos, apontamentos (PT), transcrições (ES) e
 /// "Sobre a cadeira", sem distinguir maiúsculas nem acentos.
-/// Lê os ficheiros a cada pesquisa em vez de manter um índice em memória.
+/// Cada aula fica em memória já sem acentos nem maiúsculas, e só é relida quando o ficheiro muda: ler e
+/// descodificar todas as transcrições (JSON de MB) a cada tecla demorava segundos com muitas aulas.
 enum Pesquisa {
+    /// Uma linha (ou segmento) como está no ficheiro e como se compara.
+    struct Linha: Sendable {
+        var texto: String
+        var dobrado: String
+        /// Segundos, nos segmentos da transcrição.
+        var inicio: Double?
+    }
+
+    struct Indexada: Sendable {
+        var modificado: Date?
+        var linhas: [Linha]
+    }
+
+    private static let indice = Mutex<[String: Indexada]>([:])
+
+    /// As linhas de um ficheiro, do índice se não mudou desde a última leitura.
+    private static func linhas(de url: URL, ler: () -> [Linha]) -> [Linha] {
+        let chave = url.path
+        let modificado = Disco.dataModificacao(url)
+        if let feita = indice.withLock({ $0[chave] }), feita.modificado == modificado, modificado != nil { return feita.linhas }
+        let novas = modificado == nil ? [] : ler()
+        indice.withLock { cache in
+            if cache.count > 2000 { cache.removeAll(keepingCapacity: true) }
+            cache[chave] = Indexada(modificado: modificado, linhas: novas)
+        }
+        return novas
+    }
+
+    static func dobrar(_ texto: String) -> String {
+        texto.folding(options: opcoes, locale: nil)
+    }
+
+    private static func contem(_ linha: Linha, _ dobradas: [String]) -> Bool {
+        dobradas.allSatisfy { linha.dobrado.contains($0) }
+    }
+
     struct AulaRef: Sendable {
         var pasta: URL
         var titulo: String
@@ -73,6 +111,7 @@ enum Pesquisa {
     static func procurar(_ termo: String, em aulas: [AulaRef], fichas: [FichaRef] = []) async -> [ResultadoPesquisa] {
         let palavras = termo.split(whereSeparator: \.isWhitespace).map(String.init)
         guard !palavras.isEmpty else { return [] }
+        let dobradas = palavras.map(dobrar)
         var resultados: [ResultadoPesquisa] = []
         // As fichas primeiro: é lá que estão datas, avaliação e regras, o que mais se procura assim.
         for f in fichas {
@@ -91,17 +130,19 @@ enum Pesquisa {
             }
             var nesta = 0
             if contem(aula.titulo, palavras) { juntar(.titulo, aula.titulo); nesta += 1 }
-            if let md = Disco.lerApontamentos(aula.pasta) {
-                for linha in md.components(separatedBy: .newlines) where nesta < maximoPorAula && contem(linha, palavras) {
-                    juntar(.apontamentos, limparMarkdown(linha))
-                    nesta += 1
-                }
+            let apontamentos = linhas(de: aula.pasta.appending(path: Disco.apontamentosMD)) {
+                (Disco.lerApontamentos(aula.pasta) ?? "").components(separatedBy: .newlines).map { Linha(texto: $0, dobrado: dobrar($0)) }
             }
-            if let t = Disco.lerTranscricao(aula.pasta) {
-                for s in t.segmentos where nesta < maximoPorAula + 2 && contem(s.texto, palavras) {
-                    juntar(.transcricao(s.inicio), s.texto)
-                    nesta += 1
-                }
+            for linha in apontamentos where nesta < maximoPorAula && contem(linha, dobradas) {
+                juntar(.apontamentos, limparMarkdown(linha.texto))
+                nesta += 1
+            }
+            let segmentos = linhas(de: aula.pasta.appending(path: Disco.transcricaoJSON)) {
+                (Disco.lerTranscricao(aula.pasta)?.segmentos ?? []).map { Linha(texto: $0.texto, dobrado: dobrar($0.texto), inicio: $0.inicio) }
+            }
+            for s in segmentos where nesta < maximoPorAula + 2 && contem(s, dobradas) {
+                juntar(.transcricao(s.inicio ?? 0), s.texto)
+                nesta += 1
             }
         }
         return resultados

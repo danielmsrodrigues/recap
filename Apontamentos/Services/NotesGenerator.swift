@@ -19,11 +19,28 @@ struct ContextoAula: Sendable {
 struct PDFComDados: Sendable {
     var pdf: PDFProfessor
     var dados: Data
+    /// Já em base64 e com as páginas contadas: o pedido monta-se sem trabalho pesado (isto faz-se ao carregar, fora do fio principal).
+    var base64: String
+    var paginas: Int?
+
+    init(pdf: PDFProfessor, dados: Data) {
+        self.pdf = pdf
+        self.dados = dados
+        base64 = dados.base64EncodedString()
+        paginas = PDFDocument(data: dados)?.pageCount
+    }
 }
 
 struct SlideComImagem: Sendable {
     var slide: Slide
     var jpeg: Data
+    var base64: String
+
+    init(slide: Slide, jpeg: Data) {
+        self.slide = slide
+        self.jpeg = jpeg
+        base64 = jpeg.base64EncodedString()
+    }
 }
 
 struct ResultadoApontamentos: Sendable {
@@ -119,10 +136,9 @@ struct NotesGenerator: Sendable {
             Cada PDF pode ter sido dado só em parte nesta aula, ou nada (pode trazer slides de outras aulas). Antes de escrever, identifica \(pelas) que páginas de cada PDF o professor deu nesta aula, e usa só essas: as outras não entram, nem como matéria nem como imagem. Um PDF sem nenhuma página dada nesta aula fica de fora por completo.
             """))
             for p in c.pdfsProfessor {
-                let paginas = PDFDocument(data: p.dados)?.pageCount
                 let nome = p.pdf.nome == nil ? "" : " \"\(p.pdf.titulo)\""
-                blocos.append(.texto("PDF \(p.pdf.numero)\(nome)\(paginas.map { " (\($0) páginas)" } ?? ""):"))
-                blocos.append(.documentoPDF(base64: p.dados.base64EncodedString()))
+                blocos.append(.texto("PDF \(p.pdf.numero)\(nome)\(p.paginas.map { " (\($0) páginas)" } ?? ""):"))
+                blocos.append(.documentoPDF(base64: p.base64))
             }
         }
         if !c.slides.isEmpty {
@@ -135,7 +151,7 @@ struct NotesGenerator: Sendable {
                     legenda += " (volta a aparecer em " + s.slide.reaparicoes.map { "[\(Timestamp.format($0))]" }.joined(separator: ", ") + ")"
                 }
                 blocos.append(.texto(legenda))
-                blocos.append(.imagem(mediaType: "image/jpeg", base64: s.jpeg.base64EncodedString()))
+                blocos.append(.imagem(mediaType: "image/jpeg", base64: s.base64))
             }
         }
         let vozes = c.transcricao.temOradores
@@ -163,8 +179,8 @@ struct NotesGenerator: Sendable {
     func gerar(
         _ contexto: ContextoAula,
         prompt: String,
-        aoRecomecar: () -> Void,
-        aoReceber: (String) -> Void,
+        aoRecomecar: @MainActor @Sendable () -> Void,
+        aoReceber: @MainActor @Sendable (String) -> Void,
         aoRepetir: (Int, Double, ErroClaude) -> Void
     ) async throws -> ResultadoApontamentos {
         try await gerar(sistema: prompt, conteudo: Self.conteudo(contexto),
@@ -172,11 +188,12 @@ struct NotesGenerator: Sendable {
     }
 
     /// Qualquer pedido de texto (apontamentos, perguntas, exercícios, ligações), pelo motor escolhido.
+    /// `aoReceber` traz o texto em lotes, já no fio principal.
     func gerar(
         sistema: String,
         conteudo: [BlocoConteudo],
-        aoRecomecar: () -> Void,
-        aoReceber: (String) -> Void,
+        aoRecomecar: @MainActor @Sendable () -> Void,
+        aoReceber: @MainActor @Sendable (String) -> Void,
         aoRepetir: (Int, Double, ErroClaude) -> Void
     ) async throws -> ResultadoApontamentos {
         switch motor {
@@ -208,12 +225,12 @@ struct NotesGenerator: Sendable {
     private func gerarComAPI(
         _ cliente: AnthropicClient,
         _ p: PedidoMensagens,
-        aoRecomecar: () -> Void,
-        aoReceber: (String) -> Void,
+        aoRecomecar: @MainActor @Sendable () -> Void,
+        aoReceber: @MainActor @Sendable (String) -> Void,
         aoRepetir: (Int, Double, ErroClaude) -> Void
     ) async throws -> ResultadoApontamentos {
         let resposta = try await comRepeticao(aoRepetir: aoRepetir) {
-            aoRecomecar()
+            await aoRecomecar()
             return try await cliente.gerar(p, aoReceber: aoReceber)
         }
         let uso = resposta.uso

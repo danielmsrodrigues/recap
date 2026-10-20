@@ -128,15 +128,26 @@ private struct Miniatura: View {
         .contentShape(.rect)
     }
 
-    /// Lê já reduzida (480 px): a imagem completa ocuparia ~3,7 MB de RAM por slide.
+    /// Lê já reduzida (480 px): a imagem completa ocuparia ~3,7 MB de RAM por slide. Fica em cache: a grelha
+    /// redesenha-se a cada hover e a descodificação custa 5–15 ms por slide.
     static func miniatura(_ url: URL) -> CGImage? {
+        let chave = url.path as NSString
+        if let feita = cache.object(forKey: chave) { return feita }
         guard let fonte = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-        return CGImageSourceCreateThumbnailAtIndex(fonte, 0, [
+        let imagem = CGImageSourceCreateThumbnailAtIndex(fonte, 0, [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceThumbnailMaxPixelSize: 480,
             kCGImageSourceCreateThumbnailWithTransform: true,
         ] as CFDictionary)
+        if let imagem { cache.setObject(imagem, forKey: chave) }
+        return imagem
     }
+
+    private static let cache: NSCache<NSString, CGImage> = {
+        let c = NSCache<NSString, CGImage>()
+        c.countLimit = 200
+        return c
+    }()
 }
 
 private struct SlideAmpliado: View {

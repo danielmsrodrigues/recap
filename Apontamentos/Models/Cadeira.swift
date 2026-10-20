@@ -102,6 +102,7 @@ struct Aula: Identifiable, Hashable, Sendable {
     var meta: AulaMeta
     var temTranscricao: Bool
     var temApontamentos: Bool
+    var temSlides: Bool
 
     var id: URL { pasta }
 }

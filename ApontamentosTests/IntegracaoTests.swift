@@ -47,19 +47,22 @@ struct IntegracaoTests {
     }
 }
 
+/// O texto recebido em streaming (os callbacks chegam no fio principal).
+@MainActor final class TextoRecebido { var texto = "" }
+
 /// Gera texto a sério com o `claude -p` (gasta um pouco da subscrição). Só com `APONTAMENTOS_CLAUDE=1`.
 struct IntegracaoClaudeCodeTests {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["APONTAMENTOS_CLAUDE"] == "1"), .timeLimit(.minutes(5)))
     func geraComClaudeCode() async throws {
         let url = try #require(ClaudeCodeClient.localizar())
-        var recebido = ""
+        let recebido = TextoRecebido()
         let r = try await ClaudeCodeClient(executavel: url).gerar(
             sistema: "Responde em português europeu, numa frase, sem formatação.",
             conteudo: [.texto("Transcrição: [00:00] La matriz identidad tiene unos en la diagonal."), .texto("Resume a transcrição.")],
             modelo: "claude-sonnet-5-5", esforco: .low,
-            aoRecomecar: { recebido = "" }, aoReceber: { recebido += $0 })
+            aoRecomecar: { recebido.texto = "" }, aoReceber: { recebido.texto += $0 })
         #expect(!r.resposta.texto.isEmpty)
-        #expect(recebido == r.resposta.texto)
+        #expect(await recebido.texto == r.resposta.texto)
         #expect(r.resposta.uso.contagem.output > 0)
         #expect(r.resposta.texto.localizedCaseInsensitiveContains("diagonal"))
     }

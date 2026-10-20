@@ -83,7 +83,19 @@ final class Definicoes {
         ConfigSlides(intervalo: slidesIntervalo, limiar: slidesLimiar, maximo: slidesMaximo, regiao: regiao)
     }
 
-    var claudeCode: URL? { ClaudeCodeClient.localizar(personalizado: caminhoClaude) }
+    /// Onde está o `claude`. Procurá-lo são até cinco acessos ao disco, e isto é lido em `body` por cada tecla
+    /// escrita no painel das perguntas: fica guardado até o caminho mudar ou a app voltar a primeiro plano.
+    var claudeCode: URL? {
+        if let cache = claudeCodeCache, cache.caminho == caminhoClaude { return cache.url }
+        let url = ClaudeCodeClient.localizar(personalizado: caminhoClaude)
+        claudeCodeCache = (caminhoClaude, url)
+        return url
+    }
+
+    @ObservationIgnored private var claudeCodeCache: (caminho: String, url: URL?)?
+
+    /// Volta a procurar o `claude` (depois de o instalar, por exemplo).
+    func esquecerClaudeCode() { claudeCodeCache = nil }
 
     /// O gerador com o motor, o modelo e o esforço escolhidos; falha se faltar o Claude Code ou a chave.
     func gerador(esforco: Esforco? = nil) throws -> NotesGenerator {
