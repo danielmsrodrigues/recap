@@ -81,6 +81,10 @@ struct ContentView: View {
                 await atualizador.procurar()
                 await atualizador.instalar()
             }
+            // `APONTAMENTOS_PROCURAR=1`: só procura, para testar o aviso e o botão "Atualizar agora".
+            if ProcessInfo.processInfo.environment["APONTAMENTOS_PROCURAR"] == "1" {
+                await atualizador.procurar()
+            }
             #else
             await atualizador.procurarSeForAltura()
             #endif

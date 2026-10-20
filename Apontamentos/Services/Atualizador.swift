@@ -24,7 +24,9 @@ final class Atualizador {
     private static let chaveUltimaProcura = "ultimaProcuraAtualizacao"
 
     private(set) var estado: Estado = .parado
-    private var zip: URL?
+    /// A versão encontrada pela última procura. Fica guardada aqui, e não só no estado, porque o botão
+    /// "Atualizar agora" fecha o aviso (e `dispensar()` põe o estado em `.parado`) antes de `instalar()` correr.
+    private var encontrada: Release?
 
     static var versaoAtual: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
@@ -45,7 +47,7 @@ final class Atualizador {
             let ultima = try await Self.ultimaRelease()
             UserDefaults.standard.set(Date.now.timeIntervalSince1970, forKey: Self.chaveUltimaProcura)
             if Self.maisRecente(ultima.versao, que: Self.versaoAtual) {
-                zip = ultima.zip
+                encontrada = ultima
                 estado = .disponivel(versao: ultima.versao)
             } else {
                 estado = silencioso ? .parado : .emDia
@@ -55,14 +57,18 @@ final class Atualizador {
         }
     }
 
-    func dispensar() { estado = .parado }
+    func dispensar() {
+        if case .aInstalar = estado { return }
+        estado = .parado
+    }
 
     /// Descarrega, verifica a assinatura, troca a app e volta a abri-la.
     func instalar() async {
-        guard case .disponivel(let versao) = estado, let zip else { return }
-        estado = .aInstalar(versao: versao)
+        guard let encontrada else { return }
+        if case .aInstalar = estado { return }
+        estado = .aInstalar(versao: encontrada.versao)
         do {
-            let nova = try await Self.descarregar(zip)
+            let nova = try await Self.descarregar(encontrada.zip)
             try Self.verificarAssinatura(nova)
             // O script fica pronto antes da troca: depois dela a app tem de fechar, mesmo que algo falhe.
             let reabrir = try Self.scriptReabrir(Bundle.main.bundleURL, descarregada: nova)
