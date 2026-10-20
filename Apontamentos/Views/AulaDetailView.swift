@@ -50,15 +50,16 @@ struct AulaDetailView: View {
         VStack(alignment: .leading, spacing: 0) {
             cabecalho
                 .padding(.horizontal, 20)
-                .padding(.top, 16)
+                .padding(.top, 12)
                 .padding(.bottom, 10)
             Divider()
             conteudo
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // O título e o subtítulo vivem na barra da janela, uma vez só.
         .navigationTitle(aula.meta.titulo)
-        .navigationSubtitle(aula.cadeira)
+        .navigationSubtitle(subtitulo)
         .toolbar { barra }
         // A `Aula` muda quando a transcrição, os slides, os apontamentos ou os metadados mudam no disco:
         // não é preciso reler a cada alteração noutra aula.
@@ -138,18 +139,7 @@ struct AulaDetailView: View {
 
     private var cabecalho: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Com o painel das perguntas aberto pode faltar largura: os separadores passam para baixo do título.
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .firstTextBaseline, spacing: 16) {
-                    // Largura ideal pequena: lado a lado sempre que o título caiba minimamente (o resto trunca).
-                    tituloAula.frame(minWidth: 220, idealWidth: 240, maxWidth: .infinity, alignment: .leading)
-                    seletor
-                }
-                VStack(alignment: .leading, spacing: 10) {
-                    tituloAula
-                    seletor
-                }
-            }
+            seletor
 
             if case .emFalta(let caminho) = estadoVideo {
                 HStack {
@@ -167,13 +157,6 @@ struct AulaDetailView: View {
             }
 
             if let job { ProgressoJobView(job: job) }
-        }
-    }
-
-    private var tituloAula: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(aula.meta.titulo).font(.title2.bold()).lineLimit(1)
-            Text(subtitulo).font(.callout).foregroundStyle(.secondary).lineLimit(1).help(subtitulo)
         }
     }
 
