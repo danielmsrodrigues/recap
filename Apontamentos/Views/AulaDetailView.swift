@@ -124,7 +124,7 @@ struct AulaDetailView: View {
         .fileImporter(isPresented: $escolherPDF, allowedContentTypes: [.pdf], allowsMultipleSelection: true) { resultado in
             if case .success(let urls) = resultado, !urls.isEmpty { juntarPDFsProfessor(urls) }
         }
-        .fileImporter(isPresented: $localizarVideo, allowedContentTypes: [.movie, .mpeg4Movie, .quickTimeMovie]) { resultado in
+        .fileImporter(isPresented: $localizarVideo, allowedContentTypes: ContentView.tiposVideo) { resultado in
             if case .success(let url) = resultado { religarVideo(url) }
         }
         .onDisappear {
@@ -332,7 +332,6 @@ struct AulaDetailView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.green)
-                .help("Clica para voltar a marcar como por rever")
             } else {
                 Button { marcarRevista(true) } label: {
                     Label("Marcar como revista", systemImage: "checkmark.circle").labelStyle(.titleAndIcon)
@@ -506,8 +505,7 @@ struct AulaDetailView: View {
             let estado = "Guardado às \(Date.now.formatted(date: .omitted, time: .shortened))"
             if estadoEdicao != estado { estadoEdicao = estado }
         } catch {
-            estadoEdicao = "Não foi possível guardar"
-            erro = "Não foi possível guardar: \(error.localizedDescription)"
+            estadoEdicao = "Não foi possível guardar: \(error.localizedDescription)"
         }
     }
 

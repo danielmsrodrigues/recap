@@ -133,7 +133,7 @@ struct ConfigDiretoSheet: View {
                 }
                 Spacer()
                 Button("Cancelar", role: .cancel) { dismiss() }
-                Button("Começar a ouvir") { comecar() }
+                Button("Começar") { comecar() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(!dados.valido || fonte == nil)
             }
@@ -239,7 +239,6 @@ struct DiretoView: View {
             Image(decorative: previa, scale: 1).resizable().aspectRatio(contentMode: .fit)
                 .clipShape(.rect(cornerRadius: 6))
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
-                .help("O que está a ser captado para os slides")
         }
         LabeledContent("Aula captada") {
             Text(Timestamp.format(sessao.segundosDeAula)).monospacedDigit()
@@ -346,7 +345,7 @@ struct DiretoMenu: View {
         Text(sessao.estado == .emPausa ? "\(sessao.titulo) · em pausa" : sessao.titulo)
         Divider()
         Button(sessao.estado == .emPausa ? "Retomar" : "Pausar") { sessao.pausar(sessao.estado != .emPausa) }
-        Button("Terminar e transcrever") { Task { await sessao.terminar() } }
+        Button("Terminar") { Task { await sessao.terminar() } }
         Divider()
         Button("Mostrar janela") {
             openWindow(id: "direto")

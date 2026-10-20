@@ -89,7 +89,7 @@ private struct GeralSettings: View {
             Button("Usar a pasta sem mover") { mudar(para: url, mover: false) }
             Button("Cancelar", role: .cancel) {}
         } message: { url in
-            Text("As \(library.cadeiras.count) cadeira(s) de \((library.raiz.path as NSString).abbreviatingWithTildeInPath) passam para \((url.path as NSString).abbreviatingWithTildeInPath). Sem mover, o Recap passa a ler só a pasta nova e as aulas atuais ficam onde estão.")
+            Text("As \(library.cadeiras.count) cadeiras de \((library.raiz.path as NSString).abbreviatingWithTildeInPath) passam para \((url.path as NSString).abbreviatingWithTildeInPath). Sem mover, o Recap passa a ler só a pasta nova e as aulas atuais ficam onde estão.")
         }
     }
 

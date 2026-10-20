@@ -62,11 +62,9 @@ struct FichaCadeiraView: View {
                     }
                 }
                 .labelStyle(.titleAndIcon)
-                .help("O programa oficial da cadeira (planificação, guia): a ficha começa por ele")
                 .disabled(controlador.editando || fichas.aAtualizar(cadeira) != nil)
                 Button("Editar", systemImage: "pencil") { comecarEdicao() }
                     .labelStyle(.titleAndIcon)
-                    .help("Corrigir ou acrescentar à ficha; as aulas seguintes juntam-se ao que escreveres")
                     .disabled(ficha == nil || controlador.editando || fichas.aAtualizar(cadeira) != nil)
             }
         }

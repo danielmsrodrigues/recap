@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 /// O prompt de sistema vive num ficheiro editável em Application Support.
@@ -38,9 +37,7 @@ enum PromptStore {
         return original
     }
 
-    static func sha256(_ texto: String) -> String {
-        SHA256.hash(data: Data(texto.utf8)).map { String(format: "%02x", $0) }.joined()
-    }
+    static func sha256(_ texto: String) -> String { FichaCadeira.hash(texto) }
 
     static func guardar(_ texto: String) throws {
         try FileManager.default.createDirectory(at: pastaApp, withIntermediateDirectories: true)

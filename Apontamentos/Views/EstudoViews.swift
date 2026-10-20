@@ -112,7 +112,7 @@ struct PerguntasView: View {
     /// Só com conversa: o nome da secção já está no seletor do painel, e a aula é a que está aberta ao lado.
     private var cabecalho: some View {
         HStack {
-            Text("\(perguntas.count) pergunta(s)").font(.callout).foregroundStyle(.secondary)
+            Text(perguntas.count == 1 ? "1 pergunta" : "\(perguntas.count) perguntas").font(.callout).foregroundStyle(.secondary)
             Spacer()
             Button("Nova conversa", systemImage: "square.and.pencil") { confirmarApagar = true }
                 .buttonStyle(.borderless)
@@ -290,7 +290,7 @@ struct ExerciciosView: View {
             if emCurso != nil {
                 Button("Parar", systemImage: "stop.circle") { estudo.cancelar(aula, .exercicios) }
             } else {
-                Button("Outros exercícios", systemImage: "arrow.clockwise") { estudo.gerarExercicios(aula) }
+                Button("Gerar outros", systemImage: "arrow.clockwise") { estudo.gerarExercicios(aula) }
                     .disabled(definicoes.faltaParaGerar != nil)
             }
         }
@@ -308,7 +308,7 @@ struct ExerciciosView: View {
             if definicoes.faltaParaGerar != nil {
                 SettingsLink { Text("Abrir Definições…") }
             } else {
-                Button("Criar exercícios") { estudo.gerarExercicios(aula) }
+                Button("Gerar exercícios") { estudo.gerarExercicios(aula) }
                     .buttonStyle(.borderedProminent)
             }
         }
