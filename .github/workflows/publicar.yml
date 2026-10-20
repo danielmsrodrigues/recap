@@ -1,6 +1,7 @@
 # Compila e testa cada PR; a cada merge no main publica uma release nova (v1.8 → v1.9 → …) com o Recap.zip,
 # assinado com o certificado "Recap Local" (o mesmo das versões feitas à mão: o atualizador só aceita esse).
-# Para um merge não dar release, põe "[sem release]" na mensagem do commit de merge.
+# Para um merge não dar release, põe "[sem release]" na mensagem do commit de merge. Para publicar sem merge
+# (por exemplo, depois de pôr os segredos), Actions → Publicar → "Run workflow" no main.
 #
 # Precisa de dois segredos no repo: RECAP_LOCAL_P12 (o certificado com a chave privada, em base64)
 # e RECAP_LOCAL_P12_PASSWORD. Sem eles, compila e testa com assinatura ad-hoc e não publica.
@@ -77,7 +78,7 @@ jobs:
 
       - name: Versão seguinte
         id: versao
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request'
         run: |
           ultima=$(git tag -l 'v*' --sort=-v:refname | head -1)
           maior=${ultima#v}; maior=${maior%%.*}
@@ -88,7 +89,7 @@ jobs:
           echo "Última: $ultima → nova: v$nova"
 
       - name: Compilar a versão final
-        if: github.event_name == 'push' && env.TEM_CERTIFICADO == 'true'
+        if: github.event_name != 'pull_request' && env.TEM_CERTIFICADO == 'true'
         run: |
           set -o pipefail
           xcodebuild -project Apontamentos.xcodeproj -scheme Apontamentos -configuration Release \
@@ -101,7 +102,7 @@ jobs:
           ditto -c -k --keepParent "$app" build/Recap.zip
 
       - name: Publicar a release
-        if: github.event_name == 'push' && env.TEM_CERTIFICADO == 'true' && !contains(github.event.head_commit.message, '[sem release]')
+        if: github.event_name != 'pull_request' && env.TEM_CERTIFICADO == 'true' && !contains(github.event.head_commit.message, '[sem release]')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
