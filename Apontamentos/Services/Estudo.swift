@@ -220,7 +220,6 @@ final class Estudo {
 
     func emCurso(_ aula: Aula, _ tipo: Tipo) -> EmCurso? { emCurso[Self.chave(aula, tipo)] }
     func erro(_ aula: Aula, _ tipo: Tipo) -> String? { erros[Self.chave(aula, tipo)] }
-    func limparErro(_ aula: Aula, _ tipo: Tipo) { erros[Self.chave(aula, tipo)] = nil }
 
     func cancelar(_ aula: Aula, _ tipo: Tipo) {
         emCurso[Self.chave(aula, tipo)]?.tarefa?.cancel()

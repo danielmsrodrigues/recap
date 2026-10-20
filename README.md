@@ -8,7 +8,7 @@ App para Mac que transforma aulas em apontamentos de estudo em português (PT-PT
   - perguntas à aula, num painel ao lado dos apontamentos;
   - exercícios extra, com a resolução escondida;
   - ligações entre as aulas da cadeira;
-  - pesquisa em todas as aulas.
+  - procura em todas as aulas.
 - **Exportação:** apontamentos em PDF (para o Freeform, iPad…) ou em Markdown.
 
 As aulas ficam em `~/Aulas/<cadeira>/<data>_<título>/`, em ficheiros normais. A pasta muda-se em Definições → Aulas (por exemplo para o iCloud Drive). Nada é enviado para lado nenhum além do pedido ao Claude.

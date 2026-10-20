@@ -262,7 +262,6 @@ struct SlideExtractor: Sendable {
             let trocou = config.soComTexto && mudancaFina >= Self.mudancaDeSlide
             if var c = atual, !trocou, try fp.distance(to: c.referencia) <= config.limiar {
                 c.fim = t + config.intervalo
-                c.ultima = tapada
                 c.ultimaFP = fp
                 c.ultimaFina = fina
                 c.ultimoTempo = t
@@ -271,7 +270,7 @@ struct SlideExtractor: Sendable {
                 atual = c
             } else {
                 if let c = atual { candidatos.append(c) }
-                atual = Candidato(inicio: t, fim: t + config.intervalo, referencia: fp, ultima: tapada, ultimaFP: fp, ultimaFina: fina, ultimoTempo: t)
+                atual = Candidato(inicio: t, fim: t + config.intervalo, referencia: fp, ultimaFP: fp, ultimaFina: fina, ultimoTempo: t)
             }
         }
         if let c = atual { candidatos.append(c) }
@@ -353,7 +352,6 @@ struct SlideExtractor: Sendable {
         var inicio: Double
         var fim: Double
         var referencia: FeaturePrintObservation
-        var ultima: CGImage
         var ultimaFP: FeaturePrintObservation
         /// Grelha fina da última imagem (só num recorte do slide).
         var ultimaFina: [Float]

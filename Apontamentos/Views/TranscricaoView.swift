@@ -28,7 +28,7 @@ struct TranscricaoView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                TextField("Pesquisar na transcrição", text: $pesquisa)
+                TextField("Procurar na transcrição", text: $pesquisa)
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 320)
                 Spacer()

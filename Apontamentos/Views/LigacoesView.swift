@@ -81,7 +81,7 @@ struct LigacoesView: View {
             if emCurso {
                 Button("Parar", systemImage: "stop.circle") { estudo.cancelar(aula, .ligacoes) }
             } else {
-                Button("Atualizar ligações", systemImage: "arrow.clockwise") { estudo.gerarLigacoes(aula) }
+                Button("Gerar de novo", systemImage: "arrow.clockwise") { estudo.gerarLigacoes(aula) }
                     .disabled(definicoes.faltaParaGerar != nil)
             }
         }
@@ -105,7 +105,7 @@ struct LigacoesView: View {
             if definicoes.faltaParaGerar != nil {
                 SettingsLink { Text("Abrir Definições…") }
             } else {
-                Button("Encontrar ligações") { estudo.gerarLigacoes(aula) }
+                Button("Gerar ligações") { estudo.gerarLigacoes(aula) }
                     .buttonStyle(.borderedProminent)
                     .disabled(!aula.temApontamentos)
             }
@@ -137,7 +137,6 @@ struct LigacoesView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(destino == nil ? Color.secondary : Color.primary)
                 .disabled(destino == nil)
-                .help("Abrir esta aula")
                 Spacer(minLength: 8)
                 if let destino {
                     Text(destino.meta.data.formatted(.dateTime.day().month(.abbreviated))).font(.caption).foregroundStyle(.secondary)
@@ -291,7 +290,6 @@ private struct LinhaDoTempo: View {
         .frame(width: largura)
         .contentShape(.rect)
         .onTapGesture { if !atual { aoAbrir(a.pasta) } }
-        .help(atual ? "Esta aula" : "Abrir \(a.meta.titulo)")
     }
 }
 

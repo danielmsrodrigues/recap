@@ -127,7 +127,7 @@ struct SidebarView: View {
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .fixedSize()
-            .help(library.organizacao == .ano ? "Mudar de ano (a pesquisa procura em todos)" : "Mudar de semestre (a pesquisa procura em todos)")
+            .help(library.organizacao == .ano ? "Mudar de ano (a procura é em todos)" : "Mudar de semestre (a procura é em todos)")
             Spacer()
         }
         .padding(.horizontal, 12)
@@ -159,7 +159,7 @@ struct SidebarView: View {
         Button("Editar aula…") { aEditarAula = aula }.disabled(ativa)
         Button("Mostrar no Finder") { NSWorkspace.shared.activateFileViewerSelecting([aula.pasta]) }
         if !aula.temTranscricao, !ativa, let ref = aula.meta.video, case .ok(let url) = VideoResolver.resolver(ref) {
-            Button("Processar de novo") {
+            Button("Gerar de novo") {
                 fila.adicionar(Job(pastaAula: aula.pasta, titulo: aula.meta.titulo, video: url, gerarApontamentos: true))
             }
         }

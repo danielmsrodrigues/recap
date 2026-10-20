@@ -34,7 +34,7 @@ struct ContentView: View {
                 }
             }
             .navigationSplitViewColumnWidth(min: 220, ideal: 280)
-            .searchable(text: $pesquisa, placement: .sidebar, prompt: "Pesquisar em todas as aulas")
+            .searchable(text: $pesquisa, placement: .sidebar, prompt: "Procurar em todas as aulas")
         } detail: {
             if let selecao, selecao.lastPathComponent == FichaCadeira.fichaMD,
                let cadeira = library.cadeiras.first(where: { $0.pasta.mesmoCaminho(selecao.deletingLastPathComponent()) }) {
@@ -60,8 +60,8 @@ struct ContentView: View {
                 await atualizador.procurar()
                 await atualizador.instalar()
             }
-            // `APONTAMENTOS_PROCURAR=1`: só procura, para testar o aviso e o botão "Atualizar agora".
-            if ProcessInfo.processInfo.environment["APONTAMENTOS_PROCURAR"] == "1" {
+            // `APONTAMENTOS_ATUALIZACAO_PROCURAR=1`: só procura a versão nova, para testar o aviso e o botão "Atualizar agora".
+            if ProcessInfo.processInfo.environment["APONTAMENTOS_ATUALIZACAO_PROCURAR"] == "1" {
                 await atualizador.procurar()
             }
             #else
@@ -80,7 +80,6 @@ struct ContentView: View {
                     Button("Importar vídeo…") { importar = true }.keyboardShortcut("o")
                     Button("Nova cadeira…") { criarCadeira = true }
                 }
-                .help("Importar vídeos de aulas ou criar uma cadeira")
             }
         }
         .dropDestination(for: URL.self) { urls, _ in
@@ -211,7 +210,7 @@ private struct EcraInicial: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 440)
             Button(action: aoTranscrever) {
-                Label(aCaptar ? "Já há uma aula a ser captada" : "Transcrever em direto…", systemImage: "record.circle")
+                Label(aCaptar ? "Já há uma aula em direto" : "Transcrever em direto…", systemImage: "record.circle")
                     .font(.title3.weight(.semibold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
@@ -220,7 +219,6 @@ private struct EcraInicial: View {
             .controlSize(.extraLarge)
             .disabled(aCaptar)
             .padding(.top, 6)
-            Text("⇧⌘L").font(.caption).foregroundStyle(.tertiary)
 
             HStack(spacing: 4) {
                 Text("Tens o vídeo da aula? Larga-o aqui ou")
@@ -332,7 +330,7 @@ private struct AvisosAtualizacao: ViewModifier {
                 Button("Mais tarde", role: .cancel) { atualizador.dispensar() }
             } message: { versao in
                 Text(ocupado
-                     ? "Versão \(versao) (tens a \(Atualizador.versaoAtual)). Há uma aula a ser captada ou processada: atualiza quando terminar, em Recap → Procurar atualizações…"
+                     ? "Versão \(versao) (tens a \(Atualizador.versaoAtual)). Há uma aula em direto ou a processar: atualiza quando terminar, em Recap → Procurar atualizações…"
                      : "Versão \(versao) (tens a \(Atualizador.versaoAtual)). O Recap fecha, atualiza-se e volta a abrir. As tuas aulas não são tocadas.")
             }
             .alert("Atualizações", isPresented: Binding(get: { mensagem != nil }, set: { if !$0 { atualizador.dispensar() } }), presenting: mensagem) { _ in

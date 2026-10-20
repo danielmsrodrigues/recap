@@ -28,7 +28,7 @@ struct NovaAulaSheet: View {
 
             HStack {
                 if restantes > 0 {
-                    Text("Mais \(restantes) vídeo(s) a seguir").font(.callout).foregroundStyle(.secondary)
+                    Text(restantes == 1 ? "Mais 1 vídeo a seguir" : "Mais \(restantes) vídeos a seguir").font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("Saltar este vídeo", role: .cancel) { dismiss() }
