@@ -71,13 +71,26 @@ private struct GeralSettings: View {
                     definicoes.organizacao = $0
                     library.organizacao = $0
                 })) {
-                    ForEach(OrganizacaoCurso.allCases) { Text($0.nome).tag($0) }
+                    ForEach(OrganizacaoCurso.allCases) { o in
+                        Text(o == .anoESemestre ? "Por ano e \(library.nomePeriodo)" : o.nome).tag(o)
+                    }
                 }
                 .pickerStyle(.radioGroup)
+                Picker("Calendário", selection: Binding(get: { definicoes.iniciosPeriodos }, set: {
+                    definicoes.iniciosPeriodos = $0
+                    library.iniciosPeriodos = $0
+                })) {
+                    ForEach(CalendarioLetivo.opcoes, id: \.self) { Text($0.nome).tag($0.inicios) }
+                }
+                Stepper("Duração do curso: \(definicoes.duracaoCurso) \(definicoes.duracaoCurso == 1 ? "ano" : "anos")",
+                        value: Binding(get: { definicoes.duracaoCurso }, set: {
+                            definicoes.duracaoCurso = $0
+                            library.duracaoCurso = $0
+                        }), in: 1...8)
             } header: {
                 Text("Barra lateral")
             } footer: {
-                Text("Por defeito, o ano e o semestre vêm das datas das aulas (setembro a janeiro é o 1.º semestre). Num curso de um ano ou sem semestres, escolhe \"Só por ano\" ou \"Sem divisão\". Os semestres escolhidos à mão em cada cadeira não se perdem.")
+                Text("Por defeito, o ano e o \(library.nomePeriodo) vêm das datas das aulas (\(CalendarioLetivo.descricao(definicoes.iniciosPeriodos))). Num curso de um ano ou sem semestres, escolhe \"Só por ano\" ou \"Sem divisão\". Os semestres escolhidos à mão em cada cadeira não se perdem.")
             }
         }
         .formStyle(.grouped)

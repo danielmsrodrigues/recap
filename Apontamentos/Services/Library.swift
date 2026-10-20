@@ -8,14 +8,21 @@ final class Library {
     private(set) var raiz: URL
     /// Muda os grupos da barra lateral; o que está em `cadeira.json` não é tocado.
     var organizacao: OrganizacaoCurso { didSet { if organizacao != oldValue { recarregar() } } }
+    /// Os meses em que começa cada período do ano letivo (ver `CalendarioLetivo`).
+    var iniciosPeriodos: [Int] { didSet { if iniciosPeriodos != oldValue { recarregar() } } }
+    /// Até onde vão as escolhas manuais de ano de uma cadeira.
+    var duracaoCurso: Int
     private(set) var cadeiras: [Cadeira] = []
     /// Muda quando uma leitura do disco encontra algo diferente; as vistas usam-no para recarregar ficheiros.
     private(set) var versao = 0
     private(set) var erro: String?
 
-    init(raiz: URL = Disco.raizPorDefeito, organizacao: OrganizacaoCurso = .anoESemestre) {
+    init(raiz: URL = Disco.raizPorDefeito, organizacao: OrganizacaoCurso = .anoESemestre,
+         iniciosPeriodos: [Int] = CalendarioLetivo.porDefeito, duracaoCurso: Int = 4) {
         self.raiz = raiz
         self.organizacao = organizacao
+        self.iniciosPeriodos = iniciosPeriodos
+        self.duracaoCurso = duracaoCurso
         recarregar()
     }
 
@@ -24,7 +31,7 @@ final class Library {
     func recarregar() {
         do {
             try FileManager.default.createDirectory(at: raiz, withIntermediateDirectories: true)
-            let novas = try Self.ler(raiz: raiz, organizacao: organizacao)
+            let novas = try Self.ler(raiz: raiz, organizacao: organizacao, inicios: iniciosPeriodos)
             let mudou = novas != cadeiras || erro != nil
             cadeiras = novas
             erro = nil
@@ -61,7 +68,8 @@ final class Library {
         }
     }
 
-    nonisolated static func ler(raiz: URL, organizacao: OrganizacaoCurso = .anoESemestre, hoje: Date = .now) throws -> [Cadeira] {
+    nonisolated static func ler(raiz: URL, organizacao: OrganizacaoCurso = .anoESemestre,
+                                inicios: [Int] = CalendarioLetivo.porDefeito, hoje: Date = .now) throws -> [Cadeira] {
         let fm = FileManager.default
         let pastas = try fm.contentsOfDirectory(at: raiz, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles)
         let lidas = pastas
@@ -82,7 +90,7 @@ final class Library {
                 }
                 .sorted { ($0.meta.data, $0.meta.criadaEm) > ($1.meta.data, $1.meta.criadaEm) }
                 return (nome: nome, pasta: pasta, meta: Disco.lerCadeira(pasta), aulas: aulas,
-                        letivo: Semestre.letivo(aulas.last?.meta.data ?? hoje))
+                        letivo: Semestre.letivo(aulas.last?.meta.data ?? hoje, inicios: inicios))
             }
         // O 1.º ano é o ano letivo da aula mais antiga; uma cadeira ainda sem aulas fica no semestre de hoje.
         let primeiro = lidas.map(\.letivo.inicio).min() ?? 0
@@ -120,6 +128,20 @@ final class Library {
     /// As cadeiras agrupadas por semestre, do mais recente para o mais antigo (para os seletores de cadeira).
     var cadeirasPorSemestre: [(semestre: Semestre, cadeiras: [Cadeira])] {
         semestres.map { s in (s, cadeiras.filter { $0.semestre == s }) }
+    }
+
+    /// "semestre", "trimestre"…, conforme o calendário letivo.
+    var nomePeriodo: String { CalendarioLetivo.nomePeriodo(iniciosPeriodos) }
+
+    /// "2.º ano · 1.º semestre", "1.º ano · 3.º trimestre"…
+    func nome(_ semestre: Semestre) -> String { semestre.nome(periodo: nomePeriodo) }
+
+    /// Nome do seletor da cadeira: "Semestre", "Trimestre"… ou "Ano".
+    var rotuloPeriodo: String { organizacao.rotulo(periodo: nomePeriodo) }
+
+    /// As escolhas manuais de semestre (ou ano) para uma cadeira, até ao fim do curso.
+    func opcoesSemestre(_ cadeira: Cadeira) -> [Semestre] {
+        organizacao.opcoes(ate: max(duracaoCurso, cadeira.semestre.ano), periodos: iniciosPeriodos.count)
     }
 
     /// Número da aula dentro da cadeira, pela ordem das datas (a primeira é 1).

@@ -94,8 +94,46 @@ struct GestaoTests {
         lib.organizacao = .nenhuma
         #expect(lib.semestres == [.todas])
         #expect(OrganizacaoCurso.nenhuma.opcoes(ate: 1).isEmpty)
-        #expect(OrganizacaoCurso.ano.opcoes(ate: 1).count == 4)
+        #expect(OrganizacaoCurso.ano.opcoes(ate: 1).count == 1)
         #expect(OrganizacaoCurso.anoESemestre.opcoes(ate: 5).count == 10)
+    }
+
+    @Test func calendariosEDuracaoDoCurso() throws {
+        let (lib, raiz) = try biblioteca()
+        defer { try? FileManager.default.removeItem(at: raiz) }
+        func data(_ texto: String) -> Date { try! Date(texto + "T12:00:00Z", strategy: .iso8601) }
+
+        // Brasil: fevereiro a julho é o 1.º semestre, agosto a janeiro o 2.º.
+        #expect(Semestre.letivo(data("2027-03-10"), inicios: [2, 8]) == (2027, 1))
+        #expect(Semestre.letivo(data("2027-08-10"), inicios: [2, 8]) == (2027, 2))
+        #expect(Semestre.letivo(data("2028-01-10"), inicios: [2, 8]) == (2027, 2))
+        // Trimestres de setembro, janeiro e abril.
+        #expect(Semestre.letivo(data("2026-11-10"), inicios: [9, 1, 4]) == (2026, 1))
+        #expect(Semestre.letivo(data("2027-02-10"), inicios: [9, 1, 4]) == (2026, 2))
+        #expect(Semestre.letivo(data("2027-06-10"), inicios: [9, 1, 4]) == (2026, 3))
+        // Um calendário inválido volta ao de setembro e fevereiro.
+        #expect(Semestre.letivo(data("2027-03-10"), inicios: [9, 13]) == (2026, 2))
+        #expect(!CalendarioLetivo.valido([9, 4, 1]))
+        #expect(!CalendarioLetivo.valido([]))
+
+        _ = try lib.criarAula(cadeira: "Contabilidade", titulo: "A", data: data("2027-03-02"), video: nil)
+        _ = try lib.criarAula(cadeira: "Estratégia", titulo: "A", data: data("2027-09-20"), video: nil)
+        lib.iniciosPeriodos = [2, 8]
+        #expect(lib.cadeira(nome: "Contabilidade")?.semestre == Semestre(ano: 1, numero: 1))
+        #expect(lib.cadeira(nome: "Estratégia")?.semestre == Semestre(ano: 1, numero: 2))
+
+        lib.iniciosPeriodos = [9, 1, 4]
+        let estrategia = try #require(lib.cadeira(nome: "Estratégia"))
+        #expect(lib.nome(estrategia.semestre) == "2.º ano · 1.º trimestre")
+        #expect(lib.rotuloPeriodo == "Trimestre")
+        #expect(lib.opcoesSemestre(estrategia).count == 12)
+        // Um mestrado de um ano: as escolhas acabam no 2.º ano (o desta cadeira), não no 4.º.
+        lib.duracaoCurso = 1
+        #expect(lib.opcoesSemestre(estrategia).count == 6)
+
+        #expect(CalendarioLetivo.descricao([9, 2]) == "1.º semestre de setembro a janeiro, 2.º de fevereiro a agosto")
+        #expect(CalendarioLetivo.descricao([9, 1, 4]) == "1.º trimestre de setembro a dezembro, 2.º de janeiro a março, 3.º de abril a agosto")
+        #expect(CalendarioLetivo.descricao([9]) == "o ano letivo começa em setembro")
     }
 
     @Test func mudarAPastaDasAulas() throws {
