@@ -11,6 +11,9 @@ struct SlidesView: View {
     let pdfs: [PDFProfessor]
     let podeExtrair: Bool
     let aoExtrair: () -> Void
+    /// Juntar os slides em PDF publicados pelo professor, e tirar um já junto (vai para o Lixo).
+    let aoJuntarPDF: () -> Void
+    let aoRemoverPDF: (PDFProfessor) -> Void
     @State private var aberto: Slide?
     /// O que se escolheu ver; começa no primeiro PDF.
     @State private var escolha: Origem?
@@ -32,27 +35,32 @@ struct SlidesView: View {
             capturas
         } else {
             VStack(spacing: 0) {
-                if pdfs.count > 1 || slides?.isEmpty == false {
-                    let seletor = Picker("Origem", selection: Binding(get: { origem }, set: { escolha = $0 })) {
-                        ForEach(pdfs) { pdf in
-                            Text(pdfs.count == 1 ? "PDF do professor" : pdf.titulo).tag(Origem.pdf(pdf.numero))
+                HStack {
+                    if pdfs.count > 1 || slides?.isEmpty == false {
+                        let seletor = Picker("Origem", selection: Binding(get: { origem }, set: { escolha = $0 })) {
+                            ForEach(pdfs) { pdf in
+                                Text(pdfs.count == 1 ? "PDF do professor" : pdf.titulo).tag(Origem.pdf(pdf.numero))
+                            }
+                            if let slides, !slides.isEmpty {
+                                Text("Capturas (\(slides.count))").tag(Origem.capturas)
+                            }
                         }
-                        if let slides, !slides.isEmpty {
-                            Text("Capturas (\(slides.count))").tag(Origem.capturas)
-                        }
-                    }
-                    .labelsHidden()
-                    Group {
+                        .labelsHidden()
                         // Vários PDFs, com nomes compridos, não cabem lado a lado: um menu com o escolhido.
                         if pdfs.count == 1 {
                             seletor.pickerStyle(.segmented).fixedSize()
                         } else {
                             seletor.pickerStyle(.menu).frame(maxWidth: 360)
                         }
+                    } else {
+                        Text("PDF do professor").font(.callout).foregroundStyle(.secondary)
                     }
-                    .padding(.vertical, 8)
-                    Divider()
+                    Spacer()
+                    menuPDFs
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                Divider()
                 if case .pdf(let n) = origem, let pdf = pdfs.first(where: { $0.numero == n }) {
                     VistaPDF(url: pdf.url(em: pasta))
                 } else {
@@ -62,18 +70,30 @@ struct SlidesView: View {
         }
     }
 
+    /// Juntar mais PDFs do professor e tirar os que já cá estão.
+    private var menuPDFs: some View {
+        Menu("PDFs do professor", systemImage: "doc.badge.plus") {
+            Button("Juntar PDF…", action: aoJuntarPDF)
+            if !pdfs.isEmpty {
+                Divider()
+                ForEach(pdfs) { pdf in
+                    Button("Remover \"\(pdf.titulo)\"", role: .destructive) { aoRemoverPDF(pdf) }
+                }
+            }
+        }
+        .fixedSize()
+    }
+
     @ViewBuilder private var capturas: some View {
         if let slides, !slides.isEmpty {
             VStack(spacing: 0) {
                 HStack {
                     Text("\(slides.count) slides").font(.callout).foregroundStyle(.secondary)
                     Spacer()
-                    Button("Extrair de novo", systemImage: "arrow.clockwise", action: aoExtrair)
-                        .disabled(!podeExtrair)
-                        .help("Volta a analisar o vídeo com as definições atuais (Definições → Slides e região da cadeira)")
+                    if pdfs.isEmpty { menuPDFs }
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .padding(.vertical, 8)
                 Divider()
                 ScrollView {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 16)], spacing: 16) {
@@ -93,10 +113,11 @@ struct SlidesView: View {
                 Label(slides == nil ? "Slides ainda não extraídos" : "Nenhum slide encontrado", systemImage: "rectangle.on.rectangle")
             } description: {
                 Text(slides == nil
-                     ? "Os slides são extraídos do vídeo depois da transcrição."
-                     : "Parece não haver partilha de ecrã, ou a deteção falhou. Experimenta outra região a ignorar no glossário da cadeira, ou outro limiar em Definições → Slides.")
+                     ? "Os slides são extraídos do vídeo depois da transcrição. Se o professor publicou os slides em PDF, junta-os aqui."
+                     : "Parece não haver partilha de ecrã, ou a deteção falhou. Experimenta outra câmara do professor na cadeira, ou outra sensibilidade em Definições → Slides. Se o professor publicou os slides em PDF, junta-os aqui.")
             } actions: {
-                Button("Extrair slides", action: aoExtrair).disabled(!podeExtrair)
+                Button("Juntar PDF do professor…", action: aoJuntarPDF).buttonStyle(.borderedProminent)
+                Button(slides == nil ? "Extrair slides do vídeo" : "Extrair de novo", action: aoExtrair).disabled(!podeExtrair)
             }
         }
     }

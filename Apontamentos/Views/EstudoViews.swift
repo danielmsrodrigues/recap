@@ -1,5 +1,45 @@
 import SwiftUI
 
+/// As três secções do painel Estudo: todas pedem ao Claude algo sobre a aula aberta.
+enum SeccaoEstudo: String, CaseIterable, Identifiable {
+    case perguntas = "Perguntas"
+    case exercicios = "Exercícios"
+    case ligacoes = "Ligações"
+    var id: String { rawValue }
+}
+
+/// O painel à direita da aula: perguntas, exercícios e ligações com as outras aulas.
+struct PainelEstudo: View {
+    let aula: Aula
+    var aoClicarTimestamp: (Double) -> Void
+    var aoClicarSeccao: (LigacaoSeccao) -> Void
+    var aoAbrirAula: (URL) -> Void
+    @AppStorage("seccaoEstudo") private var seccaoGuardada = SeccaoEstudo.perguntas.rawValue
+
+    private var seccao: Binding<SeccaoEstudo> {
+        Binding(get: { SeccaoEstudo(rawValue: seccaoGuardada) ?? .perguntas }, set: { seccaoGuardada = $0.rawValue })
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Picker("Secção", selection: seccao) {
+                ForEach(SeccaoEstudo.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            Divider()
+            switch seccao.wrappedValue {
+            case .perguntas: PerguntasView(aula: aula, aoClicarTimestamp: aoClicarTimestamp, aoClicarSeccao: aoClicarSeccao)
+            case .exercicios: ExerciciosView(aula: aula, aoClicarTimestamp: aoClicarTimestamp)
+            case .ligacoes: LigacoesView(aula: aula, aoClicarTimestamp: aoClicarTimestamp, aoAbrirAula: aoAbrirAula)
+            }
+        }
+        .background(.background)
+    }
+}
+
 /// Perguntar à aula: conversa sobre a aula, com as respostas baseadas na transcrição, nos slides e nos apontamentos.
 struct PerguntasView: View {
     @Environment(Estudo.self) private var estudo
@@ -31,11 +71,11 @@ struct PerguntasView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            cabecalho
-            Divider()
             if perguntas.isEmpty && emCurso == nil {
                 vazio
             } else {
+                cabecalho
+                Divider()
                 NotesWebView(markdown: conversa, emStreaming: emCurso != nil, aoClicarTimestamp: aoClicarTimestamp, modo: "conversa",
                              aoClicarSeccao: aoClicarSeccao)
             }
@@ -69,24 +109,18 @@ struct PerguntasView: View {
         }
     }
 
+    /// Só com conversa: o nome da secção já está no seletor do painel, e a aula é a que está aberta ao lado.
     private var cabecalho: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "bubble.left.and.text.bubble.right.fill").foregroundStyle(.tint)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Perguntas").font(.headline)
-                Text(aula.meta.titulo).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            }
+        HStack {
+            Text("\(perguntas.count) pergunta(s)").font(.callout).foregroundStyle(.secondary)
             Spacer()
-            if !perguntas.isEmpty {
-                Button("Nova conversa", systemImage: "square.and.pencil") { confirmarApagar = true }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
-                    .disabled(emCurso != nil)
-                    .help("Apagar esta conversa e começar outra")
-            }
+            Button("Nova conversa", systemImage: "square.and.pencil") { confirmarApagar = true }
+                .buttonStyle(.borderless)
+                .disabled(emCurso != nil)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .font(.callout)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
     }
 
     private var vazio: some View {
