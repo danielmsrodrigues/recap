@@ -60,7 +60,9 @@ struct AulaDetailView: View {
         .navigationTitle(aula.meta.titulo)
         .navigationSubtitle(aula.cadeira)
         .toolbar { barra }
-        .task(id: "\(aula.pasta.path)#\(library.versao)") { carregar() }
+        // A `Aula` muda quando a transcrição, os slides, os apontamentos ou os metadados mudam no disco:
+        // não é preciso reler a cada alteração noutra aula.
+        .task(id: aula) { carregar() }
         .task(id: navegacao.destino) { aplicarDestino() }
         .focusedSceneValue(\.procurarNosApontamentos, apontamentos == nil || aGerar ? nil : AcaoProcurar { abrirProcura() })
         .onChange(of: tab) { if tab != .apontamentos { fecharProcura() } }
@@ -206,9 +208,10 @@ struct AulaDetailView: View {
     @ViewBuilder private var conteudo: some View {
         switch tab {
         case .apontamentos:
-            if aGerar, let job, !job.textoEmCurso.isEmpty {
-                NotesWebView(markdown: job.textoEmCurso, emStreaming: true, pastaAula: aula.pasta)
-            } else if let apontamentos {
+            // Uma só vista web para o texto a chegar e para o guardado: trocar de vista era carregar a página
+            // (KaTeX incluído) outra vez ao começar e ao acabar cada geração.
+            let emCurso = aGerar ? job?.textoEmCurso : nil
+            if let texto = emCurso?.isEmpty == false ? emCurso : apontamentos {
                 VStack(spacing: 0) {
                     if controlador.editando {
                         BarraFormatacao(controlador: controlador, estado: estadoEdicao,
@@ -220,7 +223,7 @@ struct AulaDetailView: View {
                         BarraProcura(controlador: controlador, termo: $termoProcura, pedidosFoco: pedidosProcura, aoFechar: fecharProcura)
                         Divider()
                     }
-                    NotesWebView(markdown: apontamentos, controlador: controlador,
+                    NotesWebView(markdown: texto, emStreaming: emCurso != nil, controlador: controlador,
                                  aoClicarTimestamp: aoClicarNosApontamentos,
                                  realcar: controlador.editando ? [] : realce, pastaAula: aula.pasta,
                                  aoPerguntar: { perguntarSobre(CitacaoPergunta(texto: $0, origem: .apontamentos)) },
@@ -448,7 +451,8 @@ struct AulaDetailView: View {
         }
     }
 
-    /// O PDF vive ao lado do Markdown (`apontamentos.pdf`) e é refeito quando o Markdown muda.
+    /// O PDF vive ao lado do Markdown (`apontamentos.pdf`) e é refeito quando o Markdown muda,
+    /// uns segundos depois de a aula abrir, para não competir com o que está a aparecer no ecrã.
     private func atualizarPDF() {
         guard let apontamentos, !aGerar else { pdfPronto = false; return }
         if Disco.pdfAtualizado(em: aula.pasta) { pdfPronto = true; return }
@@ -456,8 +460,10 @@ struct AulaDetailView: View {
         guard !aCriarPDF else { return }
         aCriarPDF = true
         let pasta = aula.pasta
-        Task {
+        Task(priority: .utility) {
             defer { aCriarPDF = false }
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
             do {
                 try await ExportadorPDF.exportar(markdown: apontamentos, pastaAula: pasta, para: pasta.appending(path: Disco.apontamentosPDF))
                 pdfPronto = true

@@ -39,6 +39,24 @@ protocol FonteFrames: Sendable {
 
 struct FonteVideo: FonteFrames {
     let url: URL
+    /// Um `AVAssetImageGenerator` por tamanho: criar um (com o seu `AVURLAsset`) por cada frame pedido era o
+    /// custo dominante ao validar e gravar dezenas de slides.
+    private let geradores = CacheGeradores()
+
+    private final class CacheGeradores: @unchecked Sendable {
+        private let lock = NSLock()
+        private var porChave: [String: AVAssetImageGenerator] = [:]
+
+        func obter(_ chave: String, criar: () -> AVAssetImageGenerator) -> AVAssetImageGenerator {
+            lock.lock(); defer { lock.unlock() }
+            if let g = porChave[chave] { return g }
+            let g = criar()
+            porChave[chave] = g
+            return g
+        }
+    }
+
+    init(url: URL) { self.url = url }
 
     func duracao() async throws -> Double { try await AVURLAsset(url: url).load(.duration).seconds }
 
@@ -63,12 +81,14 @@ struct FonteVideo: FonteFrames {
     }
 
     private func gerador(maxLado: Int, tolerancia: Double) -> AVAssetImageGenerator {
-        let g = AVAssetImageGenerator(asset: AVURLAsset(url: url))
-        g.appliesPreferredTrackTransform = true
-        g.maximumSize = CGSize(width: maxLado, height: maxLado)
-        g.requestedTimeToleranceBefore = CMTime(seconds: tolerancia, preferredTimescale: 600)
-        g.requestedTimeToleranceAfter = CMTime(seconds: tolerancia, preferredTimescale: 600)
-        return g
+        geradores.obter("\(maxLado)/\(tolerancia)") {
+            let g = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+            g.appliesPreferredTrackTransform = true
+            g.maximumSize = CGSize(width: maxLado, height: maxLado)
+            g.requestedTimeToleranceBefore = CMTime(seconds: tolerancia, preferredTimescale: 600)
+            g.requestedTimeToleranceAfter = CMTime(seconds: tolerancia, preferredTimescale: 600)
+            return g
+        }
     }
 }
 
@@ -273,14 +293,20 @@ struct SlideExtractor: Sendable {
             candidatos = juntos
         }
 
-        // 3. Filtrar e juntar
+        // 3. Filtrar e juntar. O frame em resolução completa grava-se já num ficheiro temporário: lê-lo outra vez
+        // do vídeo no fim era a segunda passagem mais cara.
+        let pastaSlides = pasta.appending(path: "slides", directoryHint: .isDirectory)
+        try? FileManager.default.removeItem(at: pastaSlides)
+        try FileManager.default.createDirectory(at: pastaSlides, withIntermediateDirectories: true)
         var escolhidos: [Escolhido] = []
         for c in candidatos where c.amostras >= 2 && c.movimento / Double(c.amostras) < 0.12 {
+            try Task.checkCancellation()
             // Em resolução completa: em 640 px o texto de um ecrã partilhado fica pequeno demais para o Vision.
-            let grande = Self.tapar(try await fonte.frame(em: c.ultimoTempo, maxLado: config.ladoMaximo), mascara)
+            let frame = try await fonte.frame(em: c.ultimoTempo, maxLado: config.ladoMaximo)
+            let grande = Self.tapar(frame, mascara)
             guard try await Self.pareceSlide(grande, soComTexto: config.soComTexto) else { continue }
             let novo = Escolhido(inicio: c.inicio, fim: min(c.fim, duracao), tempoImagem: c.ultimoTempo, fp: c.ultimaFP,
-                                 grelha: c.ultimaFina)
+                                 grelha: c.ultimaFina, temporario: pastaSlides.appending(path: "tmp_\(escolhidos.count).jpg"))
 
             // Já apareceu antes: só regista a reaparição.
             // Mais exigente do que a deteção de mudança: o mesmo slide dá < 0,02, slides parecidos (mesmo modelo,
@@ -295,6 +321,7 @@ struct SlideExtractor: Sendable {
                 escolhidos[k].reaparicoes.append(novo.inicio)
                 continue
             }
+            try Self.gravarJPEG(frame, em: novo.temporario)
             escolhidos.append(novo)
         }
         if escolhidos.count > config.maximo {
@@ -302,19 +329,18 @@ struct SlideExtractor: Sendable {
                 .sorted { $0.inicio < $1.inicio }
         }
 
-        // 4. Guardar em resolução final
-        let pastaSlides = pasta.appending(path: "slides", directoryHint: .isDirectory)
-        try? FileManager.default.removeItem(at: pastaSlides)
-        try FileManager.default.createDirectory(at: pastaSlides, withIntermediateDirectories: true)
+        // 4. Dar o nome final aos ficheiros (os que ficaram de fora do máximo são apagados)
         var slides: [Slide] = []
         let k = config.escalaTempo
         for (n, e) in escolhidos.enumerated() {
-            try Task.checkCancellation()
-            let imagem = try await fonte.frame(em: e.tempoImagem, maxLado: config.ladoMaximo)
             let nome = String(format: "slide_%02d_%@.jpg", n + 1, Timestamp.format(e.inicio * k).replacingOccurrences(of: ":", with: "-"))
-            try Self.gravarJPEG(imagem, em: pastaSlides.appending(path: nome))
+            try FileManager.default.moveItem(at: e.temporario, to: pastaSlides.appending(path: nome))
             slides.append(Slide(ficheiro: nome, inicio: e.inicio * k, fim: e.fim * k, reaparicoes: e.reaparicoes.map { $0 * k }))
             progresso(0.9 + 0.1 * Double(n + 1) / Double(max(1, escolhidos.count)))
+        }
+        for sobra in (try? FileManager.default.contentsOfDirectory(at: pastaSlides, includingPropertiesForKeys: nil)) ?? []
+            where sobra.lastPathComponent.hasPrefix("tmp_") {
+            try? FileManager.default.removeItem(at: sobra)
         }
         try Disco.escreverSlides(slides, em: pasta)
         progresso(1)
@@ -343,6 +369,8 @@ struct SlideExtractor: Sendable {
         var fp: FeaturePrintObservation
         /// Grelha fina da imagem (só num recorte do slide).
         var grelha: [Float]
+        /// O frame em resolução completa, já gravado.
+        var temporario: URL
         var reaparicoes: [Double] = []
     }
 

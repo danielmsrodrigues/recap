@@ -1,6 +1,6 @@
 import Foundation
 
-/// Executa as etapas de um job: áudio → transcrição → slides → apontamentos.
+/// Executa as etapas de um job: áudio e transcrição ao mesmo tempo que os slides, e no fim os apontamentos.
 /// Transcrição e slides já guardados são reutilizados; só se refazem apagando `transcricao.json` ou `slides.json`.
 @MainActor
 final class PipelineRunner {
@@ -9,6 +9,10 @@ final class PipelineRunner {
     private let fichas: Fichas
     private let transcriber = Transcriber()
     private let modelos = ModelStore()
+    /// Libertação do modelo do Whisper agendada para quando a fila esvazia (cancelada se entrar outro job).
+    private var libertacao: Task<Void, Never>?
+    /// Quanto tempo o modelo fica em memória depois do último job: voltar a carregá-lo custa 5–20 s.
+    static let esperaAteLibertar: Duration = .seconds(300)
 
     init(library: Library, definicoes: Definicoes, fichas: Fichas) {
         self.library = library
@@ -17,9 +21,14 @@ final class PipelineRunner {
     }
 
     func executar(_ job: Job) async {
+        libertacao?.cancel()
+        libertacao = nil
         do {
-            let transcricao = try await obterTranscricao(job)
-            _ = try await obterSlides(job)
+            // A transcrição (Whisper) e os slides (Vision) não dependem um do outro: correm ao mesmo tempo.
+            async let transcricaoEmCurso = obterTranscricao(job)
+            async let slidesEmCurso = obterSlides(job)
+            let transcricao = try await transcricaoEmCurso
+            _ = try await slidesEmCurso
             if job.gerarApontamentos {
                 try await gerarApontamentos(job, transcricao: transcricao)
             }
@@ -32,9 +41,14 @@ final class PipelineRunner {
         library.recarregar()
     }
 
-    /// Liberta a memória do modelo do Whisper quando a fila esvazia.
+    /// Liberta a memória do modelo do Whisper algum tempo depois de a fila esvaziar.
     func filaVazia() {
-        Task { await transcriber.libertar() }
+        libertacao?.cancel()
+        libertacao = Task { [transcriber] in
+            try? await Task.sleep(for: Self.esperaAteLibertar)
+            guard !Task.isCancelled else { return }
+            await transcriber.libertar()
+        }
     }
 
     // MARK: Transcrição
@@ -173,7 +187,7 @@ final class PipelineRunner {
 
         // As páginas dos PDFs viram imagens antes do pedido, para os slides poderem entrar nos apontamentos.
         let paginasPDF = await SlidesNosApontamentos.garantirPaginasEmFundo(em: job.pastaAula)
-        let contexto = ContextoAula.carregar(aula, library: library, transcricao: transcricao)
+        let contexto = await ContextoAula.carregar(aula, cadeira: library.cadeira(nome: aula.cadeira), transcricao: transcricao)
         let prompt = PromptStore.ler()
 
         job.iniciar(.apontamentos, detalhe: "A preparar o pedido…")

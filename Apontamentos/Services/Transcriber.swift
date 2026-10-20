@@ -74,8 +74,12 @@ actor Transcriber {
 
     /// Descodificadores em paralelo. O WhisperKit usa 16 no Mac; medido com 20 min de áudio:
     /// 16 → 1544 MB / 86 s, 4 → 1245 MB / 120 s, 2 → 905 MB / 119 s, 1 → 737 MB / 149 s.
-    /// Corre em segundo plano, por isso a RAM pesa mais do que a velocidade. (Variável só para os testes.)
-    nonisolated(unsafe) static var descodificadores = 1
+    /// Corre em segundo plano (e agora ao mesmo tempo que os slides), por isso a RAM pesa mais do que a velocidade:
+    /// 1 até 16 GB, 2 até 32 GB, 4 a partir daí. (Variável só para os testes.)
+    nonisolated(unsafe) static var descodificadores: Int = {
+        let gb = Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824
+        return gb >= 32 ? 4 : (gb >= 16 ? 2 : 1)
+    }()
 
     /// Segundos de áudio em memória de cada vez (≈ 19 MB). Uma aula de 90 min nunca está toda em RAM.
     static let janela: Double = 300

@@ -152,8 +152,9 @@ extension Disco {
 extension ContextoAula {
     /// Tudo o que se sabe de uma aula, como no pedido dos apontamentos. Com PDFs do professor, as capturas
     /// só vão até onde cabem no pedido, para se saber que páginas foram dadas.
-    @MainActor
-    static func carregar(_ aula: Aula, library: Library, transcricao: Transcricao) -> ContextoAula {
+    /// Lê PDFs (até 24 MB) e dezenas de JPEG e passa-os a base64: fora do fio principal.
+    @concurrent
+    static func carregar(_ aula: Aula, cadeira: Cadeira?, transcricao: Transcricao) async -> ContextoAula {
         let pdfs = Disco.pdfsProfessor(aula.pasta, nomes: aula.meta.nomesPDFs ?? [:]).compactMap { pdf in
             (try? Data(contentsOf: pdf.url(em: aula.pasta))).map { PDFComDados(pdf: pdf, dados: $0) }
         }
@@ -164,9 +165,9 @@ extension ContextoAula {
             slides = capturasQueCabem(slides, bytes: Disco.tamanhoMaximoPDF - pdfs.reduce(0) { $0 + $1.dados.count })
         }
         return ContextoAula(cadeira: aula.cadeira, titulo: aula.meta.titulo, data: aula.meta.data,
-                            glossario: library.cadeira(nome: aula.cadeira)?.meta.glossario ?? "",
+                            glossario: cadeira?.meta.glossario ?? "",
                             transcricao: transcricao, slides: slides, pdfsProfessor: pdfs,
-                            fichaCadeira: library.cadeira(nome: aula.cadeira).flatMap { FichaCadeira.lerFicha($0.pasta) })
+                            fichaCadeira: cadeira.flatMap { FichaCadeira.lerFicha($0.pasta) })
     }
 
     /// Até `maximo` capturas espalhadas pela aula, sem passar de `bytes` (o que sobra do pedido depois dos PDFs).
@@ -351,7 +352,7 @@ final class Estudo {
     private func executar(
         _ aula: Aula, _ tipo: Tipo, pergunta: String? = nil, citacao: CitacaoPergunta? = nil, comTranscricao: Bool = true, esforco: Esforco? = nil,
         sistema: String,
-        conteudo: @MainActor (ContextoAula?) -> [BlocoConteudo],
+        conteudo: @escaping @MainActor (ContextoAula?) -> [BlocoConteudo],
         concluir: @escaping @MainActor (String) throws -> Void
     ) {
         let chave = Self.chave(aula, tipo)
@@ -367,12 +368,13 @@ final class Estudo {
             erros[chave] = "Esta aula ainda não tem transcrição."
             return
         }
-        // Só se lê a transcrição, os slides e o PDF quando o pedido precisa deles.
-        let contexto = comTranscricao ? transcricao.map { ContextoAula.carregar(aula, library: library, transcricao: $0) } : nil
-        let blocos = conteudo(contexto)
+        let cadeira = library.cadeira(nome: aula.cadeira)
         emCurso[chave] = EmCurso(pergunta: pergunta, citacao: citacao)
         emCurso[chave]?.tarefa = Task {
             do {
+                // Só se leem os slides e os PDFs quando o pedido precisa deles, e fora do fio principal.
+                let contexto: ContextoAula? = if let transcricao { await ContextoAula.carregar(aula, cadeira: cadeira, transcricao: transcricao) } else { nil }
+                let blocos = conteudo(contexto)
                 let r = try await gerador.gerar(
                     sistema: sistema, conteudo: blocos,
                     aoRecomecar: { [weak self] in self?.emCurso[chave]?.texto = "" },

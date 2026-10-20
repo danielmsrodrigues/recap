@@ -44,12 +44,34 @@
     return { texto: partes.join(""), formulas };
   }
 
+  // Cada fórmula é renderizada uma vez: durante o streaming o documento inteiro volta a passar por aqui a cada
+  // pedaço, e com centenas de fórmulas o KaTeX era o que mais custava.
+  const katexCache = new Map();
   function katexHTML(tex, display) {
+    const chave = (display ? "D" : "I") + tex;
+    const feito = katexCache.get(chave);
+    if (feito !== undefined) return feito;
+    let html;
     try {
-      return katex.renderToString(tex, { displayMode: display, throwOnError: false, strict: "ignore", output: "html" });
+      html = katex.renderToString(tex, { displayMode: display, throwOnError: false, strict: "ignore", output: "html" });
     } catch (e) {
-      return '<span class="erro-math">' + escaparAtributo(tex) + "</span>";
+      html = '<span class="erro-math">' + escaparAtributo(tex) + "</span>";
     }
+    if (katexCache.size > 5000) katexCache.clear();
+    katexCache.set(chave, html);
+    return html;
+  }
+
+  // Troca só os blocos de topo que mudaram: num stream só o último muda, e substituir o `innerHTML` inteiro
+  // deitava fora o DOM todo (e as imagens já carregadas) a cada pedaço.
+  function substituirBlocos(r, novo) {
+    const antigos = Array.from(r.childNodes);
+    const novos = Array.from(novo.childNodes);
+    const comuns = Math.min(antigos.length, novos.length);
+    let i = 0;
+    while (i < comuns && antigos[i].isEqualNode(novos[i])) i++;
+    for (let k = antigos.length - 1; k >= i; k--) antigos[k].remove();
+    for (let k = i; k < novos.length; k++) r.appendChild(novos[k]);
   }
 
   // Cada fórmula fica num bloco atómico que guarda o LaTeX original (para editar e voltar a Markdown).
@@ -65,7 +87,10 @@
   function ligarTimestamps(elemento) {
     const walker = document.createTreeWalker(elemento, NodeFilter.SHOW_TEXT, {
       acceptNode(no) {
-        if (no.parentElement.closest("code, pre, .math, a")) return NodeFilter.FILTER_REJECT;
+        // Num fragmento ainda por entrar no documento, o texto de topo não tem elemento pai.
+        const pai = no.parentElement;
+        if (!pai) return NodeFilter.FILTER_SKIP;
+        if (pai.closest("code, pre, .math, a")) return NodeFilter.FILTER_REJECT;
         reTimestamp.lastIndex = 0;
         return reTimestamp.test(no.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
       },
@@ -95,6 +120,14 @@
   }
 
   const abertas = new Set();
+  // Um só ouvinte para todas as resoluções (os blocos podem ser reaproveitados entre renderizações).
+  document.addEventListener("toggle", (ev) => {
+    const d = ev.target;
+    if (!(d instanceof HTMLDetailsElement) || !d.classList.contains("resolucao")) return;
+    const indice = Array.prototype.indexOf.call(raiz().querySelectorAll("details.resolucao"), d);
+    if (indice < 0) return;
+    if (d.open) abertas.add(indice); else abertas.delete(indice);
+  }, true);
 
   // Slides dentro dos apontamentos: `![legenda](slides-pdf/pagina-07.jpg)`, relativo à pasta da aula,
   // servido pela app em `base`. Um `slide:N` ainda por resolver (durante o streaming) fica só com a legenda.
@@ -137,11 +170,15 @@
     const { texto, formulas } = protegerMatematica(md || "");
     let html = marked.parse(texto, { gfm: true, breaks: false });
     html = html.replace(/@@MATH(\d+)@@/g, (_, i) => formulaHTML(formulas[Number(i)].tex, formulas[Number(i)].display));
-    r.innerHTML = html;
-    ligarTimestamps(r);
-    ligarImagens(r, base);
+    // Monta-se tudo à parte e só depois entra no documento, para comparar com o que lá está.
+    const novo = document.createElement("template");
+    novo.innerHTML = html;
+    const n = novo.content;
+    ligarTimestamps(n);
+    ligarImagens(n, base);
     // Explicações que o professor não deu: destacadas à parte das definições.
-    for (const q of r.querySelectorAll("blockquote")) {
+    let resolucoes = 0;
+    for (const q of n.querySelectorAll("blockquote")) {
       const t = q.textContent.trim();
       if (t.startsWith("💡")) q.classList.add("extra");
       else if (t.startsWith("⭐")) q.classList.add("importante");
@@ -150,9 +187,8 @@
       else if (/^Resolução\b/.test(t)) {
         const d = document.createElement("details");
         d.className = "resolucao";
-        const indice = r.querySelectorAll("details.resolucao").length;
+        const indice = resolucoes++;
         if (abertas.has(indice)) d.open = true;
-        d.addEventListener("toggle", () => { if (d.open) abertas.add(indice); else abertas.delete(indice); });
         const s = document.createElement("summary");
         s.textContent = "Ver resolução";
         q.replaceWith(d);
@@ -160,11 +196,12 @@
       }
     }
     // Links para secções dos apontamentos (`[Título](#ancora)`, nas respostas do painel das perguntas).
-    for (const a of r.querySelectorAll('a[href^="#"]:not(.ts)')) {
+    for (const a of n.querySelectorAll('a[href^="#"]:not(.ts)')) {
       if (a.getAttribute("href").length < 2) continue;
       a.classList.add("seccao");
       a.title = "Ir para esta secção nos apontamentos";
     }
+    substituirBlocos(r, n);
     alterado = false;
     esconderPerguntar();
     // O documento é outro: a procura em curso volta a ser feita, sem mexer no scroll.

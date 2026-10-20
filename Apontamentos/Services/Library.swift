@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import Synchronization
 
 /// Cadeiras e aulas lidas da pasta das aulas (`~/Aulas` por defeito). Não há base de dados: cada `recarregar()` volta a ler o disco.
 @MainActor @Observable
@@ -8,7 +9,7 @@ final class Library {
     /// Muda os grupos da barra lateral; o que está em `cadeira.json` não é tocado.
     var organizacao: OrganizacaoCurso { didSet { if organizacao != oldValue { recarregar() } } }
     private(set) var cadeiras: [Cadeira] = []
-    /// Muda a cada leitura do disco; as vistas usam-no para recarregar ficheiros.
+    /// Muda quando uma leitura do disco encontra algo diferente; as vistas usam-no para recarregar ficheiros.
     private(set) var versao = 0
     private(set) var erro: String?
 
@@ -18,15 +19,20 @@ final class Library {
         recarregar()
     }
 
+    /// Volta a ler o disco. Só avisa as vistas (`versao`) se algo mudou: cada ação pequena chamava aqui e todas as
+    /// vistas abertas reliam a transcrição, os apontamentos e a pesquisa sem necessidade.
     func recarregar() {
         do {
             try FileManager.default.createDirectory(at: raiz, withIntermediateDirectories: true)
-            cadeiras = try Self.ler(raiz: raiz, organizacao: organizacao)
+            let novas = try Self.ler(raiz: raiz, organizacao: organizacao)
+            let mudou = novas != cadeiras || erro != nil
+            cadeiras = novas
             erro = nil
+            if mudou { versao += 1 }
         } catch {
             erro = "Não foi possível ler \(raiz.path): \(error.localizedDescription)"
+            versao += 1
         }
-        versao += 1
     }
 
     /// Passa a ler outra pasta. Com `mover`, as cadeiras da pasta atual vão para lá primeiro.
@@ -70,7 +76,8 @@ final class Library {
                         cadeira: nome,
                         meta: meta,
                         temTranscricao: Disco.existe(Disco.transcricaoJSON, em: sub),
-                        temApontamentos: Disco.existe(Disco.apontamentosMD, em: sub)
+                        temApontamentos: Disco.existe(Disco.apontamentosMD, em: sub),
+                        temSlides: Disco.existe(Disco.slidesJSON, em: sub)
                     )
                 }
                 .sorted { ($0.meta.data, $0.meta.criadaEm) > ($1.meta.data, $1.meta.criadaEm) }
@@ -127,17 +134,23 @@ final class Library {
 
     @discardableResult
     func criarCadeira(nome: String) throws -> URL {
+        let pasta = try pastaDaCadeira(nome)
+        recarregar()
+        return pasta
+    }
+
+    /// A pasta da cadeira, criada se ainda não existir (sem reler a biblioteca).
+    private func pastaDaCadeira(_ nome: String) throws -> URL {
         let pasta = raiz.appending(path: Disco.nomeDePasta(nome), directoryHint: .isDirectory)
         if !FileManager.default.fileExists(atPath: pasta.path) {
             try FileManager.default.createDirectory(at: pasta, withIntermediateDirectories: true)
             try Disco.escreverCadeira(CadeiraMeta(), em: pasta)
         }
-        recarregar()
         return pasta
     }
 
     func criarAula(cadeira: String, titulo: String, data: Date, video: URL?) throws -> URL {
-        let pastaCadeira = try criarCadeira(nome: cadeira)
+        let pastaCadeira = try pastaDaCadeira(cadeira)
         let pasta = Disco.pastaLivre(Disco.nomePastaAula(titulo: titulo, data: data), em: pastaCadeira)
         try FileManager.default.createDirectory(at: pasta, withIntermediateDirectories: true)
         var meta = AulaMeta(titulo: titulo, data: data, video: video.map(VideoResolver.referencia(para:)))
@@ -211,12 +224,24 @@ final class Library {
 extension URL {
     /// Compara caminhos de ficheiros ignorando symlinks (/var ↔ /private/var) e a normalização Unicode dos acentos.
     func mesmoCaminho(_ outro: URL) -> Bool {
-        func chave(_ u: URL) -> String {
-            u.standardizedFileURL.resolvingSymlinksInPath().path.precomposedStringWithCanonicalMapping
-                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        }
-        return self == outro || chave(self) == chave(outro)
+        self == outro || caminhoCanonico == outro.caminhoCanonico
     }
+
+    /// Resolver symlinks são várias chamadas ao sistema por componente, e isto corre em `body` em loops
+    /// (cada linha da barra lateral contra cada job): guarda-se o resultado por caminho.
+    private var caminhoCanonico: String {
+        let bruto = standardizedFileURL.path
+        if let feito = Self.canonicos.withLock({ $0[bruto] }) { return feito }
+        let feito = standardizedFileURL.resolvingSymlinksInPath().path.precomposedStringWithCanonicalMapping
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        Self.canonicos.withLock { cache in
+            if cache.count > 4000 { cache.removeAll(keepingCapacity: true) }
+            cache[bruto] = feito
+        }
+        return feito
+    }
+
+    private static let canonicos = Mutex<[String: String]>([:])
 }
 
 enum ErroPasta: LocalizedError {

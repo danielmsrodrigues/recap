@@ -247,6 +247,27 @@ struct AcumuladorStream: Sendable {
     }
 }
 
+/// Junta os pedaços do stream e entrega-os à interface no máximo ~12 vezes por segundo: cada entrega redesenha
+/// a vista, e token a token eram dezenas por segundo.
+struct LoteDeTexto {
+    private var texto = ""
+    private var ultimaEntrega = ContinuousClock.now
+    static let intervalo: Duration = .milliseconds(80)
+
+    /// O que há para entregar, se já passou tempo suficiente desde a última entrega.
+    mutating func juntar(_ pedaco: String) -> String? {
+        texto += pedaco
+        guard ContinuousClock.now - ultimaEntrega >= Self.intervalo else { return nil }
+        return esvaziar()
+    }
+
+    mutating func esvaziar() -> String? {
+        guard !texto.isEmpty else { return nil }
+        defer { texto = ""; ultimaEntrega = .now }
+        return texto
+    }
+}
+
 // MARK: Cliente
 
 struct AnthropicClient: Sendable {
@@ -282,8 +303,10 @@ struct AnthropicClient: Sendable {
         return try JSONDecoder().decode(Contagem.self, from: data).input_tokens
     }
 
-    /// Faz o pedido em streaming e chama `aoReceber` com cada pedaço de texto.
-    func gerar(_ pedido: PedidoMensagens, aoReceber: (String) -> Void) async throws -> RespostaFinal {
+    /// Faz o pedido em streaming e chama `aoReceber` com o texto à medida que chega, em lotes.
+    /// Fora do fio principal: descodificar cada evento do stream na interface fazia-a engasgar.
+    @concurrent
+    func gerar(_ pedido: PedidoMensagens, aoReceber: @MainActor @Sendable (String) -> Void) async throws -> RespostaFinal {
         var pedido = pedido
         pedido.stream = true
         let corpo = try await Self.codificar(pedido)
@@ -303,12 +326,14 @@ struct AnthropicClient: Sendable {
         }
 
         var acumulador = AcumuladorStream()
+        var lote = LoteDeTexto()
         do {
             // `lines` salta as linhas vazias; cada evento da Anthropic tem uma única linha `data:`.
             for try await linha in bytes.lines where linha.hasPrefix("data:") {
                 let json = Data(linha.dropFirst(5).trimmingCharacters(in: .whitespaces).utf8)
-                if let novo = try acumulador.processar(json) { aoReceber(novo) }
+                if let novo = try acumulador.processar(json), let pronto = lote.juntar(novo) { await aoReceber(pronto) }
             }
+            if let resto = lote.esvaziar() { await aoReceber(resto) }
         } catch is CancellationError {
             throw CancellationError()
         } catch let erro as DecodingError {
