@@ -1,0 +1,109 @@
+# Compila e testa cada PR; a cada merge no main publica uma release nova (v1.8 → v1.9 → …) com o Recap.zip,
+# assinado com o certificado "Recap Local" (o mesmo das versões feitas à mão: o atualizador só aceita esse).
+# Para um merge não dar release, põe "[sem release]" na mensagem do commit de merge.
+#
+# Precisa de dois segredos no repo: RECAP_LOCAL_P12 (o certificado com a chave privada, em base64)
+# e RECAP_LOCAL_P12_PASSWORD. Sem eles, compila e testa com assinatura ad-hoc e não publica.
+name: Publicar
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Vários merges seguidos: só o último publica (os anteriores são cancelados a meio).
+concurrency:
+  group: publicar-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  recap:
+    runs-on: macos-26
+    env:
+      TEM_CERTIFICADO: ${{ secrets.RECAP_LOCAL_P12 != '' }}
+      DD: build/DerivedData
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # as tags, para saber a última versão
+
+      - name: Xcode mais recente do runner
+        run: |
+          xc=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$xc"
+          xcodebuild -version
+
+      - name: Certificado "Recap Local"
+        if: env.TEM_CERTIFICADO == 'true'
+        env:
+          P12: ${{ secrets.RECAP_LOCAL_P12 }}
+          SENHA: ${{ secrets.RECAP_LOCAL_P12_PASSWORD }}
+        run: |
+          echo "$P12" | base64 --decode > recap.p12
+          security create-keychain -p ci ci.keychain-db
+          security set-keychain-settings -lut 21600 ci.keychain-db
+          security unlock-keychain -p ci ci.keychain-db
+          security import recap.p12 -k ci.keychain-db -P "$SENHA" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci ci.keychain-db
+          security list-keychains -d user -s ci.keychain-db login.keychain-db
+          # O certificado é auto-assinado: o codesign --verify só o aceita se o sistema confiar nele.
+          openssl pkcs12 -in recap.p12 -clcerts -nokeys -out recap.cer -passin "pass:$SENHA"
+          sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain recap.cer
+          rm recap.p12 recap.cer
+          security find-identity -v -p codesigning ci.keychain-db
+
+      - name: Testes
+        run: |
+          if [[ "$TEM_CERTIFICADO" == "true" ]]; then
+            extra=()
+          else
+            # Sem o certificado a app assina-se ad-hoc, e o teste da assinatura do atualizador não faz sentido.
+            extra=(CODE_SIGN_IDENTITY=- -skip-testing:ApontamentosTests/AtualizadorTests)
+          fi
+          set -o pipefail
+          xcodebuild test -project Apontamentos.xcodeproj -scheme Apontamentos -destination 'platform=macOS' \
+            -derivedDataPath "$DD" "${extra[@]}" 2>&1 | grep -E "error:|failed|passed|TEST (SUCCEEDED|FAILED)" || true
+          # O grep acima só filtra; o estado vem do ficheiro de resultados.
+          test -z "$(find "$DD/Logs/Test" -name '*.xcresult' -newer Apontamentos.xcodeproj -print -quit)" && exit 1
+          xcrun xcresulttool get test-results summary --path "$(ls -td "$DD"/Logs/Test/*.xcresult | head -1)" \
+            | python3 -c 'import json,sys; r=json.load(sys.stdin); print(r["result"], r.get("failedTests",0), "falhados"); sys.exit(0 if r["result"]=="Passed" else 1)'
+
+      - name: Versão seguinte
+        id: versao
+        if: github.event_name == 'push'
+        run: |
+          ultima=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          maior=${ultima#v}; maior=${maior%%.*}
+          menor=${ultima#v*.}; menor=${menor%%.*}
+          nova="${maior}.$((menor + 1))"
+          echo "ultima=$ultima" >> "$GITHUB_OUTPUT"
+          echo "nova=$nova" >> "$GITHUB_OUTPUT"
+          echo "Última: $ultima → nova: v$nova"
+
+      - name: Compilar a versão final
+        if: github.event_name == 'push' && env.TEM_CERTIFICADO == 'true'
+        run: |
+          set -o pipefail
+          xcodebuild -project Apontamentos.xcodeproj -scheme Apontamentos -configuration Release \
+            -derivedDataPath "$DD" build "MARKETING_VERSION=${{ steps.versao.outputs.nova }}" 2>&1 \
+            | grep -E "error:|BUILD" || true
+          app="$DD/Build/Products/Release/Recap.app"
+          test -d "$app"
+          codesign --verify --deep --strict "$app"
+          codesign -dv "$app" 2>&1 | grep -E "Authority|Identifier="
+          ditto -c -k --keepParent "$app" build/Recap.zip
+
+      - name: Publicar a release
+        if: github.event_name == 'push' && env.TEM_CERTIFICADO == 'true' && !contains(github.event.head_commit.message, '[sem release]')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.versao.outputs.nova }}" build/Recap.zip \
+            --title "Recap v${{ steps.versao.outputs.nova }}" \
+            --generate-notes --notes-start-tag "${{ steps.versao.outputs.ultima }}"

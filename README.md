@@ -34,7 +34,7 @@ Na primeira abertura, a janela **Preparar o Recap** guia os três passos que fal
 2. **Descarregar o modelo de transcrição:** cerca de 1,5 GB, só uma vez.
 3. **Autorizar a gravação de ecrã:** só para transcrever em direto. Depois de autorizar, volta a abrir o Recap.
 
-**Atualizações:** o Recap procura versões novas ao abrir (uma vez por dia) e pergunta se queres atualizar; fecha, atualiza-se e volta a abrir. Também está em **Recap → Procurar atualizações…**.
+**Atualizações:** o Recap procura versões novas ao abrir (uma vez por dia) e pergunta se queres atualizar; fecha, atualiza-se e volta a abrir. Também está em **Recap → Procurar atualizações…**. Cada alteração fundida no `main` sai como versão nova, automaticamente.
 
 <details>
 <summary>Instalar sem o Terminal</summary>

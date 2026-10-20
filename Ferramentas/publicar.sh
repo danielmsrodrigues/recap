@@ -1,7 +1,8 @@
 #!/bin/zsh
-# Compila a versão final do Recap, instala-a em /Applications e (com --github vX.Y) publica-a como release.
-# Uso: Ferramentas/publicar.sh            → só compila e instala
-#      Ferramentas/publicar.sh --github 1.0 → também cria a release v1.0 no GitHub com o Recap.zip
+# Compila a versão final do Recap e instala-a em /Applications (para testar antes de fundir).
+# As releases fazem-se sozinhas: cada merge no main publica uma versão nova (.github/workflows/publicar.yml).
+# Uso: Ferramentas/publicar.sh            → compila e instala
+#      Ferramentas/publicar.sh --github 1.0 → à mão, se o GitHub Actions estiver em baixo: cria a release v1.0
 set -euo pipefail
 cd "${0:A:h}/.."
 
