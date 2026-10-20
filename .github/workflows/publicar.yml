@@ -61,9 +61,8 @@ jobs:
 
       - name: Testes
         run: |
-          # O teste dos slides do mesmo modelo depende dos modelos do Vision (feature prints e OCR), que mudam
-          # com a versão do macOS: passa no Mac do autor (macOS 27) e falha no runner (macOS 26). Fica para correr à mão.
-          extra=(-skip-testing:ApontamentosTests/CapturaSlidesTests/slidesDoMesmoModeloSaemInteiros)
+          # (O teste dos slides do mesmo modelo desliga-se sozinho com CI=true: depende dos modelos do Vision.)
+          extra=()
           if [[ "$TEM_CERTIFICADO" != "true" ]]; then
             # Sem o certificado a app assina-se ad-hoc, e o teste da assinatura do atualizador não faz sentido.
             extra+=(CODE_SIGN_IDENTITY=- -skip-testing:ApontamentosTests/AtualizadorTests)
