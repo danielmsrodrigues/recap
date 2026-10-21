@@ -48,7 +48,10 @@ final class Job: Identifiable {
     let soApontamentos: Bool
 
     var estado: Estado = .emEspera
-    private(set) var etapas: [Etapa: EstadoEtapa] = [:]
+    /// Fase e detalhe de cada etapa. O progresso vive à parte, em `progressos`: muda várias vezes por segundo,
+    /// e quem só quer a fase (a aula e a sua toolbar) não deve ser redesenhado a cada passo.
+    private var etapas: [Etapa: EstadoEtapa] = [:]
+    private var progressos: [Etapa: Double] = [:]
     var textoEmCurso = ""
     var aviso: String?
     var task: Task<Void, Never>?
@@ -68,36 +71,46 @@ final class Job: Identifiable {
 
     var ativo: Bool { estado == .emEspera || estado == .aCorrer }
 
-    func estadoDe(_ e: Etapa) -> EstadoEtapa { etapas[e] ?? EstadoEtapa() }
+    func estadoDe(_ e: Etapa) -> EstadoEtapa {
+        var estado = etapas[e] ?? EstadoEtapa()
+        estado.progresso = progressos[e]
+        return estado
+    }
+
+    func faseDe(_ e: Etapa) -> EstadoEtapa.Fase { etapas[e]?.fase ?? .pendente }
 
     func reiniciar() {
         estado = .emEspera
         aviso = nil
         textoEmCurso = ""
         for e in Etapa.allCases { etapas[e] = EstadoEtapa() }
+        progressos = [:]
         if soApontamentos { etapas[.audio]?.fase = .saltada; etapas[.transcricao]?.fase = .saltada }
         if !gerarApontamentos { etapas[.apontamentos]?.fase = .saltada }
     }
 
     func iniciar(_ e: Etapa, detalhe: String? = nil, progresso: Double? = nil) {
-        etapas[e] = EstadoEtapa(fase: .emCurso, progresso: progresso, detalhe: detalhe)
+        etapas[e] = EstadoEtapa(fase: .emCurso, detalhe: detalhe)
+        progressos[e] = progresso
     }
 
     func atualizar(_ e: Etapa, progresso: Double?, detalhe: String? = nil) {
         guard etapas[e]?.fase == .emCurso else { return }
+        if let detalhe, etapas[e]?.detalhe != detalhe { etapas[e]?.detalhe = detalhe }
         // O Whisper e os slides chamam isto muitas vezes por segundo; abaixo de meio ponto não se vê na barra
         // e só obrigava a redesenhar a fila e a barra lateral.
-        if detalhe == nil, let p = progresso, let atual = etapas[e]?.progresso, p < 1, abs(p - atual) < 0.005 { return }
-        etapas[e]?.progresso = progresso
-        if let detalhe { etapas[e]?.detalhe = detalhe }
+        if detalhe == nil, let p = progresso, let atual = progressos[e], p < 1, abs(p - atual) < 0.005 { return }
+        if progressos[e] != progresso { progressos[e] = progresso }
     }
 
     func concluir(_ e: Etapa, detalhe: String? = nil) {
-        etapas[e] = EstadoEtapa(fase: .concluida, progresso: 1, detalhe: detalhe)
+        etapas[e] = EstadoEtapa(fase: .concluida, detalhe: detalhe)
+        progressos[e] = 1
     }
 
     func saltar(_ e: Etapa, detalhe: String? = nil) {
         etapas[e] = EstadoEtapa(fase: .saltada, detalhe: detalhe)
+        progressos[e] = nil
     }
 
     /// Marca como falhada a etapa em curso.

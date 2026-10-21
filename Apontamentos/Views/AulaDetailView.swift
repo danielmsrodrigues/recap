@@ -44,7 +44,7 @@ struct AulaDetailView: View {
     @State private var irSeccao: PedidoSeccao?
 
     private var job: Job? { fila.job(para: aula.pasta) }
-    private var aGerar: Bool { job?.estado == .aCorrer && job?.estadoDe(.apontamentos).fase == .emCurso }
+    private var aGerar: Bool { job?.estado == .aCorrer && job?.faseDe(.apontamentos) == .emCurso }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -212,27 +212,29 @@ struct AulaDetailView: View {
         case .apontamentos:
             // Uma só vista web para o texto a chegar e para o guardado: trocar de vista era carregar a página
             // (KaTeX incluído) outra vez ao começar e ao acabar cada geração.
-            let emCurso = aGerar ? job?.textoEmCurso : nil
-            if let texto = emCurso?.isEmpty == false ? emCurso : apontamentos {
-                VStack(spacing: 0) {
-                    if controlador.editando {
-                        BarraFormatacao(controlador: controlador, estado: estadoEdicao,
-                                        aoDescartar: { Task { await descartarEdicao() } },
-                                        aoConcluir: { Task { await concluirEdicao() } })
-                        Divider()
+            // O texto a chegar lê-se numa vista à parte: cada pedaço novo redesenhava a aula toda e a toolbar piscava.
+            ComTextoEmCurso(job: aGerar ? job : nil) { emCurso in
+                if let texto = emCurso?.isEmpty == false ? emCurso : apontamentos {
+                    VStack(spacing: 0) {
+                        if controlador.editando {
+                            BarraFormatacao(controlador: controlador, estado: estadoEdicao,
+                                            aoDescartar: { Task { await descartarEdicao() } },
+                                            aoConcluir: { Task { await concluirEdicao() } })
+                            Divider()
+                        }
+                        if procurando {
+                            BarraProcura(controlador: controlador, termo: $termoProcura, pedidosFoco: pedidosProcura, aoFechar: fecharProcura)
+                            Divider()
+                        }
+                        NotesWebView(markdown: texto, emStreaming: emCurso != nil, controlador: controlador,
+                                     aoClicarTimestamp: aoClicarNosApontamentos,
+                                     realcar: controlador.editando ? [] : realce, pastaAula: aula.pasta,
+                                     aoPerguntar: { perguntarSobre(CitacaoPergunta(texto: $0, origem: .apontamentos)) },
+                                     aoClicarSeccao: irParaSeccao, irParaSeccao: irSeccao)
                     }
-                    if procurando {
-                        BarraProcura(controlador: controlador, termo: $termoProcura, pedidosFoco: pedidosProcura, aoFechar: fecharProcura)
-                        Divider()
-                    }
-                    NotesWebView(markdown: texto, emStreaming: emCurso != nil, controlador: controlador,
-                                 aoClicarTimestamp: aoClicarNosApontamentos,
-                                 realcar: controlador.editando ? [] : realce, pastaAula: aula.pasta,
-                                 aoPerguntar: { perguntarSobre(CitacaoPergunta(texto: $0, origem: .apontamentos)) },
-                                 aoClicarSeccao: irParaSeccao, irParaSeccao: irSeccao)
+                } else {
+                    vazioApontamentos
                 }
-            } else {
-                vazioApontamentos
             }
         case .slides:
             SlidesView(pasta: aula.pasta, slides: slides, pdfs: pdfsProfessor, podeExtrair: urlVideo != nil && job?.ativo != true,
@@ -581,4 +583,12 @@ struct AulaDetailView: View {
             erro = "Não foi possível guardar o novo caminho do vídeo: \(error.localizedDescription)"
         }
     }
+}
+
+/// Lê o texto dos apontamentos a chegar (nil sem geração em curso) só no seu próprio `body`.
+private struct ComTextoEmCurso<Conteudo: View>: View {
+    let job: Job?
+    @ViewBuilder let conteudo: (String?) -> Conteudo
+
+    var body: some View { conteudo(job?.textoEmCurso) }
 }
