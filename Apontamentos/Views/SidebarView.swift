@@ -204,7 +204,7 @@ private struct CabecalhoCadeira<Acoes: View>: View {
                         .foregroundStyle(selecionada ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
                         .lineLimit(2)
                     if aAtualizar {
-                        ProgressView().controlSize(.mini)
+                        Girador(tamanho: .mini)
                     } else if comErro {
                         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.caption)
                     } else {
@@ -267,7 +267,7 @@ private struct LinhaAula: View {
 
     @ViewBuilder private var estado: some View {
         if job?.estado == .aCorrer {
-            ProgressView().controlSize(.mini)
+            Girador(tamanho: .mini)
         } else if aula.meta.revista {
             Image(systemName: "checkmark.circle.fill").foregroundStyle(proeminencia == .increased ? Color.white : Color.green)
         } else if aula.temApontamentos {
@@ -287,7 +287,7 @@ private struct LinhaJob: View {
         HStack(spacing: 8) {
             Group {
                 switch job.estado {
-                case .aCorrer: ProgressView().controlSize(.mini)
+                case .aCorrer: Girador(tamanho: .mini)
                 case .emEspera: Image(systemName: "clock")
                 case .concluido: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
                 case .cancelado: Image(systemName: "stop.circle")

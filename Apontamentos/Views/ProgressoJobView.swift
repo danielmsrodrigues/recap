@@ -83,7 +83,7 @@ private struct LinhaEtapa: View {
     @ViewBuilder private var icone: some View {
         switch estado.fase {
         case .pendente: Image(systemName: "circle").foregroundStyle(.tertiary)
-        case .emCurso: ProgressView().controlSize(.small)
+        case .emCurso: Girador()
         case .concluida: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
         case .saltada: Image(systemName: "arrow.uturn.forward.circle").foregroundStyle(.secondary)
         case .falhou: Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
