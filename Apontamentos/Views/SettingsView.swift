@@ -173,7 +173,13 @@ private struct ClaudeSettings: View {
             }
 
             Section {
-                TextField("Modelo", text: $definicoes.modeloClaude, prompt: Text(Definicoes.modeloClaudePorDefeito))
+                Picker("Modelo", selection: $definicoes.modeloClaude) {
+                    ForEach(Definicoes.modelosClaude, id: \.id) { Text($0.nome).tag($0.id) }
+                    // Um modelo escrito à mão numa versão anterior continua escolhido até se mudar no menu.
+                    if !Definicoes.modelosClaude.contains(where: { $0.id == definicoes.modeloClaude }) {
+                        Text(definicoes.modeloClaude).tag(definicoes.modeloClaude)
+                    }
+                }
                 Picker("Esforço", selection: $definicoes.esforco) {
                     ForEach(Esforco.allCases) { Text($0.nome).tag($0) }
                 }
