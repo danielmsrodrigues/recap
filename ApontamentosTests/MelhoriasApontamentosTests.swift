@@ -255,10 +255,10 @@ struct PromptStoreTests {
         #expect(!PromptStore.versoesAntigas.contains(PromptStore.sha256(PromptStore.original)))
     }
 
-    /// A marca do que um aluno disse e o professor validou segue a língua dos apontamentos.
-    @Test func marcaDeValidadoEmAulaTraduzida() {
-        #expect(PromptStore.original.contains("*(validado em aula)*"))
-        #expect(RotulosApontamentos.instrucao(.es)?.contains(#""validado em aula" → "validado en clase""#) == true)
+    /// Só o professor ensina: o prompt não deixa entrar o que os alunos dizem, nem validado.
+    @Test func soAMateriaDoProfessor() {
+        #expect(PromptStore.original.contains("nunca entra, mesmo que o professor concorde"))
+        #expect(!PromptStore.original.contains("validado em aula"))
     }
 }
 

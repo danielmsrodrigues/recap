@@ -123,7 +123,6 @@ enum RotulosApontamentos {
         ("Erro comum", nil, "Error común", "Common mistake"),
         ("inferido", nil, "inferido", "inferred"),
         ("por confirmar", nil, "por confirmar", "to be confirmed"),
-        ("validado em aula", nil, "validado en clase", "validated in class"),
         ("Exercícios", nil, "Ejercicios", "Exercises"),
         ("Exercício", nil, "Ejercicio", "Exercise"),
         ("Matéria da aula", nil, "Materia de la clase", "Covered in class"),
