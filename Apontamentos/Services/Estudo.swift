@@ -11,6 +11,18 @@ struct PerguntaAula: Codable, Identifiable, Hashable, Sendable {
     var citacao: CitacaoPergunta?
 }
 
+extension PerguntaAula {
+    /// Com isto o Claude começa uma resposta pedida em PDF (`Estudo.sistemaPerguntas`).
+    static let marcaPDF = "<!-- pdf -->"
+
+    /// O documento de uma resposta pedida em PDF, sem a marca; nil numa resposta normal.
+    var documentoPDF: String? {
+        let texto = resposta.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard texto.hasPrefix(Self.marcaPDF) else { return nil }
+        return texto.dropFirst(Self.marcaPDF.count).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
 /// Um trecho selecionado nos apontamentos ou na transcrição, para perguntar sobre ele.
 struct CitacaoPergunta: Codable, Hashable, Sendable {
     enum Origem: String, Codable, Sendable { case apontamentos, transcricao }
@@ -439,6 +451,8 @@ final class Estudo {
     - Se a aula não falar do assunto, diz isso claramente antes de responder com conhecimento geral.
     - Nunca inventes o que o professor disse.
     - Sem cabeçalho com a pergunta: começa logo pela resposta.
+    - Quando um esquema ajudar a perceber (um processo, uma classificação, as partes de um conceito) ou o estudante o pedir, desenha-o num bloco ```mermaid com `flowchart TD` ou `flowchart LR`. O texto de cada nó é curto e vai sempre entre aspas: `A["Empresa"] --> B["Sector primário"]`.
+    - Se o estudante pedir um PDF (um resumo, uma ficha, um esquema para imprimir…), começa a resposta exatamente com a linha `\(PerguntaAula.marcaPDF)` e escreve a seguir o documento completo, a começar por um título `# …`, sem nada antes nem depois: a app mostra um botão para o guardar em PDF. Num PDF não ponhas [mm:ss] nem links para secções.
 
     \(comum)
     """

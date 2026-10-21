@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// As três secções do painel Estudo: todas pedem ao Claude algo sobre a aula aberta.
 enum SeccaoEstudo: String, CaseIterable, Identifiable {
@@ -52,6 +53,7 @@ struct PerguntasView: View {
     @State private var texto = ""
     @State private var perguntas: [PerguntaAula] = []
     @State private var confirmarApagar = false
+    @State private var erroPDF: String?
     @FocusState private var focado: Bool
 
     private var emCurso: Estudo.EmCurso? { estudo.emCurso(aula, .pergunta) }
@@ -77,9 +79,9 @@ struct PerguntasView: View {
                 cabecalho
                 Divider()
                 NotesWebView(markdown: conversa, emStreaming: emCurso != nil, aoClicarTimestamp: aoClicarTimestamp, modo: "conversa",
-                             aoClicarSeccao: aoClicarSeccao)
+                             aoClicarSeccao: aoClicarSeccao, aoGuardarPDF: guardarPDF)
             }
-            if let erro = estudo.erro(aula, .pergunta) {
+            if let erro = erroPDF ?? estudo.erro(aula, .pergunta) {
                 Label(erro, systemImage: "exclamationmark.triangle")
                     .font(.callout).foregroundStyle(.red)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -218,7 +220,10 @@ struct PerguntasView: View {
 
     /// A conversa toda num só documento (uma vista web em vez de uma por resposta).
     private var conversa: String {
-        var md = perguntas.map { Self.bloco($0.pergunta, $0.citacao) + $0.resposta }.joined(separator: "\n\n")
+        var md = perguntas.enumerated().map { i, p in
+            Self.bloco(p.pergunta, p.citacao) + p.resposta
+                + (p.documentoPDF == nil ? "" : "\n\n<div class=\"guardar-pdf\"><button data-resposta=\"\(i)\">Guardar PDF…</button></div>")
+        }.joined(separator: "\n\n")
         if let emCurso, let pergunta = emCurso.pergunta {
             md += (md.isEmpty ? "" : "\n\n") + Self.bloco(pergunta, emCurso.citacao)
                 + (emCurso.texto.isEmpty ? "<div class=\"a-pensar\"><span></span><span></span><span></span></div>" : emCurso.texto)
@@ -237,6 +242,24 @@ struct PerguntasView: View {
     private static func html(_ texto: String) -> String {
         texto.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: "\n", with: "<br>")
+    }
+
+    /// Guarda em PDF uma resposta pedida assim, com o nome do seu título, e abre-o.
+    private func guardarPDF(_ indice: Int) {
+        guard perguntas.indices.contains(indice), let documento = perguntas[indice].documentoPDF else { return }
+        let painel = NSSavePanel()
+        painel.nameFieldStringValue = Disco.nomeDePasta(TituloAula.tema(documento) ?? aula.meta.titulo) + ".pdf"
+        painel.allowedContentTypes = [.pdf]
+        guard painel.runModal() == .OK, let destino = painel.url else { return }
+        erroPDF = nil
+        Task {
+            do {
+                try await ExportadorPDF.exportar(markdown: documento, pastaAula: aula.pasta, para: destino)
+                NSWorkspace.shared.open(destino)
+            } catch {
+                erroPDF = "Não foi possível guardar o PDF: \(error.localizedDescription)"
+            }
+        }
     }
 
     private func enviar(_ texto: String) { enviar(texto, citacao: citacao) }

@@ -5,6 +5,16 @@ import Testing
 @testable import Apontamentos
 
 @MainActor
+struct PerguntaPDFTests {
+    @Test func respostaPedidaEmPDF() {
+        let pdf = PerguntaAula(pergunta: "Faz-me um PDF", resposta: "\n<!-- pdf -->\n# Resumen\n\nTexto")
+        #expect(pdf.documentoPDF == "# Resumen\n\nTexto")
+        #expect(PerguntaAula(pergunta: "p", resposta: "Uma resposta normal").documentoPDF == nil)
+        #expect(Estudo.sistemaPerguntas.contains("`<!-- pdf -->`"))
+    }
+}
+
+@MainActor
 struct JobTests {
     @Test func progressoSoMudaQuandoSeVe() {
         let job = Job(pastaAula: URL(filePath: "/tmp/aula"), titulo: "Aula", video: nil, gerarApontamentos: false)

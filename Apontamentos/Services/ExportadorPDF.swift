@@ -45,9 +45,9 @@ final class ExportadorPDF: NSObject, WKNavigationDelegate {
         let json = String(data: try JSONEncoder().encode(markdown), encoding: .utf8) ?? "\"\""
         let base = pastaAula.map { esquema.base(para: $0) } ?? ""
         _ = try await web.evaluateJavaScript("document.documentElement.classList.add('impressao'); renderMarkdown(\(json), false, '\(base)'); true")
-        // Dar tempo às fontes do KaTeX e às imagens dos slides para carregarem antes de paginar.
+        // Dar tempo aos esquemas, às fontes do KaTeX e às imagens dos slides antes de paginar.
         _ = try await web.callAsyncJavaScript(
-            "await document.fonts.ready; await Promise.all([...document.images].map(i => i.decode().catch(() => {}))); return true",
+            "await esquemasProntos(); await document.fonts.ready; await Promise.all([...document.images].map(i => i.decode().catch(() => {}))); return true",
             contentWorld: .page)
 
         let info = NSPrintInfo()
