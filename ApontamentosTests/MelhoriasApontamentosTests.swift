@@ -129,6 +129,14 @@ struct TituloAulaTests {
         #expect(TituloAula.tema("# clase 2 — Matrices") == "Matrices")
     }
 
+    @Test func numeroDoTituloEmQualquerLingua() {
+        #expect(TituloAula.separar("Aula 1 · Conceito de empresa")! == (1, "Conceito de empresa"))
+        #expect(TituloAula.separar("Clase 2 · Formas jurídicas · fiscalidad")! == (2, "Formas jurídicas · fiscalidad"))
+        #expect(TituloAula.separar("Lecture 10 · Strategy")! == (10, "Strategy"))
+        #expect(TituloAula.separar("Revisões para o exame") == nil)
+        #expect(TituloAula.separar("Aula prática · Matrizes") == nil)
+    }
+
     @Test func trocaSoOPrimeiroCabecalho() {
         let md = "# Tema\n\n## Resumo\n# Outro"
         #expect(TituloAula.trocarCabecalho(md, por: "Aula 2 · Tema") == "# Aula 2 · Tema\n\n## Resumo\n# Outro")
