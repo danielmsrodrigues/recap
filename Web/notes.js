@@ -181,8 +181,24 @@
         s.onload = () => {
           const escuro = matchMedia("(prefers-color-scheme: dark)").matches &&
             !document.documentElement.classList.contains("impressao");
-          mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: escuro ? "dark" : "default",
-                               fontFamily: "-apple-system, sans-serif" });
+          // Cores das definições da página, letra do sistema, e o tamanho natural do desenho: com o
+          // `useMaxWidth` do Mermaid, um esquema largo encolhia até a letra ficar ilegível e um estreito esticava.
+          mermaid.initialize({
+            startOnLoad: false,
+            securityLevel: "strict",
+            theme: "base",
+            themeVariables: {
+              fontFamily: "-apple-system, sans-serif",
+              fontSize: "14px",
+              primaryColor: escuro ? "#2a2a2c" : "#f5f5f7",
+              primaryBorderColor: escuro ? "#48484a" : "#c7c7cc",
+              primaryTextColor: escuro ? "#f5f5f7" : "#1d1d1f",
+              lineColor: escuro ? "#8e8e93" : "#8e8e93",
+              clusterBkg: escuro ? "#2a2a2c" : "#f5f5f7",
+              clusterBorder: escuro ? "#3a3a3c" : "#d2d2d7",
+            },
+            flowchart: { useMaxWidth: false, curve: "basis", nodeSpacing: 22, rankSpacing: 36, padding: 10, wrappingWidth: 190 },
+          });
           ok();
         };
         s.onerror = falha;
@@ -190,6 +206,24 @@
       });
     }
     return mermaidCarregado;
+  }
+
+  // As cores dos ramos (`:::c1` a `:::c6` nas caixas): o Claude só diz a que ramo pertence cada caixa, e as cores
+  // vêm daqui, iguais em todos os esquemas e legíveis nos dois temas.
+  const coresRamos = [
+    ["#e3eefc", "#1f3350", "#5b8def"],
+    ["#e4f5e9", "#1d3a28", "#4caf6e"],
+    ["#fdf0e1", "#3d2d17", "#e39a3b"],
+    ["#efe8fb", "#2e2547", "#8d6be0"],
+    ["#fde7ea", "#3d1f26", "#e0607a"],
+    ["#e0f4f5", "#173739", "#3aa9b4"],
+  ];
+  function comCores(fonte) {
+    if (!/^\s*(flowchart|graph)\b/.test(fonte)) return fonte;
+    const escuro = matchMedia("(prefers-color-scheme: dark)").matches &&
+      !document.documentElement.classList.contains("impressao");
+    return fonte + "\n" + coresRamos.map(([claro, fundoEscuro, borda], i) =>
+      `classDef c${i + 1} fill:${escuro ? fundoEscuro : claro},stroke:${borda},color:${escuro ? "#f5f5f7" : "#1d1d1f"}`).join("\n");
   }
 
   function preencherEsquema(d) {
@@ -206,7 +240,7 @@
     if (esquemasPorDesenhar.has(fonte)) return;
     esquemasPorDesenhar.add(fonte);
     const feito = carregarMermaid()
-      .then(() => mermaid.render("esquema-" + esquemasFeitos++, fonte))
+      .then(() => mermaid.render("esquema-" + esquemasFeitos++, comCores(fonte)))
       .then(({ svg }) => esquemaCache.set(fonte, svg), () => esquemaCache.set(fonte, null))
       .then(() => {
         esquemasPorDesenhar.delete(fonte);

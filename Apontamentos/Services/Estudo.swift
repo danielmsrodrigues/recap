@@ -451,7 +451,12 @@ final class Estudo {
     - Se a aula não falar do assunto, diz isso claramente antes de responder com conhecimento geral.
     - Nunca inventes o que o professor disse.
     - Sem cabeçalho com a pergunta: começa logo pela resposta.
-    - Quando um esquema ajudar a perceber (um processo, uma classificação, as partes de um conceito) ou o estudante o pedir, desenha-o num bloco ```mermaid com `flowchart TD` ou `flowchart LR`. O texto de cada nó é curto e vai sempre entre aspas: `A["Empresa"] --> B["Sector primário"]`.
+    - Quando um esquema ajudar a perceber (uma classificação, um processo, as partes de um conceito) ou o estudante o pedir, desenha-o num bloco ```mermaid. Um esquema serve para ver a estrutura de relance, por isso tem de ser simples:
+      - No máximo 8 caixas e um nível abaixo do ponto de partida; mais do que isso, faz vários esquemas pequenos ou uma tabela.
+      - Os exemplos e os pormenores vão dentro da caixa, numa segunda linha, e não em caixas próprias: `P["<b>Primário</b><br/>extração: minas, pesca"]`.
+      - Classificações e hierarquias com `flowchart LR` (da esquerda para a direita, para caber na largura); processos por passos com `flowchart TD`.
+      - O ponto de partida é o tema em poucas palavras, sem repetir o título da resposta. O texto de cada caixa vai sempre entre aspas.
+      - Cores com lógica: cada ramo tem a sua cor, e a caixa da categoria e tudo o que dela sai levam a mesma classe, de `:::c1` a `:::c6` (`P["<b>Primário</b>"]:::c1`). O ponto de partida fica sem cor. Num processo, a mesma cor marca a mesma fase. Não definas cores tuas (`classDef`, `style`).
     - Se o estudante pedir um PDF (um resumo, uma ficha, um esquema para imprimir…), começa a resposta exatamente com a linha `\(PerguntaAula.marcaPDF)` e escreve a seguir o documento completo, a começar por um título `# …`, sem nada antes nem depois: a app mostra um botão para o guardar em PDF. Num PDF não ponhas [mm:ss] nem links para secções.
 
     \(comum)
