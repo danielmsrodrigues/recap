@@ -38,7 +38,8 @@ struct SidebarView: View {
 
             ForEach(library.cadeiras.filter { $0.semestre == semestre }) { cadeira in
                 Section(isExpanded: expandida(cadeira)) {
-                    ForEach(cadeira.aulas) { aula in
+                    // Como num caderno: a Aula 1 em cima e a mais recente no fim (a `Library` guarda-as ao contrário).
+                    ForEach(cadeira.aulas.reversed()) { aula in
                         LinhaAula(aula: aula, job: fila.job(para: aula.pasta))
                             .tag(aula.pasta)
                             .contextMenu { menu(aula) }
@@ -241,10 +242,10 @@ private struct LinhaAula: View {
     private var cor: Color { proeminencia == .increased ? .white : .accentColor }
 
     /// "Aula 3 · Tema" → o tema em cima e "Aula 3" ao lado da data, para o tema caber; outros títulos ficam inteiros.
+    /// O título segue a língua dos apontamentos ("Clase 3", "Lecture 3"), mas a barra lateral diz sempre "Aula 3".
     private var partes: (numero: String?, tema: String) {
-        let p = aula.meta.titulo.components(separatedBy: " · ")
-        guard p.count >= 2, p[0].hasPrefix("Aula ") else { return (nil, aula.meta.titulo) }
-        return (p[0], p.dropFirst().joined(separator: " · "))
+        guard let (numero, tema) = TituloAula.separar(aula.meta.titulo) else { return (nil, aula.meta.titulo) }
+        return ("Aula \(numero)", tema)
     }
 
     var body: some View {

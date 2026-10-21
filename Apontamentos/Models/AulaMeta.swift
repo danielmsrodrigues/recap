@@ -96,6 +96,16 @@ enum TituloAula {
     /// `aula` é a palavra na língua dos apontamentos ("Aula", "Clase", "Lecture").
     static func titulo(numero: Int, tema: String, aula: String = "Aula") -> String { "\(aula) \(numero) · \(tema)" }
 
+    /// O contrário de `titulo`, em qualquer língua dos apontamentos. nil num título escrito à mão sem número.
+    static func separar(_ titulo: String) -> (numero: Int, tema: String)? {
+        let p = titulo.components(separatedBy: " · ")
+        guard p.count >= 2,
+              let palavra = RotulosApontamentos.todas("Aula").first(where: { p[0].hasPrefix($0 + " ") }),
+              let numero = Int(p[0].dropFirst(palavra.count + 1))
+        else { return nil }
+        return (numero, p.dropFirst().joined(separator: " · "))
+    }
+
     /// O tema no primeiro `# título`, sem o nome da cadeira nem um "Aula N" que o Claude tenha posto à frente.
     static func tema(_ markdown: String) -> String? {
         guard let linha = markdown.split(separator: "\n", omittingEmptySubsequences: true).first,
