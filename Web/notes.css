@@ -114,7 +114,9 @@ pre code { background: none; padding: 0; }
 
 /* Esquemas (```mermaid): o desenho centrado; enquanto não está desenhado, a fonte como código. */
 .esquema { margin: 1em 0; text-align: center; overflow-x: auto; }
+/* No tamanho natural; só encolhe se não couber. Caixas de cantos redondos. */
 .esquema svg { max-width: 100%; height: auto; }
+.esquema .node rect, .esquema .node .label-container { rx: 8px; ry: 8px; }
 .esquema:not(.desenhado) {
   text-align: left;
   white-space: pre;

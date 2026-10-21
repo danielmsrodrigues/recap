@@ -72,6 +72,14 @@ struct NotesWebTests {
         let md = try await pagina.web.evaluateJavaScript("obterMarkdown()") as? String
         #expect(md?.contains("```mermaid\nflowchart TD") == true)
 
+        // As cores dos ramos vêm da página: `:::c1` chega à caixa sem o Claude definir cores.
+        try await pagina.render("```mermaid\nflowchart LR\n  A[\"Tema\"] --> B[\"Ramo\"]:::c1\n```", emStreaming: false)
+        _ = try await pagina.web.callAsyncJavaScript("await esquemasProntos(); return true", contentWorld: .page)
+        let cor = try await pagina.web.evaluateJavaScript("""
+            getComputedStyle(document.querySelector('.esquema .node.c1 rect, .esquema .node.c1 path')).fill
+            """) as? String
+        #expect(cor != nil && cor != "none")
+
         try await pagina.render("Texto\n\n```mermaid\nflowchart TD\n  A --> ", emStreaming: true)
         let porDesenhar = try await pagina.web.evaluateJavaScript("document.querySelectorAll('.esquema:not(.desenhado)').length") as? Int
         #expect(porDesenhar == 1)
