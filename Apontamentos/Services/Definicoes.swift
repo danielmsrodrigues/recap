@@ -31,6 +31,15 @@ enum MotorTipo: String, CaseIterable, Identifiable, Sendable {
 final class Definicoes {
     static let modeloClaudePorDefeito = "claude-sonnet-5-5"
 
+    /// Os modelos atuais do Claude, para o menu das Definições (platform.claude.com/docs/en/about-claude/models,
+    /// consultada a 2026-10-21). Servem tanto ao Claude Code como à API.
+    static let modelosClaude: [(id: String, nome: String)] = [
+        ("claude-sonnet-5-5", "Sonnet 5.5 (recomendado)"),
+        ("claude-opus-5-5", "Opus 5.5 (mais cuidado, ~2× o preço)"),
+        ("claude-fable-5-1", "Fable 5.1 (o mais capaz, ~5× o preço)"),
+        ("claude-haiku-5-5", "Haiku 5.5 (rápido e barato)"),
+    ]
+
     private let defaults: UserDefaults
 
     var motor: MotorTipo { didSet { defaults.set(motor.rawValue, forKey: "motor") } }
