@@ -85,6 +85,9 @@ final class Job: Identifiable {
 
     func atualizar(_ e: Etapa, progresso: Double?, detalhe: String? = nil) {
         guard etapas[e]?.fase == .emCurso else { return }
+        // O Whisper e os slides chamam isto muitas vezes por segundo; abaixo de meio ponto não se vê na barra
+        // e só obrigava a redesenhar a fila e a barra lateral.
+        if detalhe == nil, let p = progresso, let atual = etapas[e]?.progresso, p < 1, abs(p - atual) < 0.005 { return }
         etapas[e]?.progresso = progresso
         if let detalhe { etapas[e]?.detalhe = detalhe }
     }
