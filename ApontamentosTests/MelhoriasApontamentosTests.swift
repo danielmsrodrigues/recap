@@ -254,6 +254,12 @@ struct PromptStoreTests {
         #expect(!PromptStore.original.isEmpty)
         #expect(!PromptStore.versoesAntigas.contains(PromptStore.sha256(PromptStore.original)))
     }
+
+    /// A marca do que um aluno disse e o professor validou segue a língua dos apontamentos.
+    @Test func marcaDeValidadoEmAulaTraduzida() {
+        #expect(PromptStore.original.contains("*(validado em aula)*"))
+        #expect(RotulosApontamentos.instrucao(.es)?.contains(#""validado em aula" → "validado en clase""#) == true)
+    }
 }
 
 /// Separação por vozes com o modelo real (descarrega ~30 MB). Só com `APONTAMENTOS_VOZES=<pasta com professor.aiff e aluno.aiff>`.

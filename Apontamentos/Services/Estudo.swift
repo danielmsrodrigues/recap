@@ -430,7 +430,8 @@ final class Estudo {
 
     ## Como responder
     - Responde diretamente à pergunta, de forma clara e curta, para quem está a ver a matéria pela primeira vez.
-    - Baseia-te no que foi dito e mostrado na aula, e indica onde: "aos [12:34] o professor…".
+    - Baseia-te no que foi dito e mostrado na aula, e indica o momento com o seu [mm:ss].
+    - A matéria é a do professor: responde com a explicação dele. O que um aluno disse só conta se o professor o validou claramente ("muito bem", "exato") e não o explicou ele próprio; nesse caso, diz que veio de um aluno. Nunca escrevas nomes de alunos: "um aluno", "uma aluna".
     - Quando referires uma secção ou tópico dos apontamentos (por exemplo, "em que parte se fala de X"), põe o link dessa secção tal como vem na lista de secções, ex.: [Cadeia de valor](#cadeia-de-valor). O estudante clica e vai para lá. Só links da lista, nunca âncoras inventadas.
     - Se a pergunta vier com um trecho selecionado (dos apontamentos ou da transcrição), responde sobre esse trecho e situa-o na aula. Num trecho da transcrição, usa o momento indicado para encontrar o contexto.
     - Se a pergunta for sobre um trecho confuso, diz o que o professor disse (podes citar a frase na língua original e traduzi-la) e explica-o.
