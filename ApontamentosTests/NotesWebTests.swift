@@ -53,6 +53,30 @@ struct NotesWebTests {
         #expect(r[2] != r[0])
     }
 
+    /// Um bloco ```mermaid vira um desenho; um que o Mermaid não percebe fica como código; o último, a meio do
+    /// streaming, espera pelo fim. O documento volta a Markdown com o bloco tal como era.
+    @Test func esquemasDesenhados() async throws {
+        let pagina = try await Pagina.carregar()
+        let bom = "```mermaid\nflowchart TD\n  A[\"Empresa\"] --> B[\"Sector primário\"]\n```"
+        let mau = "```mermaid\nisto não é um esquema\n```"
+        try await pagina.render("Antes\n\n\(bom)\n\n\(mau)\n\nDepois", emStreaming: false)
+        _ = try await pagina.web.callAsyncJavaScript("await esquemasProntos(); return true", contentWorld: .page)
+        let r = try #require(try await pagina.web.evaluateJavaScript("""
+            [document.querySelectorAll('.esquema.desenhado svg').length,
+             document.querySelectorAll('.esquema.desenhado pre').length,
+             document.querySelector('.esquema svg').textContent]
+            """) as? [Any])
+        #expect(r[0] as? Int == 1)
+        #expect(r[1] as? Int == 1)
+        #expect((r[2] as? String)?.contains("Sector primário") == true)
+        let md = try await pagina.web.evaluateJavaScript("obterMarkdown()") as? String
+        #expect(md?.contains("```mermaid\nflowchart TD") == true)
+
+        try await pagina.render("Texto\n\n```mermaid\nflowchart TD\n  A --> ", emStreaming: true)
+        let porDesenhar = try await pagina.web.evaluateJavaScript("document.querySelectorAll('.esquema:not(.desenhado)').length") as? Int
+        #expect(porDesenhar == 1)
+    }
+
     @MainActor
     final class Pagina: NSObject, WKNavigationDelegate {
         let web: WKWebView

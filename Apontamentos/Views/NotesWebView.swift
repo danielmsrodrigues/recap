@@ -94,8 +94,10 @@ struct NotesWebView: NSViewRepresentable {
     var aoClicarSeccao: ((LigacaoSeccao) -> Void)?
     /// Título a mostrar e realçar por instantes (cada pedido novo, com outro id, volta a fazê-lo).
     var irParaSeccao: PedidoSeccao?
+    /// Chamado com o índice da resposta ao carregar no seu "Guardar PDF…" (respostas pedidas em PDF, na conversa).
+    var aoGuardarPDF: ((Int) -> Void)?
 
-    private static let mensagens = ["timestamp", "alterado", "formato", "selecao", "perguntar", "procura", "seccao"]
+    private static let mensagens = ["timestamp", "alterado", "formato", "selecao", "perguntar", "procura", "seccao", "guardarPDF"]
 
     func makeCoordinator() -> Coordenador { Coordenador() }
 
@@ -134,6 +136,7 @@ struct NotesWebView: NSViewRepresentable {
         context.coordinator.aoClicarTimestamp = aoClicarTimestamp
         context.coordinator.aoPerguntar = aoPerguntar
         context.coordinator.aoClicarSeccao = aoClicarSeccao
+        context.coordinator.aoGuardarPDF = aoGuardarPDF
         context.coordinator.controlador = controlador
         context.coordinator.realcar(realcar)
         context.coordinator.pastaAula = pastaAula
@@ -156,6 +159,7 @@ struct NotesWebView: NSViewRepresentable {
         var aoClicarTimestamp: ((Double) -> Void)?
         var aoPerguntar: ((String) -> Void)?
         var aoClicarSeccao: ((LigacaoSeccao) -> Void)?
+        var aoGuardarPDF: ((Int) -> Void)?
         weak var controlador: ControladorNotas?
         let esquema = EsquemaAula()
         var pastaAula: URL?
@@ -279,6 +283,8 @@ struct NotesWebView: NSViewRepresentable {
             case "seccao":
                 guard let d = message.body as? [String: Any], let ancora = d["ancora"] as? String else { return }
                 aoClicarSeccao?(LigacaoSeccao(ancora: ancora, texto: d["texto"] as? String ?? ""))
+            case "guardarPDF":
+                if let i = (message.body as? NSNumber)?.intValue { aoGuardarPDF?(i) }
             default:
                 if let segundos = message.body as? Double { aoClicarTimestamp?(segundos) }
                 else if let segundos = message.body as? Int { aoClicarTimestamp?(Double(segundos)) }

@@ -164,6 +164,80 @@
     }
   }
 
+  // MARK: Esquemas
+
+  // Um bloco ```mermaid vira um desenho. O Mermaid (2,7 MB) só é carregado quando aparece o primeiro esquema, e
+  // cada desenho fica em cache pela fonte, como as fórmulas: no render seguinte o nó sai igual e não é trocado.
+  const esquemaCache = new Map(); // fonte → svg, ou null se a fonte não se desenhar
+  const esquemasPorDesenhar = new Set();
+  let mermaidCarregado = null;
+  let esquemasFeitos = 0;
+
+  function carregarMermaid() {
+    if (!mermaidCarregado) {
+      mermaidCarregado = new Promise((ok, falha) => {
+        const s = document.createElement("script");
+        s.src = "mermaid/mermaid.min.js";
+        s.onload = () => {
+          const escuro = matchMedia("(prefers-color-scheme: dark)").matches &&
+            !document.documentElement.classList.contains("impressao");
+          mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: escuro ? "dark" : "default",
+                               fontFamily: "-apple-system, sans-serif" });
+          ok();
+        };
+        s.onerror = falha;
+        document.head.appendChild(s);
+      });
+    }
+    return mermaidCarregado;
+  }
+
+  function preencherEsquema(d) {
+    const svg = esquemaCache.get(d.dataset.fonte);
+    if (svg === undefined) return false;
+    // Uma fonte que o Mermaid não percebe fica à vista como código, em vez de desaparecer.
+    if (svg === null) d.innerHTML = "<pre><code>" + escaparAtributo(d.dataset.fonte) + "</code></pre>";
+    else d.innerHTML = svg;
+    d.classList.add("desenhado");
+    return true;
+  }
+
+  function desenhar(fonte) {
+    if (esquemasPorDesenhar.has(fonte)) return;
+    esquemasPorDesenhar.add(fonte);
+    const feito = carregarMermaid()
+      .then(() => mermaid.render("esquema-" + esquemasFeitos++, fonte))
+      .then(({ svg }) => esquemaCache.set(fonte, svg), () => esquemaCache.set(fonte, null))
+      .then(() => {
+        esquemasPorDesenhar.delete(fonte);
+        for (const d of raiz().querySelectorAll(".esquema:not(.desenhado)")) {
+          if (d.dataset.fonte === fonte) preencherEsquema(d);
+        }
+      });
+    pendentes.push(feito);
+  }
+  const pendentes = [];
+
+  // Para o PDF: espera que os esquemas pedidos estejam desenhados.
+  window.esquemasProntos = () => Promise.all(pendentes.splice(0));
+
+  function ligarEsquemas(elemento, emStreaming) {
+    for (const code of elemento.querySelectorAll("pre > code.language-mermaid")) {
+      const pre = code.parentElement;
+      const fonte = code.textContent.trim();
+      const d = document.createElement("div");
+      d.className = "esquema";
+      d.dataset.fonte = fonte;
+      d.setAttribute("contenteditable", "false");
+      // A meio de uma resposta, o último bloco pode ainda estar a ser escrito: fica como código até ao fim.
+      const aMeio = emStreaming && pre === elemento.lastElementChild;
+      pre.replaceWith(d);
+      if (preencherEsquema(d)) continue;
+      d.textContent = fonte;
+      if (!aMeio) desenhar(fonte);
+    }
+  }
+
   window.renderMarkdown = function (md, emStreaming, base) {
     const r = raiz();
     const perto = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
@@ -176,6 +250,7 @@
     const n = novo.content;
     ligarTimestamps(n);
     ligarImagens(n, base);
+    ligarEsquemas(n, emStreaming);
     // Explicações que o professor não deu: destacadas à parte das definições.
     let resolucoes = 0;
     for (const q of n.querySelectorAll("blockquote")) {
@@ -207,8 +282,20 @@
     esconderPerguntar();
     // O documento é outro: a procura em curso volta a ser feita, sem mexer no scroll.
     if (procura.termo) procurarTexto(procura.termo, true);
+    // Na conversa, ao abrir e a cada pergunta enviada, vai-se para o fim, onde a resposta vai aparecer,
+    // mesmo que se estivesse a ler mais acima.
+    if (document.documentElement.classList.contains("conversa")) {
+      const total = r.querySelectorAll(".pergunta").length;
+      if (total > perguntasVistas) {
+        window.scrollTo({ top: document.body.scrollHeight, behavior: perguntasVistas < 0 ? "auto" : "smooth" });
+        perguntasVistas = total;
+        return;
+      }
+      perguntasVistas = total;
+    }
     if (emStreaming && perto) window.scrollTo(0, document.body.scrollHeight);
   };
+  let perguntasVistas = -1;
 
   // MARK: HTML → Markdown
 
@@ -250,6 +337,10 @@
     // O editor de fórmulas e as legendas dos slides (vêm do texto alternativo) não fazem parte do documento.
     turndown.remove((no) => no.id === "editor-formula" ||
       (no.nodeName === "SPAN" && no.classList.contains("legenda")));
+    turndown.addRule("esquema", {
+      filter: (no) => no.nodeName === "DIV" && no.classList.contains("esquema"),
+      replacement: (_, no) => "\n\n```mermaid\n" + no.dataset.fonte + "\n```\n\n",
+    });
     // Uma marca de slide que ficou por resolver volta tal como estava.
     turndown.addRule("slidePendente", {
       filter: (no) => no.nodeName === "SPAN" && no.classList.contains("slide-pendente"),
@@ -535,6 +626,14 @@
     let ancora = a.getAttribute("href").slice(1);
     try { ancora = decodeURIComponent(ancora); } catch (e) {}
     enviar("seccao", { ancora, texto: a.textContent });
+  });
+
+  // Uma resposta pedida em PDF traz um botão para a guardar (o índice é o da pergunta na conversa).
+  document.addEventListener("click", (ev) => {
+    const b = ev.target.closest(".guardar-pdf button");
+    if (!b) return;
+    ev.preventDefault();
+    enviar("guardarPDF", Number(b.dataset.resposta));
   });
 
   const titulosDeTopo = () => raiz().querySelectorAll(":scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6");
