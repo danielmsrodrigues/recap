@@ -24,7 +24,7 @@ struct LigacoesView: View {
                 barra
                 Divider()
             }
-            if emCurso {
+            if emCurso && dados == nil {
                 VStack(spacing: 10) {
                     ProgressView()
                     Text("A procurar ligações com as outras aulas…").foregroundStyle(.secondary)
@@ -57,7 +57,9 @@ struct LigacoesView: View {
                 vazio
             }
         }
-        .task(id: estudo.versao) { dados = Disco.lerLigacoes(aula.pasta) }
+        .task(id: estudo.versao) {
+            dados = estudo.ligacoes(aula)
+        }
     }
 
     // MARK: Partes
@@ -76,6 +78,10 @@ struct LigacoesView: View {
             } else if !emCurso, estudo.ligacoesDesatualizadas(aula) {
                 Label("Há aulas novas ou apontamentos alterados desde estas ligações.", systemImage: "clock.arrow.circlepath")
                     .foregroundStyle(.orange)
+            }
+            if emCurso {
+                ProgressView().controlSize(.small)
+                Text("A atualizar com as outras aulas…").foregroundStyle(.secondary)
             }
             Spacer()
             if emCurso {

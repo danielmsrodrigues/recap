@@ -26,13 +26,15 @@ enum Seccoes {
         /// O título sem marcas de Markdown nem `[mm:ss]`.
         var titulo: String
         var ancora: String
+        /// A linha do título no Markdown (a contar de 0).
+        var linha = 0
     }
 
     static func lista(_ markdown: String) -> [Seccao] {
         var seccoes: [Seccao] = []
         var usadas: [String: Int] = [:]
         var cerca: Character?
-        for linha in markdown.components(separatedBy: .newlines) {
+        for (i, linha) in markdown.components(separatedBy: .newlines).enumerated() {
             let sem = linha.drop { $0 == " " }
             // Blocos de código (``` ou ~~~): um `#` lá dentro não é título.
             if linha.count - sem.count <= 3, let c = sem.first, c == "`" || c == "~", sem.hasPrefix(String(repeating: c, count: 3)) {
@@ -44,7 +46,7 @@ enum Seccoes {
             let base = ancora(limpo).isEmpty ? "seccao" : ancora(limpo)
             usadas[base, default: 0] += 1
             let n = usadas[base] ?? 1
-            seccoes.append(Seccao(indice: seccoes.count, nivel: nivel, titulo: limpo, ancora: n == 1 ? base : "\(base)-\(n)"))
+            seccoes.append(Seccao(indice: seccoes.count, nivel: nivel, titulo: limpo, ancora: n == 1 ? base : "\(base)-\(n)", linha: i))
         }
         return seccoes
     }

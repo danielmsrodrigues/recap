@@ -19,8 +19,9 @@ struct ApontamentosApp: App {
         _definicoes = State(initialValue: definicoes)
         let fichas = Fichas(library: library, definicoes: definicoes)
         _fichas = State(initialValue: fichas)
-        _fila = State(initialValue: ProcessingQueue(runner: PipelineRunner(library: library, definicoes: definicoes, fichas: fichas)))
-        _estudo = State(initialValue: Estudo(library: library, definicoes: definicoes))
+        let estudo = Estudo(library: library, definicoes: definicoes)
+        _estudo = State(initialValue: estudo)
+        _fila = State(initialValue: ProcessingQueue(runner: PipelineRunner(library: library, definicoes: definicoes, fichas: fichas, estudo: estudo)))
         // O painel Estudo abre sempre ao arrancar; fechá-lo só vale até sair da app.
         UserDefaults.standard.set(true, forKey: "mostrarEstudo")
     }
