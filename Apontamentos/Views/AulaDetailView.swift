@@ -63,7 +63,14 @@ struct AulaDetailView: View {
         .toolbar { barra }
         // A `Aula` muda quando a transcrição, os slides, os apontamentos ou os metadados mudam no disco:
         // não é preciso reler a cada alteração noutra aula.
-        .task(id: aula) { carregar() }
+        .task(id: aula) {
+            carregar()
+            estudo.gerarLigacoesSePreciso(aula)
+        }
+        // As notas das ligações ("🔗 Aprofundado na Aula 2") foram postas nos apontamentos.
+        .onChange(of: estudo.versaoApontamentos) {
+            if !controlador.editando && !aGerar { apontamentos = Disco.lerApontamentos(aula.pasta) }
+        }
         .task(id: navegacao.destino) { aplicarDestino() }
         .focusedSceneValue(\.procurarNosApontamentos, apontamentos == nil || aGerar ? nil : AcaoProcurar { abrirProcura() })
         .focusedSceneValue(\.comandosAula, comandos)
@@ -130,6 +137,7 @@ struct AulaDetailView: View {
         .onDisappear {
             // As alterações já foram gravadas automaticamente; falta só registar que houve edição.
             if controlador.editando, houveEdicao { try? library.atualizarMeta(em: aula.pasta) { $0.editadoEm = .now } }
+            if controlador.editando { largarEdicaoNasLigacoes() }
         }
         .alert("Erro", isPresented: Binding(get: { erro != nil }, set: { if !$0 { erro = nil } }), presenting: erro) { _ in
             Button("OK") { erro = nil }
@@ -377,6 +385,10 @@ struct AulaDetailView: View {
     /// Mostra a secção de um link `[Título](#ancora)`. Se nenhum título lhe corresponder (apontamentos refeitos
     /// depois da resposta), procura o texto do link na página.
     private func irParaSeccao(_ ligacao: LigacaoSeccao) {
+        // Link para outra aula (`#<aula>/<secção>`, nas notas das ligações).
+        let destino = estudo.destino(ligacao, aPartirDe: aula)
+        guard destino.pasta.mesmoCaminho(aula.pasta) else { navegacao.destino = destino; return }
+        let ligacao = destino.seccao ?? ligacao
         let markdown = apontamentos ?? Disco.lerApontamentos(aula.pasta) ?? ""
         if let s = Seccoes.resolver(ligacao, em: Seccoes.lista(markdown)) {
             irSeccao = PedidoSeccao(indice: s.indice)
@@ -493,6 +505,13 @@ struct AulaDetailView: View {
         estadoEdicao = "Guarda automaticamente"
         controlador.aoGravar = { await gravarRascunho() }
         controlador.definirEdicao(true)
+        estudo.pastaEmEdicao = aula.pasta
+    }
+
+    /// Acabou a edição: as notas das ligações voltam a poder mexer nestes apontamentos (e repõem-se, se se apagaram).
+    private func largarEdicaoNasLigacoes() {
+        if estudo.pastaEmEdicao.map(aula.pasta.mesmoCaminho) ?? false { estudo.pastaEmEdicao = nil }
+        estudo.aplicarNotas(aula.cadeira)
     }
 
     /// Grava o documento em edição (chamado pouco depois de cada alteração, como no Word).
@@ -519,9 +538,11 @@ struct AulaDetailView: View {
         controlador.definirEdicao(false)
         apontamentos = Disco.lerApontamentos(aula.pasta)
         if houveEdicao { try? library.atualizarMeta(em: aula.pasta) { $0.editadoEm = .now } }
+        largarEdicaoNasLigacoes()
     }
 
     private func descartarEdicao() async {
+        defer { largarEdicaoNasLigacoes() }
         controlador.definirEdicao(false)
         guard let original = originalEdicao else { return }
         if houveEdicao { try? Disco.escreverApontamentos(original, em: aula.pasta) }

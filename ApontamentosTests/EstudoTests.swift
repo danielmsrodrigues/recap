@@ -120,6 +120,63 @@ struct EstudoTests {
         #expect(estudo.destino(LigacaoSeccao(ancora: "resumo", texto: ""), aPartirDe: aula1).pasta.mesmoCaminho(p1))
     }
 
+    @Test func notasDasLigacoesPoemSeETiramSe() {
+        let md = "# Clase 1\n\n## Resumen\nEmpresa.\n\n## Fiscalidad [12:00]\n![Slide 4](slides-pdf/pagina-04.jpg)\nSe habló por encima.\n\n## Áreas\nProducción.\n"
+        let notas = [
+            NotasLigacoes.Nota(seccao: "#fiscalidad", texto: "Se profundiza en la Clase 2: IVA e IRPF.", link: "#aula-2/fiscalidad", tituloLink: "Fiscalidad"),
+            NotasLigacoes.Nota(seccao: "areas", texto: "Más en la Clase 2.", link: "#aula-2/areas", tituloLink: "Áreas"),
+            NotasLigacoes.Nota(seccao: "nao-existe", texto: "Fica de fora.", link: "#x/y", tituloLink: "Y"),
+        ]
+        let com = NotasLigacoes.por(notas, em: md)
+        #expect(com.contains("![Slide 4](slides-pdf/pagina-04.jpg)\n\n> 🔗 Se profundiza en la Clase 2: IVA e IRPF. → [Fiscalidad](#aula-2/fiscalidad)\n\nSe habló por encima."))
+        #expect(com.contains("## Áreas\n\n> 🔗 Más en la Clase 2. → [Áreas](#aula-2/areas)\n\nProducción."))
+        #expect(!com.contains("Fica de fora"))
+        // Pôr de novo não acumula; tirar deixa só o que era dos apontamentos.
+        #expect(NotasLigacoes.por(notas, em: com) == com)
+        #expect(!NotasLigacoes.tirar(com).contains("🔗"))
+        #expect(NotasLigacoes.por([], em: com) == NotasLigacoes.tirar(com))
+        // As notas não mudam a assinatura (não fazem as ligações parecerem desatualizadas); o resto sim.
+        #expect(NotasLigacoes.assinatura(com) == NotasLigacoes.assinatura(md))
+        #expect(NotasLigacoes.assinatura(md + "\nMás.") != NotasLigacoes.assinatura(md))
+    }
+
+    @Test @MainActor func notasVaoParaOsApontamentosDasDuasAulas() throws {
+        let raiz = FileManager.default.temporaryDirectory.appending(path: "notas-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: raiz) }
+        let library = Library(raiz: raiz)
+        let estudo = Estudo(library: library, definicoes: Definicoes(defaults: UserDefaults(suiteName: "notas-\(UUID().uuidString)")!))
+        let dia: TimeInterval = 86_400
+        let p1 = try library.criarAula(cadeira: "Empresas", titulo: "Aula 1", data: Date(timeIntervalSince1970: dia), video: nil)
+        let p2 = try library.criarAula(cadeira: "Empresas", titulo: "Aula 2", data: Date(timeIntervalSince1970: 8 * dia), video: nil)
+        let md1 = "# Aula 1\n\n## Resumo\nEmpresa.\n\n## Marco legal\nFiscalidade por alto.\n"
+        let md2 = "# Aula 2\n\n## Resumo\nIVA.\n\n## Fiscalidade [27:26]\nIVA e IRPF.\n"
+        try Disco.escreverApontamentos(md1, em: p1)
+        try Disco.escreverApontamentos(md2, em: p2)
+        library.recarregar()
+        let (c1, c2) = (Estudo.caminhoRelativo(p1, raiz: raiz), Estudo.caminhoRelativo(p2, raiz: raiz))
+        var ligacoes = LigacoesAula(ligacoes: [
+            .init(aula: c1, direcao: .anterior, conceitos: ["fiscalidade"], explicacao: "x", momento: nil, explicacaoInversa: "y",
+                  pontos: [.init(seccao: "#fiscalidade", seccaoOutra: "#marco-legal", nota: "Introduzida por alto na Aula 1.",
+                                 notaOutra: "Aprofundada na Aula 2: IVA e IRPF.")]),
+        ], temas: [])
+        ligacoes.assinaturas = [c1: NotasLigacoes.assinatura(md1), c2: NotasLigacoes.assinatura(md2)]
+        try Disco.escreverLigacoes(ligacoes, em: p2)
+
+        estudo.aplicarNotas("Empresas")
+        let novo1 = try #require(Disco.lerApontamentos(p1))
+        let novo2 = try #require(Disco.lerApontamentos(p2))
+        #expect(novo1.contains("## Marco legal\n\n> 🔗 Aprofundada na Aula 2: IVA e IRPF. → [Fiscalidade](#\(Estudo.prefixoLink(p2))/fiscalidade)"))
+        #expect(novo2.contains("## Fiscalidade [27:26]\n\n> 🔗 Introduzida por alto na Aula 1. → [Marco legal](#\(Estudo.prefixoLink(p1))/marco-legal)"))
+        #expect(estudo.versaoApontamentos == 1)
+        // Pôr as notas não torna as ligações da Aula 2 desatualizadas, e aplicar de novo não escreve nada.
+        #expect(!estudo.ligacoesDesatualizadas(try #require(library.aula(em: p2))))
+        estudo.aplicarNotas("Empresas")
+        #expect(estudo.versaoApontamentos == 1)
+        // Apontamentos da Aula 1 refeitos: desatualizadas.
+        try Disco.escreverApontamentos(md1 + "\n## Novo\nMais.\n", em: p1)
+        #expect(estudo.ligacoesDesatualizadas(try #require(library.aula(em: p2))))
+    }
+
     @Test func outraAulaNoChatSemTemposNemImagens() {
         let md = "# Aula 2\n\n## Resumo\nIVA e IRPF.\n\n## Fiscalidad [27:26]\n![Slide 4](slides-pdf/pagina-04.jpg)\nEl IVA [35:41] lo paga el consumidor.\n"
         let completa = Estudo.aulaParaPerguntas(titulo: "Aula 2", data: .now, anterior: false, prefixo: "2026-10-21-aula-2", apontamentos: md, completa: true)

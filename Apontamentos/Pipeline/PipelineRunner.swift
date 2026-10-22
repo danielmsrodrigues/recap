@@ -240,7 +240,7 @@ final class PipelineRunner {
         job.concluir(.apontamentos, detalhe: resumo)
         if sobre != nil { fichas.atualizar(nomeCadeira: aula.cadeira) }
         // As ligações com as outras aulas da cadeira fazem-se logo, sem ter de as pedir.
-        if let nova = library.aula(em: job.pastaAula) { estudo.gerarLigacoesSePreciso(nova) }
+        if let nova = library.aula(em: job.pastaAula) { estudo.aposApontamentos(nova) }
         if g.truncada {
             job.aviso = "Os apontamentos atingiram o limite de \(gerador.maxTokens.formatted()) tokens e ficaram incompletos."
         }

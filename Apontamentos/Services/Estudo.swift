@@ -75,6 +75,18 @@ struct LigacoesAula: Codable, Sendable {
         var momento: String?
         /// A mesma ligação contada do lado da outra aula, para a mostrar lá (`Estudo.ligacoes`).
         var explicacaoInversa: String?
+        /// Onde a ligação aparece nos apontamentos das duas aulas, com a nota a pôr em cada um (`NotasLigacoes`).
+        var pontos: [Ponto]?
+    }
+
+    /// Uma secção desta aula ligada a uma secção da outra ("por alto aqui, aprofundado lá").
+    struct Ponto: Codable, Hashable, Sendable {
+        /// Âncora da secção nos apontamentos desta aula e na outra.
+        var seccao: String?
+        var seccaoOutra: String?
+        /// A nota para os apontamentos desta aula, e a que vai para os da outra.
+        var nota: String
+        var notaOutra: String?
     }
 
     struct Tema: Codable, Hashable, Sendable {
@@ -87,13 +99,17 @@ struct LigacoesAula: Codable, Sendable {
     var ligacoes: [Ligacao]
     var temas: [Tema]
     var geradoEm = Date.now
+    /// Os apontamentos de cada aula (desta e das outras) quando as ligações se geraram (`NotasLigacoes.assinatura`).
+    var assinaturas: [String: String]?
 
     /// O JSON que o Claude devolve, com as aulas identificadas por `A1`, `A2`…
     private struct Resposta: Decodable {
         struct L: Decodable {
             var aula: String; var direcao: String; var conceitos: [String]?; var explicacao: String; var momento: String?
             var explicacao_outra: String?
+            var pontos: [P]?
         }
+        struct P: Decodable { var seccao: String?; var seccao_outra: String?; var nota: String?; var nota_outra: String? }
         struct T: Decodable { var tema: String; var aulas: [String]?; var explicacao: String }
         var ligacoes: [L]?
         var temas_comuns: [T]?
@@ -109,15 +125,19 @@ struct LigacoesAula: Codable, Sendable {
             guard let pasta = aulas[l.aula], let d = Direcao(rawValue: l.direcao) else { continue }
             let limpo = l.momento?.trimmingCharacters(in: CharacterSet(charactersIn: "[] "))
             let momento = limpo.flatMap { Timestamp.parse($0) != nil ? $0 : nil }
+            let pontos = (l.pontos ?? []).compactMap { p in
+                p.nota.map { Ponto(seccao: p.seccao, seccaoOutra: p.seccao_outra, nota: $0, notaOutra: p.nota_outra) }
+            }
             // Uma só entrada por aula e direção (o Claude às vezes divide-a em duas).
             if let i = ligacoes.firstIndex(where: { $0.aula == pasta && $0.direcao == d }) {
                 ligacoes[i].conceitos += (l.conceitos ?? []).filter { !ligacoes[i].conceitos.contains($0) }
                 ligacoes[i].explicacao += " " + l.explicacao
                 ligacoes[i].momento = ligacoes[i].momento ?? momento
                 if let outra = l.explicacao_outra { ligacoes[i].explicacaoInversa = [ligacoes[i].explicacaoInversa, outra].compactMap { $0 }.joined(separator: " ") }
+                if !pontos.isEmpty { ligacoes[i].pontos = (ligacoes[i].pontos ?? []) + pontos }
             } else {
                 ligacoes.append(Ligacao(aula: pasta, direcao: d, conceitos: l.conceitos ?? [], explicacao: l.explicacao, momento: momento,
-                                        explicacaoInversa: l.explicacao_outra))
+                                        explicacaoInversa: l.explicacao_outra, pontos: pontos.isEmpty ? nil : pontos))
             }
         }
         let temas = (r.temas_comuns ?? []).map { Tema(tema: $0.tema, aulas: ($0.aulas ?? []).compactMap { aulas[$0] }, explicacao: $0.explicacao) }
@@ -324,8 +344,8 @@ final class Estudo {
         }
     }
 
-    /// Gera as ligações sem se pedir: quando a aula ainda não as tem ou já não refletem as outras aulas.
-    /// Chamado ao acabar os apontamentos e ao abrir o separador; não repete depois de um erro (fica o botão).
+    /// Gera as ligações sem se pedir: quando a aula ainda não as tem ou os apontamentos mudaram desde então.
+    /// Chamado ao acabar os apontamentos e ao abrir a aula; não repete depois de um erro (fica o botão).
     func gerarLigacoesSePreciso(_ aula: Aula) {
         guard aula.temApontamentos, definicoes.faltaParaGerar == nil, emCurso(aula, .ligacoes) == nil, erro(aula, .ligacoes) == nil,
               !outrasAulas(de: aula).isEmpty,
@@ -336,7 +356,7 @@ final class Estudo {
 
     func gerarLigacoes(_ aula: Aula) {
         let outras = outrasAulas(de: aula)
-        guard let notas = Disco.lerApontamentos(aula.pasta) else { return }
+        guard let notas = Disco.lerApontamentos(aula.pasta).map(NotasLigacoes.tirar) else { return }
         guard !outras.isEmpty else {
             erros[Self.chave(aula, .ligacoes)] = "Ainda não há outras aulas com apontamentos em \(aula.cadeira)."
             return
@@ -345,17 +365,75 @@ final class Estudo {
         executar(aula, .ligacoes, comTranscricao: false, sistema: definicoes.prompt(Self.sistemaLigacoes)) { _ in
             let lista = outras.enumerated().map { i, o in
                 let data = o.meta.data.formatted(.dateTime.day().month(.wide).year().locale(Locale(identifier: "pt_PT")))
-                return "<aula id=\"A\(i + 1)\" titulo=\"\(o.meta.titulo)\" data=\"\(data)\"\(o.meta.data < aula.meta.data ? " anterior" : " seguinte")>\n\(Self.esqueleto(Disco.lerApontamentos(o.pasta) ?? ""))\n</aula>"
+                let md = NotasLigacoes.tirar(Disco.lerApontamentos(o.pasta) ?? "")
+                return "<aula id=\"A\(i + 1)\" titulo=\"\(o.meta.titulo)\" data=\"\(data)\"\(o.meta.data < aula.meta.data ? " anterior" : " seguinte")>\n\(Self.esqueleto(md))\n<seccoes>\n\(Seccoes.indice(Seccoes.lista(md)))\n</seccoes>\n</aula>"
             }.joined(separator: "\n\n")
             return [
-                .texto("Cadeira: \(aula.cadeira)\nAula atual: \(aula.meta.titulo) (\(aula.meta.data.formatted(date: .long, time: .omitted)))\n\nApontamentos da aula atual:\n\n<apontamentos>\n\(notas)\n</apontamentos>"),
-                .texto("Outras aulas da cadeira (resumo e temas de cada uma):\n\n\(lista)"),
+                .texto("Cadeira: \(aula.cadeira)\nAula atual: \(aula.meta.titulo) (\(aula.meta.data.formatted(date: .long, time: .omitted)))\n\nApontamentos da aula atual:\n\n<apontamentos>\n\(notas)\n</apontamentos>\n\nSecções da aula atual:\n\n<seccoes>\n\(Seccoes.indice(Seccoes.lista(notas)))\n</seccoes>"),
+                .texto("Outras aulas da cadeira (resumo, temas e secções de cada uma):\n\n\(lista)"),
                 .texto("Devolve as ligações da aula atual com as outras em JSON, seguindo as instruções."),
             ]
         } concluir: { texto in
             let ids = Dictionary(uniqueKeysWithValues: outras.enumerated().map { ("A\($0 + 1)", Self.caminhoRelativo($1.pasta, raiz: raiz)) })
-            try Disco.escreverLigacoes(LigacoesAula.daResposta(texto, aulas: ids), em: aula.pasta)
+            var ligacoes = try LigacoesAula.daResposta(texto, aulas: ids)
+            ligacoes.assinaturas = Dictionary(uniqueKeysWithValues: ([aula] + outras).compactMap { a in
+                Disco.lerApontamentos(a.pasta).map { (Self.caminhoRelativo(a.pasta, raiz: raiz), NotasLigacoes.assinatura($0)) }
+            })
+            try Disco.escreverLigacoes(ligacoes, em: aula.pasta)
+            self.aplicarNotas(aula.cadeira)
         }
+    }
+
+    /// Apontamentos acabados de gerar: as notas das ligações voltam para eles e as ligações refazem-se se for preciso.
+    func aposApontamentos(_ aula: Aula) {
+        aplicarNotas(aula.cadeira)
+        gerarLigacoesSePreciso(aula)
+    }
+
+    /// Aula cujos apontamentos estão a ser editados: as notas das ligações não lhe mexem até acabar.
+    var pastaEmEdicao: URL?
+    /// Muda quando a app escreve nos apontamentos (as notas das ligações), para a aula aberta os voltar a ler.
+    private(set) var versaoApontamentos = 0
+
+    /// Põe nos apontamentos de cada aula da cadeira as notas das suas ligações ("🔗 Aprofundado na Aula 2 → …"):
+    /// as que a aula fez com as outras e, para as aulas com que ela não fez nenhuma, as que essas fizeram com ela.
+    /// Só escreve os apontamentos que mudam.
+    func aplicarNotas(_ nomeCadeira: String) {
+        let raiz = library.raiz
+        let aulas = (library.cadeira(nome: nomeCadeira)?.aulas ?? []).filter(\.temApontamentos).sorted { $0.meta.data < $1.meta.data }
+        let caminhos = aulas.map { Self.caminhoRelativo($0.pasta, raiz: raiz) }
+        var apontamentos: [String: String] = [:], ligacoes: [String: LigacoesAula] = [:]
+        for (a, c) in zip(aulas, caminhos) {
+            apontamentos[c] = Disco.lerApontamentos(a.pasta)
+            ligacoes[c] = Disco.lerLigacoes(a.pasta)
+        }
+        func nota(_ seccao: String?, _ texto: String, destino: String, seccaoDestino: String?) -> NotasLigacoes.Nota? {
+            guard let seccao, let md = apontamentos[destino], let alvo = aulas.first(where: { Self.caminhoRelativo($0.pasta, raiz: raiz) == destino })
+            else { return nil }
+            let s = seccaoDestino.flatMap { Seccoes.resolver(LigacaoSeccao(ancora: $0, texto: ""), em: Seccoes.lista(md)) }
+            return NotasLigacoes.Nota(seccao: seccao, texto: texto, link: "#\(Self.prefixoLink(alvo.pasta))/\(s?.ancora ?? "")",
+                                      tituloLink: s?.titulo ?? alvo.meta.titulo)
+        }
+        var mudou = false
+        for (aula, caminho) in zip(aulas, caminhos) where !(pastaEmEdicao.map(aula.pasta.mesmoCaminho) ?? false) {
+            guard let md = apontamentos[caminho] else { continue }
+            var notas: [NotasLigacoes.Nota] = []
+            var feitas: Set<String> = []
+            for l in ligacoes[caminho]?.ligacoes ?? [] where !(l.pontos ?? []).isEmpty {
+                feitas.insert(l.aula)
+                notas += (l.pontos ?? []).compactMap { nota($0.seccao, $0.nota, destino: l.aula, seccaoDestino: $0.seccaoOutra) }
+            }
+            for outra in caminhos where outra != caminho && !feitas.contains(outra) {
+                for l in ligacoes[outra]?.ligacoes ?? [] where l.aula == caminho {
+                    notas += (l.pontos ?? []).compactMap { p in
+                        p.notaOutra.flatMap { nota(p.seccaoOutra, $0, destino: outra, seccaoDestino: p.seccao) }
+                    }
+                }
+            }
+            let novo = NotasLigacoes.por(notas, em: md)
+            if novo != md, (try? Disco.escreverApontamentos(novo, em: aula.pasta)) != nil { mudou = true }
+        }
+        if mudou { versaoApontamentos += 1 }
     }
 
     /// As ligações da aula para mostrar: as que se geraram nela e as que as outras aulas fizeram com ela, vistas
@@ -459,11 +537,17 @@ final class Estudo {
             .sorted { $0.meta.data < $1.meta.data }
     }
 
-    /// As ligações já não refletem as aulas da cadeira (aulas novas ou apontamentos alterados depois).
+    /// As ligações já não refletem os apontamentos: os desta aula ou os de uma aula ligada mudaram (ou ela foi apagada).
+    /// Uma aula nova não conta: ao gerar as suas ligações, elas aparecem também nesta. Ligações de antes das
+    /// assinaturas contam como desatualizadas (não tinham as notas para os apontamentos).
     func ligacoesDesatualizadas(_ aula: Aula) -> Bool {
-        guard let gerado = Disco.dataModificacao(aula.pasta.appending(path: Disco.ligacoesJSON)) else { return false }
-        return ([aula] + outrasAulas(de: aula)).contains {
-            (Disco.dataModificacao($0.pasta.appending(path: Disco.apontamentosMD)) ?? .distantPast) > gerado
+        guard let l = Disco.lerLigacoes(aula.pasta) else { return false }
+        guard let assinaturas = l.assinaturas else { return true }
+        let raiz = library.raiz
+        let aulas = Dictionary(([aula] + outrasAulas(de: aula)).map { (Self.caminhoRelativo($0.pasta, raiz: raiz), $0) }) { a, _ in a }
+        return Set(l.ligacoes.map(\.aula) + [Self.caminhoRelativo(aula.pasta, raiz: raiz)]).contains { caminho in
+            guard let md = aulas[caminho].flatMap({ Disco.lerApontamentos($0.pasta) }) else { return true }
+            return assinaturas[caminho] != NotasLigacoes.assinatura(md)
         }
     }
 
@@ -628,7 +712,10 @@ final class Estudo {
       "ligacoes": [
         {"aula": "A1", "direcao": "anterior", "conceitos": ["valor próprio", "polinómio característico"],
          "explicacao": "Uma ou duas frases: o que vem de onde e para que serve aqui.",
-         "explicacao_outra": "A mesma ligação contada a quem está a estudar a outra aula.", "momento": "00:17"}
+         "explicacao_outra": "A mesma ligação contada a quem está a estudar a outra aula.", "momento": "00:17",
+         "pontos": [{"seccao": "#valores-proprios", "seccao_outra": "#polinomio-caracteristico",
+                     "nota": "Introduzido na Aula 1: como se calcula o polinómio característico.",
+                     "nota_outra": "Usado na Aula 3 para encontrar os valores próprios."}]}
       ],
       "temas_comuns": [
         {"tema": "Descida do gradiente", "aulas": ["A1"], "explicacao": "Uma frase sobre como o tema aparece nas aulas."}
@@ -639,8 +726,10 @@ final class Estudo {
     - Uma entrada por aula e direção, com todos os conceitos dessa ligação (2 a 5 palavras cada).
     - `explicacao_outra`: a mesma ligação contada do lado da outra aula, para a mostrar lá (ex.: "Aqui a fiscalidade foi vista por alto; na aula de Formas jurídicas é aprofundada: IVA, IRPF e tabelas."). Refere a aula atual pelo título.
     - `momento`: o mm:ss da aula atual onde a ligação aparece, tirado dos apontamentos, ou null.
+    - `pontos`: as secções onde a ligação se vê, para a app pôr uma nota curta nos apontamentos das duas aulas, por baixo do título da secção. `seccao` é a âncora da secção da aula atual e `seccao_outra` a da outra aula, tal como vêm nas listas de secções; nunca âncoras inventadas. Um ponto por par de secções, só os que interessam a quem estuda (no máximo 3 por ligação): sobretudo um assunto falado por alto numa aula e aprofundado na outra.
+    - `nota` vai para os apontamentos da aula atual e `nota_outra` para os da outra aula. Uma frase curta que diz o que há na outra aula, nomeando-a pelo número ("Aprofundado na Aula 2: IVA, IRPF e tabelas."), sem link (a app junta-o).
     - Listas vazias se não houver ligações.
     - Nas explicações, refere as outras aulas pelo título ("na aula de Autovalores…"), nunca pelo id (A1).
-    - Explicações e conceitos em {{lingua_apontamentos}}. Sem LaTeX nem Markdown: símbolos em Unicode (λ, Σ, ∇, A⁻¹, x²).
+    - Explicações, conceitos e notas em {{lingua_apontamentos}}. Sem LaTeX nem Markdown: símbolos em Unicode (λ, Σ, ∇, A⁻¹, x²).
     """
 }

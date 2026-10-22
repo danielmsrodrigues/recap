@@ -59,7 +59,6 @@ struct LigacoesView: View {
         }
         .task(id: estudo.versao) {
             dados = estudo.ligacoes(aula)
-            estudo.gerarLigacoesSePreciso(aula)
         }
     }
 
