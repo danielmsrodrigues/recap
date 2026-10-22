@@ -77,6 +77,60 @@ struct EstudoTests {
         #expect(throws: ErroLigacoes.self) { try LigacoesAula.daResposta("Não há ligações.", aulas: [:]) }
     }
 
+    @Test func ligacaoTrazAExplicacaoDoOutroLado() throws {
+        let resposta = #"{"ligacoes": [{"aula": "A1", "direcao": "anterior", "conceitos": ["IVA"], "explicacao": "Aqui aprofunda-se.", "explicacao_outra": "Vista por alto; aprofundada na Aula 2."}]}"#
+        let l = try LigacoesAula.daResposta(resposta, aulas: ["A1": "Empresas/aula1"])
+        #expect(l.ligacoes.first?.explicacaoInversa == "Vista por alto; aprofundada na Aula 2.")
+        // `ligacoes.json` de antes, sem a explicação do outro lado.
+        let antigo = #"{"geradoEm": "2026-10-22T07:35:43Z", "ligacoes": [{"aula": "x", "direcao": "anterior", "conceitos": [], "explicacao": "y"}], "temas": []}"#
+        #expect(try Disco.decoder.decode(LigacoesAula.self, from: Data(antigo.utf8)).ligacoes.first?.explicacaoInversa == nil)
+    }
+
+    @Test @MainActor func ligacoesDasOutrasAulasAparecemDoOutroLado() throws {
+        let raiz = FileManager.default.temporaryDirectory.appending(path: "ligacoes-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: raiz) }
+        let library = Library(raiz: raiz)
+        let estudo = Estudo(library: library, definicoes: Definicoes(defaults: UserDefaults(suiteName: "ligacoes-\(UUID().uuidString)")!))
+        let dia: TimeInterval = 86_400
+        let p1 = try library.criarAula(cadeira: "Empresas", titulo: "Aula 1", data: Date(timeIntervalSince1970: dia), video: nil)
+        let p2 = try library.criarAula(cadeira: "Empresas", titulo: "Aula 2", data: Date(timeIntervalSince1970: 8 * dia), video: nil)
+        try Disco.escreverApontamentos("# Aula 1\n\n## Resumo\nEmpresa e fiscalidade por alto.\n", em: p1)
+        try Disco.escreverApontamentos("# Aula 2\n\n## Resumo\nIVA e IRPF.\n\n## Fiscalidade [27:26]\nIVA.\n", em: p2)
+        library.recarregar()
+        let aula1 = try #require(library.aula(em: p1))
+        #expect(estudo.ligacoes(aula1) == nil)
+
+        let caminho1 = Estudo.caminhoRelativo(p1, raiz: raiz)
+        try Disco.escreverLigacoes(LigacoesAula(ligacoes: [
+            .init(aula: caminho1, direcao: .anterior, conceitos: ["fiscalidade"], explicacao: "A Aula 1 apresentou-a; aqui aprofunda-se.",
+                  momento: "27:26", explicacaoInversa: "Aqui vista por alto; a Aula 2 aprofunda-a."),
+        ], temas: []), em: p2)
+        let vistas = try #require(estudo.ligacoes(aula1)).ligacoes
+        #expect(vistas.count == 1)
+        #expect(vistas.first?.aula == Estudo.caminhoRelativo(p2, raiz: raiz))
+        #expect(vistas.first?.direcao == .seguinte)
+        #expect(vistas.first?.explicacao == "Aqui vista por alto; a Aula 2 aprofunda-a.")
+        #expect(vistas.first?.momento == nil)
+
+        // Um link de uma resposta para uma secção da outra aula leva a essa aula.
+        let prefixo = Estudo.prefixoLink(p2)
+        let d = estudo.destino(LigacaoSeccao(ancora: "#\(prefixo)/fiscalidade", texto: "Fiscalidade"), aPartirDe: aula1)
+        #expect(d.pasta.mesmoCaminho(p2))
+        #expect(d.seccao?.ancora == "fiscalidade")
+        #expect(estudo.destino(LigacaoSeccao(ancora: "resumo", texto: ""), aPartirDe: aula1).pasta.mesmoCaminho(p1))
+    }
+
+    @Test func outraAulaNoChatSemTemposNemImagens() {
+        let md = "# Aula 2\n\n## Resumo\nIVA e IRPF.\n\n## Fiscalidad [27:26]\n![Slide 4](slides-pdf/pagina-04.jpg)\nEl IVA [35:41] lo paga el consumidor.\n"
+        let completa = Estudo.aulaParaPerguntas(titulo: "Aula 2", data: .now, anterior: false, prefixo: "2026-10-21-aula-2", apontamentos: md, completa: true)
+        #expect(completa.contains("- [Fiscalidad](#2026-10-21-aula-2/fiscalidad)"))
+        #expect(completa.contains("El IVA lo paga el consumidor."))
+        #expect(!completa.contains("[27:26]") && !completa.contains("pagina-04"))
+        #expect(completa.contains("seguinte>"))
+        let resumo = Estudo.aulaParaPerguntas(titulo: "Aula 2", data: .now, anterior: true, prefixo: "x", apontamentos: md, completa: false)
+        #expect(resumo.contains("<resumo>") && !resumo.contains("consumidor"))
+    }
+
     @Test func perguntasGuardadas() throws {
         let pasta = FileManager.default.temporaryDirectory.appending(path: "perguntas-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: pasta, withIntermediateDirectories: true)

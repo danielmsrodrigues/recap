@@ -7,6 +7,7 @@ final class PipelineRunner {
     private let library: Library
     private let definicoes: Definicoes
     private let fichas: Fichas
+    private let estudo: Estudo
     private let transcriber = Transcriber()
     private let modelos = ModelStore()
     /// Libertação do modelo do Whisper agendada para quando a fila esvazia (cancelada se entrar outro job).
@@ -14,10 +15,11 @@ final class PipelineRunner {
     /// Quanto tempo o modelo fica em memória depois do último job: voltar a carregá-lo custa 5–20 s.
     static let esperaAteLibertar: Duration = .seconds(300)
 
-    init(library: Library, definicoes: Definicoes, fichas: Fichas) {
+    init(library: Library, definicoes: Definicoes, fichas: Fichas, estudo: Estudo) {
         self.library = library
         self.definicoes = definicoes
         self.fichas = fichas
+        self.estudo = estudo
     }
 
     func executar(_ job: Job) async {
@@ -237,6 +239,8 @@ final class PipelineRunner {
         if g.modeloServido != g.modeloPedido { resumo += " · servido por \(g.modeloServido) (fallback)" }
         job.concluir(.apontamentos, detalhe: resumo)
         if sobre != nil { fichas.atualizar(nomeCadeira: aula.cadeira) }
+        // As ligações com as outras aulas da cadeira fazem-se logo, sem ter de as pedir.
+        if let nova = library.aula(em: job.pastaAula) { estudo.gerarLigacoesSePreciso(nova) }
         if g.truncada {
             job.aviso = "Os apontamentos atingiram o limite de \(gerador.maxTokens.formatted()) tokens e ficaram incompletos."
         }

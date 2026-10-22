@@ -73,6 +73,8 @@ struct LigacoesAula: Codable, Sendable {
         var explicacao: String
         /// `mm:ss` da aula atual onde a ligação aparece.
         var momento: String?
+        /// A mesma ligação contada do lado da outra aula, para a mostrar lá (`Estudo.ligacoes`).
+        var explicacaoInversa: String?
     }
 
     struct Tema: Codable, Hashable, Sendable {
@@ -88,7 +90,10 @@ struct LigacoesAula: Codable, Sendable {
 
     /// O JSON que o Claude devolve, com as aulas identificadas por `A1`, `A2`…
     private struct Resposta: Decodable {
-        struct L: Decodable { var aula: String; var direcao: String; var conceitos: [String]?; var explicacao: String; var momento: String? }
+        struct L: Decodable {
+            var aula: String; var direcao: String; var conceitos: [String]?; var explicacao: String; var momento: String?
+            var explicacao_outra: String?
+        }
         struct T: Decodable { var tema: String; var aulas: [String]?; var explicacao: String }
         var ligacoes: [L]?
         var temas_comuns: [T]?
@@ -109,8 +114,10 @@ struct LigacoesAula: Codable, Sendable {
                 ligacoes[i].conceitos += (l.conceitos ?? []).filter { !ligacoes[i].conceitos.contains($0) }
                 ligacoes[i].explicacao += " " + l.explicacao
                 ligacoes[i].momento = ligacoes[i].momento ?? momento
+                if let outra = l.explicacao_outra { ligacoes[i].explicacaoInversa = [ligacoes[i].explicacaoInversa, outra].compactMap { $0 }.joined(separator: " ") }
             } else {
-                ligacoes.append(Ligacao(aula: pasta, direcao: d, conceitos: l.conceitos ?? [], explicacao: l.explicacao, momento: momento))
+                ligacoes.append(Ligacao(aula: pasta, direcao: d, conceitos: l.conceitos ?? [], explicacao: l.explicacao, momento: momento,
+                                        explicacaoInversa: l.explicacao_outra))
             }
         }
         let temas = (r.temas_comuns ?? []).map { Tema(tema: $0.tema, aulas: ($0.aulas ?? []).compactMap { aulas[$0] }, explicacao: $0.explicacao) }
@@ -269,6 +276,9 @@ final class Estudo {
                     blocos.append(.texto("Secções dos apontamentos, já como links para usar nas respostas:\n\n<seccoes>\n\(Seccoes.indice(seccoes))\n</seccoes>"))
                 }
             }
+            if let outras = self.outrasAulasParaPerguntas(aula) {
+                blocos.append(.texto(outras))
+            }
             if !anteriores.isEmpty {
                 let conversa = anteriores.suffix(8).map { "Pergunta: \(Self.pedido($0.pergunta, citacao: $0.citacao?.cortado(300)))\n\nResposta: \($0.resposta)" }
                     .joined(separator: "\n\n---\n\n")
@@ -314,6 +324,16 @@ final class Estudo {
         }
     }
 
+    /// Gera as ligações sem se pedir: quando a aula ainda não as tem ou já não refletem as outras aulas.
+    /// Chamado ao acabar os apontamentos e ao abrir o separador; não repete depois de um erro (fica o botão).
+    func gerarLigacoesSePreciso(_ aula: Aula) {
+        guard aula.temApontamentos, definicoes.faltaParaGerar == nil, emCurso(aula, .ligacoes) == nil, erro(aula, .ligacoes) == nil,
+              !outrasAulas(de: aula).isEmpty,
+              Disco.lerLigacoes(aula.pasta) == nil || ligacoesDesatualizadas(aula)
+        else { return }
+        gerarLigacoes(aula)
+    }
+
     func gerarLigacoes(_ aula: Aula) {
         let outras = outrasAulas(de: aula)
         guard let notas = Disco.lerApontamentos(aula.pasta) else { return }
@@ -336,6 +356,100 @@ final class Estudo {
             let ids = Dictionary(uniqueKeysWithValues: outras.enumerated().map { ("A\($0 + 1)", Self.caminhoRelativo($1.pasta, raiz: raiz)) })
             try Disco.escreverLigacoes(LigacoesAula.daResposta(texto, aulas: ids), em: aula.pasta)
         }
+    }
+
+    /// As ligações da aula para mostrar: as que se geraram nela e as que as outras aulas fizeram com ela, vistas
+    /// do outro lado (a aula 2 diz que aprofunda a aula 1, e a aula 1 mostra que continua na aula 2).
+    /// Quando as duas falam da mesma ligação, fica a desta aula, com os conceitos das duas.
+    func ligacoes(_ aula: Aula) -> LigacoesAula? {
+        let raiz = library.raiz
+        let esta = Self.caminhoRelativo(aula.pasta, raiz: raiz)
+        let propria = Disco.lerLigacoes(aula.pasta)
+        var ligacoes = propria?.ligacoes ?? []
+        for outra in outrasAulas(de: aula) {
+            guard let delas = Disco.lerLigacoes(outra.pasta) else { continue }
+            let caminho = Self.caminhoRelativo(outra.pasta, raiz: raiz)
+            for l in delas.ligacoes where l.aula == esta {
+                let direcao: LigacoesAula.Direcao = l.direcao == .anterior ? .seguinte : .anterior
+                if let i = ligacoes.firstIndex(where: { $0.aula == caminho && $0.direcao == direcao }) {
+                    ligacoes[i].conceitos += l.conceitos.filter { !ligacoes[i].conceitos.contains($0) }
+                } else {
+                    ligacoes.append(.init(aula: caminho, direcao: direcao, conceitos: l.conceitos,
+                                          explicacao: l.explicacaoInversa ?? l.explicacao, momento: nil))
+                }
+            }
+        }
+        guard propria != nil || !ligacoes.isEmpty else { return nil }
+        let ordem = Dictionary(uniqueKeysWithValues: outrasAulas(de: aula).enumerated().map { (Self.caminhoRelativo($1.pasta, raiz: raiz), $0) })
+        ligacoes.sort { (ordem[$0.aula] ?? .max) < (ordem[$1.aula] ?? .max) }
+        return LigacoesAula(ligacoes: ligacoes, temas: propria?.temas ?? [], geradoEm: propria?.geradoEm ?? .distantPast)
+    }
+
+    /// Quanto dos apontamentos das outras aulas vai com cada pergunta (~25 mil tokens). Passando disto,
+    /// as aulas mais afastadas e sem ligação vão só com o resumo e os títulos.
+    nonisolated static let limiteOutrasAulas = 90_000
+
+    /// As outras aulas da cadeira para o chat: primeiro as ligadas a esta, depois as mais próximas no tempo.
+    /// Cada uma com as suas secções já como links (`#<aula>/<secção>`), para a resposta levar à outra aula.
+    private func outrasAulasParaPerguntas(_ aula: Aula) -> String? {
+        let raiz = library.raiz
+        let outras = outrasAulas(de: aula)
+        guard !outras.isEmpty else { return nil }
+        let ligadas = Set((ligacoes(aula)?.ligacoes ?? []).map(\.aula))
+        let distancia = { (o: Aula) in abs(o.meta.data.timeIntervalSince(aula.meta.data)) }
+        let prioridade = outras.sorted {
+            let (a, b) = (ligadas.contains(Self.caminhoRelativo($0.pasta, raiz: raiz)), ligadas.contains(Self.caminhoRelativo($1.pasta, raiz: raiz)))
+            return a != b ? a : distancia($0) < distancia($1)
+        }
+        var sobra = Self.limiteOutrasAulas
+        var completas: Set<URL> = []
+        for o in prioridade {
+            let tamanho = Disco.lerApontamentos(o.pasta)?.count ?? 0
+            if tamanho <= sobra { completas.insert(o.pasta); sobra -= tamanho }
+        }
+        let lista = outras.map { o in
+            let notas = Disco.lerApontamentos(o.pasta) ?? ""
+            return Self.aulaParaPerguntas(titulo: o.meta.titulo, data: o.meta.data, anterior: o.meta.data < aula.meta.data,
+                                          prefixo: Self.prefixoLink(o.pasta), apontamentos: notas, completa: completas.contains(o.pasta))
+        }.joined(separator: "\n\n")
+        return "Outras aulas desta cadeira, por ordem (\(completas.count == outras.count ? "com os apontamentos completos" : "as ligadas a esta e as mais próximas com os apontamentos completos, as outras só com o resumo e os títulos")):\n\n\(lista)"
+    }
+
+    /// Uma outra aula no pedido das perguntas. Sem os [mm:ss] (na conversa levariam ao vídeo desta aula) nem as imagens dos slides.
+    nonisolated static func aulaParaPerguntas(titulo: String, data: Date, anterior: Bool, prefixo: String, apontamentos: String, completa: Bool) -> String {
+        let quando = data.formatted(.dateTime.day().month(.wide).year().locale(Locale(identifier: "pt_PT")))
+        let seccoes = Seccoes.lista(apontamentos).map { s in
+            Seccoes.Seccao(indice: s.indice, nivel: s.nivel, titulo: s.titulo, ancora: "\(prefixo)/\(s.ancora)")
+        }
+        let corpo = (completa ? apontamentos : esqueleto(apontamentos))
+            .components(separatedBy: .newlines).filter { !$0.hasPrefix("![") }.joined(separator: "\n")
+            .replacing(/[ ]?\[(?:\d{1,2}:)?\d{1,3}:\d{2}\]/, with: "")
+        return """
+        <aula titulo="\(titulo)" data="\(quando)" \(anterior ? "anterior" : "seguinte")>
+        <seccoes>
+        \(Seccoes.indice(seccoes))
+        </seccoes>
+        <\(completa ? "apontamentos" : "resumo")>
+        \(corpo.trimmingCharacters(in: .whitespacesAndNewlines))
+        </\(completa ? "apontamentos" : "resumo")>
+        </aula>
+        """
+    }
+
+    /// O início dos links para as secções de outra aula: `[Fiscalidade](#2026-10-21-aula-2/fiscalidade)`.
+    nonisolated static func prefixoLink(_ pasta: URL) -> String { Seccoes.ancora(pasta.lastPathComponent) }
+
+    /// Para onde leva um link numa resposta: uma secção desta aula ou, com `<aula>/`, de outra aula da cadeira.
+    func destino(_ ligacao: LigacaoSeccao, aPartirDe aula: Aula) -> DestinoAula {
+        var ancora = ligacao.ancora.removingPercentEncoding ?? ligacao.ancora
+        if ancora.hasPrefix("#") { ancora.removeFirst() }
+        if let barra = ancora.firstIndex(of: "/") {
+            let prefixo = String(ancora[..<barra])
+            let seccao = LigacaoSeccao(ancora: String(ancora[ancora.index(after: barra)...]), texto: ligacao.texto)
+            let alvo = (library.cadeira(nome: aula.cadeira)?.aulas ?? []).first { Self.prefixoLink($0.pasta) == prefixo }
+            return DestinoAula(pasta: alvo?.pasta ?? aula.pasta, separador: .apontamentos, seccao: seccao)
+        }
+        return DestinoAula(pasta: aula.pasta, separador: .apontamentos, seccao: ligacao)
     }
 
     /// As outras aulas da cadeira com apontamentos, por data.
@@ -438,7 +552,7 @@ final class Estudo {
 
     /// Com `{{contexto}}` e `{{idioma}}` por substituir (`Definicoes.prompt`).
     static let sistemaPerguntas = """
-    Respondes às perguntas de um estudante sobre uma aula universitária que ele assistiu. {{contexto}} Recebes a transcrição automática (em {{idioma}}, com erros do reconhecimento de voz), os slides ou o PDF do professor, e os apontamentos já feitos.
+    Respondes às perguntas de um estudante sobre uma aula universitária que ele assistiu. {{contexto}} Recebes a transcrição automática (em {{idioma}}, com erros do reconhecimento de voz), os slides ou o PDF do professor, e os apontamentos já feitos. Recebes também os apontamentos das outras aulas da mesma cadeira (completos, ou só o resumo e os títulos).
 
     ## Como responder
     - Responde diretamente à pergunta, de forma clara e curta, para quem está a ver a matéria pela primeira vez.
@@ -448,7 +562,9 @@ final class Estudo {
     - Se a pergunta vier com um trecho selecionado (dos apontamentos ou da transcrição), responde sobre esse trecho e situa-o na aula. Num trecho da transcrição, usa o momento indicado para encontrar o contexto.
     - Se a pergunta for sobre um trecho confuso, diz o que o professor disse (podes citar a frase na língua original e traduzi-la) e explica-o.
     - Podes acrescentar explicações que o professor não deu, se forem conhecimento padrão e estiverem certas; põe-nas num bloco `> 💡 **Explicação extra:** ...`.
-    - Se a aula não falar do assunto, diz isso claramente antes de responder com conhecimento geral.
+    - A matéria é muitas vezes dada aos bocados: falada por alto numa aula e aprofundada noutra. Se a pergunta tocar num assunto que outra aula da cadeira também trata, junta o que essa aula diz e diz de que aula vem ("na Aula 2, a professora aprofundou…"), com o link da secção tal como vem na lista dessa aula, ex.: [Fiscalidade](#2026-10-21-aula-2/fiscalidade). Começa pelo que foi dito na aula aberta, se ela falar do assunto.
+    - Os [mm:ss] são só da aula aberta: para outras aulas usa o link da secção, nunca um [mm:ss].
+    - Se nenhuma aula falar do assunto, diz isso claramente antes de responder com conhecimento geral.
     - Nunca inventes o que o professor disse.
     - Sem cabeçalho com a pergunta: começa logo pela resposta.
     - Quando um esquema ajudar a perceber (uma classificação, um processo, as partes de um conceito) ou o estudante o pedir, desenha-o num bloco ```mermaid. Um esquema serve para ver a estrutura de relance, por isso tem de ser simples:
@@ -498,7 +614,7 @@ final class Estudo {
 
     /// Com `{{lingua_apontamentos}}` por substituir (`Definicoes.prompt`).
     static let sistemaLigacoes = """
-    Mostras a um estudante como uma aula se liga às outras aulas da mesma cadeira. Recebes os apontamentos completos da aula atual e, de cada outra aula, o resumo e os temas, com um id (A1, A2…) e a indicação "anterior" ou "seguinte".
+    Mostras a um estudante como uma aula se liga às outras aulas da mesma cadeira. Interessa sobretudo a matéria dada aos bocados: um assunto falado por alto numa aula e aprofundado noutra, ou usado mais à frente. Recebes os apontamentos completos da aula atual e, de cada outra aula, o resumo e os temas, com um id (A1, A2…) e a indicação "anterior" ou "seguinte".
 
     ## O que procurar
     - Só ligações reais entre conteúdos: conceitos que a aula atual usa e que vieram de aulas anteriores, e conceitos da aula atual que são usados ou aprofundados em aulas seguintes.
@@ -511,7 +627,8 @@ final class Estudo {
     {
       "ligacoes": [
         {"aula": "A1", "direcao": "anterior", "conceitos": ["valor próprio", "polinómio característico"],
-         "explicacao": "Uma ou duas frases: o que vem de onde e para que serve aqui.", "momento": "00:17"}
+         "explicacao": "Uma ou duas frases: o que vem de onde e para que serve aqui.",
+         "explicacao_outra": "A mesma ligação contada a quem está a estudar a outra aula.", "momento": "00:17"}
       ],
       "temas_comuns": [
         {"tema": "Descida do gradiente", "aulas": ["A1"], "explicacao": "Uma frase sobre como o tema aparece nas aulas."}
@@ -520,6 +637,7 @@ final class Estudo {
 
     - `direcao`: "anterior" se o conteúdo vem dessa aula para a atual; "seguinte" se a aula atual prepara essa aula.
     - Uma entrada por aula e direção, com todos os conceitos dessa ligação (2 a 5 palavras cada).
+    - `explicacao_outra`: a mesma ligação contada do lado da outra aula, para a mostrar lá (ex.: "Aqui a fiscalidade foi vista por alto; na aula de Formas jurídicas é aprofundada: IVA, IRPF e tabelas."). Refere a aula atual pelo título.
     - `momento`: o mm:ss da aula atual onde a ligação aparece, tirado dos apontamentos, ou null.
     - Listas vazias se não houver ligações.
     - Nas explicações, refere as outras aulas pelo título ("na aula de Autovalores…"), nunca pelo id (A1).

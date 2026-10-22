@@ -240,6 +240,7 @@ private struct EcraInicial: View {
 private struct AulaComPainel: View {
     let aula: Aula
     @Environment(Navegacao.self) private var navegacao
+    @Environment(Estudo.self) private var estudo
     @AppStorage("mostrarEstudo") private var mostrarEstudo = true
     @AppStorage("larguraPerguntas") private var larguraGuardada = 320.0
     /// A largura durante o arrasto; só no fim é gravada (gravar a cada pixel escrevia nas preferências dezenas de vezes por segundo).
@@ -260,7 +261,7 @@ private struct AulaComPainel: View {
                 PainelEstudo(aula: aula) { segundos in
                     navegacao.destino = DestinoAula(pasta: aula.pasta, separador: .transcricao, tempo: segundos)
                 } aoClicarSeccao: { ligacao in
-                    navegacao.destino = DestinoAula(pasta: aula.pasta, separador: .apontamentos, seccao: ligacao)
+                    navegacao.destino = estudo.destino(ligacao, aPartirDe: aula)
                 } aoAbrirAula: { pasta in
                     navegacao.destino = DestinoAula(pasta: pasta, separador: .apontamentos)
                 }
