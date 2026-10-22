@@ -115,10 +115,39 @@ struct LigacoesAula: Codable, Sendable {
         var temas_comuns: [T]?
     }
 
+    /// Com os apontamentos noutra língua, o Claude às vezes traduz também os nomes dos campos ("explicacion",
+    /// "conceptos"…): voltam aos do formato pedido, sem tirar o lugar a um campo certo que também venha.
+    private static let chaves: [String: [String]] = [
+        "aula": ["clase", "lecture", "class"],
+        "direcao": ["direccion", "dirección", "direção", "direction"],
+        "conceitos": ["conceptos", "concepts"],
+        "explicacao": ["explicacion", "explicación", "explicação", "explanation"],
+        "explicacao_outra": ["explicacion_otra", "explicación_otra", "explicação_outra", "explanation_other", "other_explanation"],
+        "pontos": ["puntos", "points"],
+        "seccao": ["seccion", "sección", "secção", "section"],
+        "seccao_outra": ["seccion_otra", "sección_otra", "secção_outra", "section_other", "other_section"],
+        "nota_outra": ["nota_otra", "note_other", "other_note"],
+        "temas_comuns": ["temas_comunes", "common_themes", "common_topics"],
+        "tema": ["theme", "topic"],
+        "aulas": ["clases", "lectures", "classes"],
+        "ligacoes": ["ligaciones", "conexiones", "enlaces", "links", "connections"],
+    ]
+
+    private static func normalizarChaves(_ json: Any) -> Any {
+        if let lista = json as? [Any] { return lista.map(normalizarChaves) }
+        guard var objeto = json as? [String: Any] else { return json }
+        for (certa, variantes) in chaves where objeto[certa] == nil {
+            if let v = variantes.first(where: { objeto[$0] != nil }) { objeto[certa] = objeto[v] }
+        }
+        return objeto.mapValues(normalizarChaves)
+    }
+
     /// Lê a resposta do Claude (tolera texto ou ``` à volta do JSON) e troca os ids pelas pastas.
     static func daResposta(_ texto: String, aulas: [String: String]) throws -> LigacoesAula {
         guard let a = texto.firstIndex(of: "{"), let b = texto.lastIndex(of: "}"), a < b,
-              let r = try? JSONDecoder().decode(Resposta.self, from: Data(texto[a...b].utf8))
+              let json = try? JSONSerialization.jsonObject(with: Data(texto[a...b].utf8)),
+              let dados = try? JSONSerialization.data(withJSONObject: normalizarChaves(json)),
+              let r = try? JSONDecoder().decode(Resposta.self, from: dados)
         else { throw ErroLigacoes.formato }
         var ligacoes: [Ligacao] = []
         for l in r.ligacoes ?? [] {
@@ -727,9 +756,9 @@ final class Estudo {
     - `explicacao_outra`: a mesma ligação contada do lado da outra aula, para a mostrar lá (ex.: "Aqui a fiscalidade foi vista por alto; na aula de Formas jurídicas é aprofundada: IVA, IRPF e tabelas."). Refere a aula atual pelo título.
     - `momento`: o mm:ss da aula atual onde a ligação aparece, tirado dos apontamentos, ou null.
     - `pontos`: as secções onde a ligação se vê, para a app pôr uma nota curta nos apontamentos das duas aulas, por baixo do título da secção. `seccao` é a âncora da secção da aula atual e `seccao_outra` a da outra aula, tal como vêm nas listas de secções; nunca âncoras inventadas. Um ponto por par de secções, só os que interessam a quem estuda (no máximo 3 por ligação): sobretudo um assunto falado por alto numa aula e aprofundado na outra.
-    - `nota` vai para os apontamentos da aula atual e `nota_outra` para os da outra aula. Uma frase curta que diz o que há na outra aula, nomeando-a pelo número ("Aprofundado na Aula 2: IVA, IRPF e tabelas."), sem link (a app junta-o).
+    - `nota` vai para os apontamentos da aula atual e `nota_outra` para os da outra aula. Uma frase curta que diz o que há na outra aula, nomeando-a como no início do seu título ("Clase 2", "Lecture 2"…), sem link (a app junta-o). Toda na língua dos apontamentos, sem palavras do exemplo em português ("aprofundado", "introduzido"…).
     - Listas vazias se não houver ligações.
     - Nas explicações, refere as outras aulas pelo título ("na aula de Autovalores…"), nunca pelo id (A1).
-    - Explicações, conceitos e notas em {{lingua_apontamentos}}. Sem LaTeX nem Markdown: símbolos em Unicode (λ, Σ, ∇, A⁻¹, x²).
+    - Explicações, conceitos e notas em {{lingua_apontamentos}}, mas os nomes dos campos do JSON ficam exatamente como no exemplo, em português ("explicacao", não "explicacion"). Dentro dos textos, usa « » em vez de aspas. Sem LaTeX nem Markdown: símbolos em Unicode (λ, Σ, ∇, A⁻¹, x²).
     """
 }
