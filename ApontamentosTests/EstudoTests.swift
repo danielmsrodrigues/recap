@@ -86,6 +86,17 @@ struct EstudoTests {
         #expect(try Disco.decoder.decode(LigacoesAula.self, from: Data(antigo.utf8)).ligacoes.first?.explicacaoInversa == nil)
     }
 
+    @Test func ligacoesComOsCamposTraduzidos() throws {
+        // Com os apontamentos em espanhol, o Claude chegou a escrever "explicacion" (e as duas, numa ligação).
+        let resposta = ##"{"ligacoes": [{"aula": "A1", "direcao": "seguinte", "conceptos": ["IVA"], "explicacion": "x", "explicacao": "Se profundiza.", "puntos": [{"seccion": "#fiscalidad-basica", "seccao_outra": "#fiscalidad", "nota": "Más en la Clase 2.", "nota_otra": "Visto por encima en la Clase 1."}]}], "temas_comuns": [{"tema": "Tributos", "aulas": ["A1"], "explicacion": "En las dos clases."}]}"##
+        let l = try LigacoesAula.daResposta(resposta, aulas: ["A1": "Empresas/aula2"])
+        #expect(l.ligacoes.first?.explicacao == "Se profundiza.")
+        #expect(l.ligacoes.first?.conceitos == ["IVA"])
+        #expect(l.ligacoes.first?.pontos == [.init(seccao: "#fiscalidad-basica", seccaoOutra: "#fiscalidad", nota: "Más en la Clase 2.",
+                                                   notaOutra: "Visto por encima en la Clase 1.")])
+        #expect(l.temas.first?.explicacao == "En las dos clases.")
+    }
+
     @Test @MainActor func ligacoesDasOutrasAulasAparecemDoOutroLado() throws {
         let raiz = FileManager.default.temporaryDirectory.appending(path: "ligacoes-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: raiz) }
