@@ -172,6 +172,10 @@ struct EstudoTests {
         ], temas: [])
         ligacoes.assinaturas = [c1: NotasLigacoes.assinatura(md1), c2: NotasLigacoes.assinatura(md2)]
         try Disco.escreverLigacoes(ligacoes, em: p2)
+        // Ligações de antes das notas sobre onde resumir: refazem-se uma vez.
+        #expect(estudo.ligacoesDesatualizadas(try #require(library.aula(em: p2))))
+        ligacoes.formato = LigacoesAula.formatoAtual
+        try Disco.escreverLigacoes(ligacoes, em: p2)
 
         estudo.aplicarNotas("Empresas")
         let novo1 = try #require(Disco.lerApontamentos(p1))

@@ -101,6 +101,10 @@ struct LigacoesAula: Codable, Sendable {
     var geradoEm = Date.now
     /// Os apontamentos de cada aula (desta e das outras) quando as ligações se geraram (`NotasLigacoes.assinatura`).
     var assinaturas: [String: String]?
+    /// Como foram pedidas as notas: ligações de um formato anterior refazem-se uma vez (`Estudo.ligacoesDesatualizadas`).
+    var formato: Int?
+    /// 2: as notas dizem onde resumir ("não resumas aqui, explica-se melhor na Aula 2").
+    static let formatoAtual = 2
 
     /// O JSON que o Claude devolve, com as aulas identificadas por `A1`, `A2`…
     private struct Resposta: Decodable {
@@ -405,6 +409,7 @@ final class Estudo {
         } concluir: { texto in
             let ids = Dictionary(uniqueKeysWithValues: outras.enumerated().map { ("A\($0 + 1)", Self.caminhoRelativo($1.pasta, raiz: raiz)) })
             var ligacoes = try LigacoesAula.daResposta(texto, aulas: ids)
+            ligacoes.formato = LigacoesAula.formatoAtual
             ligacoes.assinaturas = Dictionary(uniqueKeysWithValues: ([aula] + outras).compactMap { a in
                 Disco.lerApontamentos(a.pasta).map { (Self.caminhoRelativo(a.pasta, raiz: raiz), NotasLigacoes.assinatura($0)) }
             })
@@ -567,11 +572,11 @@ final class Estudo {
     }
 
     /// As ligações já não refletem os apontamentos: os desta aula ou os de uma aula ligada mudaram (ou ela foi apagada).
-    /// Uma aula nova não conta: ao gerar as suas ligações, elas aparecem também nesta. Ligações de antes das
-    /// assinaturas contam como desatualizadas (não tinham as notas para os apontamentos).
+    /// Uma aula nova não conta: ao gerar as suas ligações, elas aparecem também nesta. Ligações de um formato
+    /// anterior contam como desatualizadas (as notas eram outras, ou não havia).
     func ligacoesDesatualizadas(_ aula: Aula) -> Bool {
         guard let l = Disco.lerLigacoes(aula.pasta) else { return false }
-        guard let assinaturas = l.assinaturas else { return true }
+        guard let assinaturas = l.assinaturas, l.formato == LigacoesAula.formatoAtual else { return true }
         let raiz = library.raiz
         let aulas = Dictionary(([aula] + outrasAulas(de: aula)).map { (Self.caminhoRelativo($0.pasta, raiz: raiz), $0) }) { a, _ in a }
         return Set(l.ligacoes.map(\.aula) + [Self.caminhoRelativo(aula.pasta, raiz: raiz)]).contains { caminho in
@@ -676,6 +681,7 @@ final class Estudo {
     - Se a pergunta for sobre um trecho confuso, diz o que o professor disse (podes citar a frase na língua original e traduzi-la) e explica-o.
     - Podes acrescentar explicações que o professor não deu, se forem conhecimento padrão e estiverem certas; põe-nas num bloco `> 💡 **Explicação extra:** ...`.
     - A matéria é muitas vezes dada aos bocados: falada por alto numa aula e aprofundada noutra. Se a pergunta tocar num assunto que outra aula da cadeira também trata, junta o que essa aula diz e diz de que aula vem ("na Aula 2, a professora aprofundou…"), com o link da secção tal como vem na lista dessa aula, ex.: [Fiscalidade](#2026-10-21-aula-2/fiscalidade). Começa pelo que foi dito na aula aberta, se ela falar do assunto.
+    - Se o estudante estiver a fazer um resumo, diz-lhe que partes desta aula são explicadas melhor noutra (e deve resumi-las lá) e o que vale a pena guardar desta.
     - Os [mm:ss] são só da aula aberta: para outras aulas usa o link da secção, nunca um [mm:ss].
     - Se nenhuma aula falar do assunto, diz isso claramente antes de responder com conhecimento geral.
     - Nunca inventes o que o professor disse.
@@ -743,8 +749,8 @@ final class Estudo {
          "explicacao": "Uma ou duas frases: o que vem de onde e para que serve aqui.",
          "explicacao_outra": "A mesma ligação contada a quem está a estudar a outra aula.", "momento": "00:17",
          "pontos": [{"seccao": "#valores-proprios", "seccao_outra": "#polinomio-caracteristico",
-                     "nota": "Introduzido na Aula 1: como se calcula o polinómio característico.",
-                     "nota_outra": "Usado na Aula 3 para encontrar os valores próprios."}]}
+                     "nota": "Não resumas o cálculo aqui: está explicado melhor na Aula 1, com o exemplo 2×2.",
+                     "nota_outra": "Resume-o aqui: a Aula 3 usa-o para encontrar os valores próprios e não o volta a explicar."}]}
       ],
       "temas_comuns": [
         {"tema": "Descida do gradiente", "aulas": ["A1"], "explicacao": "Uma frase sobre como o tema aparece nas aulas."}
@@ -756,7 +762,11 @@ final class Estudo {
     - `explicacao_outra`: a mesma ligação contada do lado da outra aula, para a mostrar lá (ex.: "Aqui a fiscalidade foi vista por alto; na aula de Formas jurídicas é aprofundada: IVA, IRPF e tabelas."). Refere a aula atual pelo título.
     - `momento`: o mm:ss da aula atual onde a ligação aparece, tirado dos apontamentos, ou null.
     - `pontos`: as secções onde a ligação se vê, para a app pôr uma nota curta nos apontamentos das duas aulas, por baixo do título da secção. `seccao` é a âncora da secção da aula atual e `seccao_outra` a da outra aula, tal como vêm nas listas de secções; nunca âncoras inventadas. Um ponto por par de secções, só os que interessam a quem estuda (no máximo 3 por ligação): sobretudo um assunto falado por alto numa aula e aprofundado na outra.
-    - `nota` vai para os apontamentos da aula atual e `nota_outra` para os da outra aula. Uma frase curta que diz o que há na outra aula, nomeando-a como no início do seu título ("Clase 2", "Lecture 2"…), sem link (a app junta-o). Toda na língua dos apontamentos, sem palavras do exemplo em português ("aprofundado", "introduzido"…).
+    - `nota` vai para os apontamentos da aula atual e `nota_outra` para os da outra aula. O estudante faz resumos em papel a partir dos apontamentos de cada aula, e a nota diz-lhe onde resumir este assunto, para não o resumir duas vezes nem resumir a versão mais fraca:
+      - Na aula que o explica pior (só por alto, ou sem os exemplos): "Não resumas isto aqui: está explicado melhor na Aula 2 (IVA, IRPF e tabelas)." Se esta aula disser alguma coisa que a outra não diz, diz o que vale a pena guardar daqui.
+      - Na aula que o explica melhor: "Resume-o aqui: inclui o que a Aula 1 viu por alto (os três tributos)."
+      - Se cada aula acrescentar coisas diferentes, diz o que fica em cada uma: "Complementa a Aula 1: aqui os tipos de sociedade, lá a definição de empresa."
+    - Uma ou duas frases curtas por nota. A outra aula nomeia-se como no início do seu título ("Clase 2", "Lecture 2"…), sem link (a app junta-o). Toda na língua dos apontamentos: nos exemplos acima só conta a ideia, não as palavras.
     - Listas vazias se não houver ligações.
     - Nas explicações, refere as outras aulas pelo título ("na aula de Autovalores…"), nunca pelo id (A1).
     - Explicações, conceitos e notas em {{lingua_apontamentos}}, mas os nomes dos campos do JSON ficam exatamente como no exemplo, em português ("explicacao", não "explicacion"). Dentro dos textos, usa « » em vez de aspas. Sem LaTeX nem Markdown: símbolos em Unicode (λ, Σ, ∇, A⁻¹, x²).
