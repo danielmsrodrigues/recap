@@ -20,23 +20,25 @@ struct GuiaDaAula: Sendable, Equatable {
     var partes: [Parte]
     var mencionadas: [SeccaoGuia]
 
-    /// Texto da guía num pedido, no máximo (cerca de 15 mil tokens). O que não cabe passa a mencionado.
+    /// Texto da guía num pedido, no máximo (cerca de 15 mil tokens). O que não cabe fica só com o nome e a página.
     static let maxCaracteres = 60_000
 
-    /// As partes pela ordem do índice, até `maxCaracteres`; as mencionadas também pela ordem do índice.
+    /// As partes pela ordem do índice, até `maxCaracteres`: primeiro as remetidas (precisam do texto todo), depois as
+    /// explicadas (só lhes falta o que o professor não disse). As mencionadas também pela ordem do índice.
     /// nil se a aula não tocou nenhuma secção.
     static func montar(_ indice: IndiceGuia, paginas: [String], selecao: SelecaoGuia) -> GuiaDaAula? {
         // Uma secção nas duas listas conta como remetida (como em `SeccoesDaAula`).
         let categorias = Dictionary(selecao.explicadas.map { ($0, Categoria.explicada) } + selecao.remetidas.map { ($0, .remetida) },
                                     uniquingKeysWith: { _, remetida in remetida })
-        var partes: [Parte] = []
+        var partes: [(posicao: Int, parte: Parte)] = []
         var mencionadas = Set(selecao.mencionadas)
         var total = 0
-        for i in categorias.keys.sorted() where indice.seccoes.indices.contains(i) {
+        let ordem = categorias.keys.sorted { (categorias[$0] == .remetida ? 0 : 1, $0) < (categorias[$1] == .remetida ? 0 : 1, $1) }
+        for i in ordem where indice.seccoes.indices.contains(i) {
             let s = indice.seccoes[i]
             let texto = GuiaEstudo.texto(s, indice: indice, paginas: paginas)
             if total + texto.count <= maxCaracteres {
-                partes.append(Parte(seccao: s, categoria: categorias[i]!, texto: texto))
+                partes.append((i, Parte(seccao: s, categoria: categorias[i]!, texto: texto)))
                 mencionadas.remove(i)
                 total += texto.count
             } else {
@@ -45,7 +47,7 @@ struct GuiaDaAula: Sendable, Equatable {
         }
         let outras = mencionadas.sorted().filter { indice.seccoes.indices.contains($0) }.map { indice.seccoes[$0] }
         guard !partes.isEmpty || !outras.isEmpty else { return nil }
-        return GuiaDaAula(partes: partes, mencionadas: outras)
+        return GuiaDaAula(partes: partes.sorted { $0.posicao < $1.posicao }.map(\.parte), mencionadas: outras)
     }
 
     /// As páginas impressas que os apontamentos podem citar: as das partes e as das mencionadas.
@@ -65,7 +67,7 @@ struct GuiaDaAula: Sendable, Equatable {
             }
         }
         if !mencionadas.isEmpty {
-            texto += "\n\nSecções que a aula só mencionou (sem texto: servem só para a referência no fim das caixas 👀):\n"
+            texto += "\n\nOutras secções tocadas pela aula, sem texto (servem só para referências como `→ Guia <secção>, p. N`):\n"
                 + mencionadas.map { "- \($0.id) \($0.titulo) (p. \($0.paginaInicio))" }.joined(separator: "\n")
         }
         return texto

@@ -30,6 +30,23 @@ struct GuiaNoPedidoTests {
         #expect(guia.paginasPermitidas == [1, 2, 3, 4])
     }
 
+    /// Com pouco espaço, a remetida (precisa do texto todo) entra antes das explicadas, e as partes saem pela ordem do índice.
+    @Test func remetidasPrimeiroQuandoNaoCabeTudo() throws {
+        let indice = IndiceGuia(hash: "h", desvio: 0, seccoes: [
+            SeccaoGuia(id: "1", titulo: "A", paginaInicio: 1, paginaFim: 1),
+            SeccaoGuia(id: "2", titulo: "B", paginaInicio: 2, paginaFim: 2),
+            SeccaoGuia(id: "3", titulo: "C", paginaInicio: 3, paginaFim: 3),
+        ])
+        let paginas = ["a", "b", "c"].map { String(repeating: $0, count: 25_000) }
+        let guia = try #require(GuiaDaAula.montar(indice, paginas: paginas,
+                                                  selecao: SelecaoGuia(explicadas: [0, 1], remetidas: [2], mencionadas: [])))
+        #expect(guia.partes.map(\.seccao.id) == ["1", "3"])
+        #expect(guia.partes.map(\.categoria) == [.explicada, .remetida])
+        #expect(guia.mencionadas.map(\.id) == ["2"])
+        #expect(guia.blocoParaPedido().contains("Outras secções tocadas pela aula, sem texto"))
+        #expect(!guia.blocoParaPedido().contains("só mencionou"))
+    }
+
     /// As remetidas entram com a sua categoria, pela ordem do índice; sem nada escolhido não há guía.
     @Test func montarComRemetidasESemNada() throws {
         let indice = IndiceGuia(hash: "h", desvio: 1, seccoes: [remetida, mencionada])
