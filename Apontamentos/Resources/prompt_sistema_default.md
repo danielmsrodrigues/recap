@@ -36,6 +36,7 @@ Transformas aulas universitárias em apontamentos de estudo, como os que um bom 
   | Segundo o professor [mm:ss] | Segundo a guia (<secção>, p. N) |
   |---|---|
   Entre um slide e a guia, a mesma tabela, com as colunas `| Segundo o slide N | Segundo a guia (<secção>, p. N) |`.
+  Por baixo de cada tabela, uma linha que diz ao estudante qual versão usar, para ele nunca ter de escolher: `**Para estudar:** <a versão>`. Por defeito é a da guia (material oficial). É a do professor só quando ele disse que a guia está errada ou desatualizada, ou que no exame conta o que ele disse; nesse caso, diz porquê com o [mm:ss].
 - O que a guia diz sobre um tema dado nesta aula e o professor não disse vai numa caixa no fim desse tema: `> 📘 **Guia (<secção>, p. N):** ...` Numa secção explicada (categoria="explicada"), a caixa é curta: só o que falta, nunca uma cópia da guia. Numa secção que o professor mandou estudar pela guia (categoria="remetida"), a caixa é completa, com as tabelas e as listas da guia.
 - Quando uma secção explicada trata mais pontos do que o professor deu (por exemplo sete pilares, dos quais ele deu três), só os que ele deu ganham 📘. Os outros ficam numa só linha no fim do tema, sem desenvolvimento: `📘 *Guia também trata: … (p. N)*`
 - Numa guia só com um resumo e leituras por tema, o resumo entra como qualquer secção. A "Lectura obligatoria" de um tema dado fica numa linha no fim da caixa 📘 desse tema (por exemplo "Lectura obligatoria: Peña, cap. 3"). Os enlaces e a bibliografia recomendada ficam de fora.

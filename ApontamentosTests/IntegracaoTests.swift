@@ -193,12 +193,36 @@ struct IntegracaoApontamentosTests {
             .deletingLastPathComponent().deletingLastPathComponent().appending(path: "Resources/prompt_sistema_default.md"), encoding: .utf8)
         let gerador = NotesGenerator(motor: .claudeCode(ClaudeCodeClient(executavel: try #require(ClaudeCodeClient.localizar()))),
                                      modelo: "claude-sonnet-5-5", esforco: .high, precos: TabelaPrecos())
-        let r = try await gerador.gerar(ContextoAula(cadeira: "Álgebra Lineal", titulo: "Diagonalización", data: .now, glossario: "", transcricao: transcricao),
-                                        prompt: prompt, aoRecomecar: {}, aoReceber: { _ in }, aoRepetir: { _, _, _ in })
-        if let saida = ProcessInfo.processInfo.environment["APONTAMENTOS_SAIDA"] {
-            try r.markdown.write(toFile: saida, atomically: true, encoding: .utf8)
+        // Com `APONTAMENTOS_GUIA=1`: como na app, com os PDFs do professor, a guía da cadeira (a pasta de cima) e em espanhol.
+        guard ProcessInfo.processInfo.environment["APONTAMENTOS_GUIA"] != nil else {
+            let r = try await gerador.gerar(ContextoAula(cadeira: "Álgebra Lineal", titulo: "Diagonalización", data: .now, glossario: "", transcricao: transcricao),
+                                            prompt: prompt, aoRecomecar: {}, aoReceber: { _ in }, aoRepetir: { _, _, _ in })
+            if let saida = ProcessInfo.processInfo.environment["APONTAMENTOS_SAIDA"] {
+                try r.markdown.write(toFile: saida, atomically: true, encoding: .utf8)
+            }
+            #expect(r.markdown.contains("Em palavras simples"))
+            return
         }
-        #expect(r.markdown.contains("Em palavras simples"))
+        let cadeira = pasta.deletingLastPathComponent()
+        let pdfs = Disco.pdfsProfessor(pasta).compactMap { pdf in (try? Data(contentsOf: pdf.url(em: pasta))).map { PDFComDados(pdf: pdf, dados: $0) } }
+        var ctx = ContextoAula(cadeira: cadeira.lastPathComponent, titulo: "Aula", data: .now, glossario: "", transcricao: transcricao, pdfsProfessor: pdfs)
+        let (indice, paginas) = try #require(GuiaEstudo.carregar(cadeira: cadeira))
+        let selecao = try await SeccoesDaAula.escolher(indice, transcricao: transcricao, gerador: gerador)
+        print("secções: explicadas \(selecao.explicadas.map { indice.seccoes[$0].id }), remetidas \(selecao.remetidas.map { indice.seccoes[$0].id }), mencionadas \(selecao.mencionadas.map { indice.seccoes[$0].id })")
+        ctx.guia = GuiaDaAula.montar(indice, paginas: paginas, selecao: selecao)
+        let guia = try #require(ctx.guia)
+        let r = try await gerador.gerar(ctx, prompt: ContextoCurso.aplicar(prompt, idioma: .espanhol, contexto: "Ciência de Dados e IA", apontamentos: .es),
+                                        aoRecomecar: {}, aoReceber: { _ in }, aoRepetir: { _, _, _ in })
+        var revisor = gerador
+        revisor.esforco = .medium
+        let revisto = try await ExplicacoesExtra.rever(r.markdown, lingua: .es, guia: guia, gerador: revisor)
+        let v = CitacoesGuia.verificar(revisto.markdown, paginas: guia.paginasPermitidas)
+        if let saida = ProcessInfo.processInfo.environment["APONTAMENTOS_SAIDA"] {
+            try v.markdown.write(toFile: saida, atomically: true, encoding: .utf8)
+        }
+        print("páginas por confirmar: \(v.invalidas)")
+        #expect(v.markdown.contains("📘"))
+        #expect(v.invalidas == 0)
     }
 }
 

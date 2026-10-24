@@ -191,10 +191,29 @@ final class PipelineRunner {
 
         // As páginas dos PDFs viram imagens antes do pedido, para os slides poderem entrar nos apontamentos.
         let paginasPDF = await SlidesNosApontamentos.garantirPaginasEmFundo(em: job.pastaAula)
-        let contexto = await ContextoAula.carregar(aula, cadeira: library.cadeira(nome: aula.cadeira), transcricao: transcricao)
+        let cadeira = library.cadeira(nome: aula.cadeira)
+        var contexto = await ContextoAula.carregar(aula, cadeira: cadeira, transcricao: transcricao)
         let prompt = definicoes.promptApontamentos(idioma: IdiomaAula(codigo: transcricao.idioma))
 
         job.iniciar(.apontamentos, detalhe: "A preparar o pedido…")
+
+        // A guía de estudio da cadeira: as secções que esta aula tocou entram no pedido. Se falhar, gera-se sem ela.
+        var avisos: [String] = []
+        if let pasta = cadeira?.pasta, FichaCadeira.temPrograma(pasta) {
+            if let (indice, paginas) = await Task.detached(operation: { GuiaEstudo.carregar(cadeira: pasta) }).value {
+                job.atualizar(.apontamentos, progresso: nil, detalhe: "A escolher as secções da guía…")
+                do {
+                    let selecao = try await SeccoesDaAula.escolher(indice, transcricao: transcricao, gerador: gerador)
+                    contexto.guia = GuiaDaAula.montar(indice, paginas: paginas, selecao: selecao)
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    avisos.append("Não foi possível escolher as secções da guía (\(error.localizedDescription)); os apontamentos saíram sem ela.")
+                }
+            } else {
+                avisos.append("Não consegui ler o índice da guía; os apontamentos saíram sem ela.")
+            }
+        }
         var detalheBase = "A gerar com \(definicoes.modeloClaude) via \(definicoes.motor.nome)"
         if let estimativa = try? await gerador.estimar(contexto, prompt: prompt) {
             detalheBase += " · \(estimativa.tokens.formatted()) tokens de entrada (≈ \(TabelaPrecos.formatar(estimativa.custoEntrada)) + saída)"
@@ -235,14 +254,24 @@ final class PipelineRunner {
         var revisor = gerador
         revisor.esforco = .medium
         do {
-            let r = try await ExplicacoesExtra.rever(semSobre, lingua: definicoes.linguaApontamentos, guia: nil, gerador: revisor)
+            let r = try await ExplicacoesExtra.rever(semSobre, lingua: definicoes.linguaApontamentos, guia: contexto.guia, gerador: revisor)
             semSobre = r.markdown
             geracao.somar(r.geracao)
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            job.aviso = "Não foi possível acrescentar as explicações 💡: \(error.localizedDescription)"
+            avisos.append("Não foi possível acrescentar as explicações 💡: \(error.localizedDescription)")
         }
+
+        // As páginas da guía citadas têm de vir das secções enviadas; as outras ficam "por confirmar".
+        if let guia = contexto.guia {
+            let v = CitacoesGuia.verificar(semSobre, paginas: guia.paginasPermitidas)
+            semSobre = v.markdown
+            if v.invalidas > 0 {
+                avisos.append("\(v.invalidas) páginas da guía citadas não foram enviadas ao Claude: estão marcadas «página por confirmar».")
+            }
+        }
+        job.aviso = avisos.isEmpty ? nil : avisos.joined(separator: " ")
 
         try Disco.guardarCopiaApontamentos(em: job.pastaAula)
         try Disco.escreverApontamentos(semSobre, em: job.pastaAula)

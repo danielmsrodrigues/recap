@@ -95,6 +95,8 @@ struct GuiaNoPedidoTests {
     @Test func rotulos() {
         #expect(RotulosApontamentos.rotulo("Guia", .es) == "Guía")
         #expect(RotulosApontamentos.rotulo("Guia", .en) == "Study guide")
+        #expect(RotulosApontamentos.rotulo("Para estudar", .es) == "Para estudiar")
+        #expect(PromptStore.original.contains("`**Para estudar:** <a versão>`"))
         #expect(RotulosApontamentos.rotulo("Segundo a guia", .es) == "Según la guía")
         #expect(RotulosApontamentos.rotulo("Explicação extra", .es) == "Explicação extra")
     }
