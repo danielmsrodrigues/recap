@@ -30,7 +30,9 @@ enum ExplicacoesExtra {
     - ou só diz onde aparece ou a que pertence, sem dizer o que é;
     - ou explica com palavras técnicas que os apontamentos não explicaram antes.
 
-    Não precisam de explicação: linhas que já explicam bem, exemplos, avisos, frases de contexto, títulos, imagens, as caixas 👀 (o que o professor só mencionou), linhas que já têm 💡, o glossário, as dúvidas e as perguntas de revisão.
+    Não precisam de explicação: linhas que já explicam bem, exemplos, avisos, frases de contexto, títulos, imagens, as caixas 👀 (o que o professor só mencionou), linhas que já têm 💡 ou 📘, o glossário, as dúvidas e as perguntas de revisão. Também não as listas de nomes que o professor só enumerou (áreas, tipos, impostos) quando o nome já diz o que é ("Logística", "Producción").
+
+    Escolhe no máximo 10 linhas: as que mais fazem falta para perceber a matéria. Mais explicações tornam os apontamentos confusos.
 
     Quando recebes secções da guía de estudio da cadeira, procura primeiro aí: se a guía explica o termo, a explicação vem dela (com as palavras dela, resumidas) e diz a página [p. N] onde está. Só quando a guía não o explica usas conhecimento externo.
 
@@ -52,7 +54,7 @@ enum ExplicacoesExtra {
     static func pedido(_ md: String, lingua: LinguaApontamentos, guia: GuiaDaAula?) -> String {
         var texto = "Apontamentos, com o número de cada linha. Escreve as explicações em \(lingua.nomeNoPrompt), a língua destes apontamentos.\n\n<apontamentos>\n\(numeradas(md))\n</apontamentos>"
         if let guia {
-            texto += "\n\n\(guia.blocoParaPedido())\n\nSó usa Ext. quando a guía não explica o termo."
+            texto += "\n\n\(guia.blocoParaPedido())\n\nSó usa Ext. quando a guía não explica o termo. Mesmo quando a explicação vem da guía, escreve-a em \(lingua.nomeNoPrompt)."
         }
         return texto
     }

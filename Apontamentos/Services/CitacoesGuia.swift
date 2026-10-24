@@ -9,7 +9,7 @@ enum CitacoesGuia {
     /// O rótulo da guía (em qualquer língua) até ao primeiro "p. N" ou "p. N–M" antes de fechar o parêntese.
     private static let padrao: NSRegularExpression = {
         let rotulos = RotulosApontamentos.todas("Guia").map(NSRegularExpression.escapedPattern(for:)).joined(separator: "|")
-        return try! NSRegularExpression(pattern: "(?i)(?:\(rotulos))\\b[^)\\n]*?\\bp\\.\\s*(\\d+)(?:\\s*[–-]\\s*(\\d+))?")
+        return try! NSRegularExpression(pattern: "(?i)(?:\(rotulos))\\b[^)\\n]*?\\bpp?\\.\\s*(\\d+)(?:\\s*[–-]\\s*(\\d+))?")
     }()
 
     static func verificar(_ md: String, paginas: Set<Int>) -> (markdown: String, invalidas: Int) {

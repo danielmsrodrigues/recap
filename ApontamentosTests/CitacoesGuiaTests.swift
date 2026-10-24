@@ -16,6 +16,7 @@ struct CitacoesGuiaTests {
 
     @Test func intervalosContamComoValidos() {
         #expect(CitacoesGuia.verificar("(Guía 1.3, p. 7–8)", paginas: [7, 8]).invalidas == 0)
+        #expect(CitacoesGuia.verificar("(Guía 1.3, pp. 7–9)", paginas: [7, 8]).invalidas == 1)
         let r = CitacoesGuia.verificar("(Guía 1.3, p. 7–9)", paginas: [7, 8])
         #expect(r.invalidas == 1)
         #expect(r.markdown == "(Guía 1.3, p. 7–9, página por confirmar)")

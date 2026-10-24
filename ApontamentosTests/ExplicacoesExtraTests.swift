@@ -105,11 +105,13 @@ struct ExplicacoesExtraTests {
         let p = ExplicacoesExtra.pedido("- **A:** b.", lingua: .es, guia: guia)
         #expect(p.contains("<seccao id=\"5.1\""))
         #expect(p.contains("Só usa Ext. quando a guía não explica"))
+        #expect(p.hasSuffix("escreve-a em espanhol de Espanha."))
     }
 
     @Test func promptPedeSoAsLinhasVagas() {
         #expect(ExplicacoesExtra.sistema.contains("repete a palavra do termo"))
         #expect(ExplicacoesExtra.sistema.contains("👀"))
+        #expect(ExplicacoesExtra.sistema.contains("no máximo 10 linhas"))
     }
 }
 
