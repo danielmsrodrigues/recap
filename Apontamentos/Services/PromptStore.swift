@@ -30,6 +30,7 @@ enum PromptStore {
         "24fb55da1c76dacc4b0c7bfa9ff2b35db6be5a99e7a15a32701a966ecd3baaac",
         "468f26682049875b9b9020d4f6f67fe5e86005e97276d7f245246066916806e5",
         "22a06c776110762338c24feaf2e2da62db24ebc66c4b63f19588f51277b409ef",
+        "613b53d22fdbd2768520f4d77fa21de206d9d967c7fa46c9f766318c459a3fe1",
     ]
 
     static func ler() -> String {

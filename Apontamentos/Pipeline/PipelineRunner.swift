@@ -225,16 +225,34 @@ final class PipelineRunner {
         }
 
         // O que a aula disse sobre a cadeira vai para a ficha da cadeira, não fica nos apontamentos.
-        let (semSobre, sobre) = FichaCadeira.separar(markdown)
+        let separado = FichaCadeira.separar(markdown)
+        var semSobre = separado.0
+        let sobre = separado.1
+
+        // Segundo passo: o que o professor deixou vago ganha uma 💡 na mesma linha. Se falhar, ficam os apontamentos sem elas.
+        var geracao = resultado.geracao
+        job.atualizar(.apontamentos, progresso: nil, detalhe: "A acrescentar explicações 💡…")
+        var revisor = gerador
+        revisor.esforco = .medium
+        do {
+            let r = try await ExplicacoesExtra.rever(semSobre, lingua: definicoes.linguaApontamentos, gerador: revisor)
+            semSobre = r.markdown
+            geracao.somar(r.geracao)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            job.aviso = "Não foi possível acrescentar as explicações 💡: \(error.localizedDescription)"
+        }
+
         try Disco.guardarCopiaApontamentos(em: job.pastaAula)
         try Disco.escreverApontamentos(semSobre, em: job.pastaAula)
         try FichaCadeira.escreverExcerto(sobre, em: job.pastaAula)
         try library.atualizarMeta(em: job.pastaAula) {
-            $0.geracoes.append(resultado.geracao)
+            $0.geracoes.append(geracao)
             if let titulo { $0.titulo = titulo }
         }
 
-        let g = resultado.geracao
+        let g = geracao
         var resumo = g.resumo
         if g.modeloServido != g.modeloPedido { resumo += " · servido por \(g.modeloServido) (fallback)" }
         job.concluir(.apontamentos, detalhe: resumo)

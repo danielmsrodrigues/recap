@@ -269,6 +269,11 @@ struct PromptStoreTests {
         #expect(!PromptStore.original.contains("mesmo que o professor o tenha só lido ou passado depressa"))
         #expect(RotulosApontamentos.rotulo("Só mencionado", .es) == "Solo mencionado")
     }
+
+    /// Quando o professor explica um termo só com o próprio termo, o Claude diz o que quer dizer, marcado com 💡 na mesma linha.
+    @Test func explicaOQueOProfessorDeixouVago() {
+        #expect(PromptStore.original.contains("- **<termo>:** <o que o professor disse>. 💡 *<o que quer dizer na prática>*"))
+    }
 }
 
 /// Separação por vozes com o modelo real (descarrega ~30 MB). Só com `APONTAMENTOS_VOZES=<pasta com professor.aiff e aluno.aiff>`.
