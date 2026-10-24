@@ -704,6 +704,7 @@ final class Estudo {
     ## Exercícios
     - 6 a 8 exercícios parecidos com os exemplos e exercícios da aula, com os mesmos métodos e notação, por ordem crescente de dificuldade.
     - Só matéria dada nesta aula: nada de métodos, teoremas ou conceitos que não apareceram.
+    - O que está nos blocos `👀` dos apontamentos foi só mencionado, não dado: nada de exercícios sobre isso.
     - Números diferentes dos da aula, escolhidos para as contas darem resultados limpos. Confirma cada resultado antes de o escrever.
     - Alíneas a), b)… numa lista, uma por linha.
     - Se a aula não tiver matéria que dê para exercícios de cálculo (por exemplo, uma aula só de apresentação), faz perguntas de compreensão sobre o que foi dado.

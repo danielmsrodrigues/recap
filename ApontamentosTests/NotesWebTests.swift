@@ -41,6 +41,16 @@ struct NotesWebTests {
         #expect(n == 2)
     }
 
+    /// O que o professor só mencionou fica numa caixa à parte, em qualquer língua dos apontamentos.
+    @Test func caixaSoMencionado() async throws {
+        let pagina = try await Pagina.carregar()
+        try await pagina.render("> 👀 **Solo mencionado:** estructura matricial.\n\n> ⚠️ **Error común:** al revés.")
+        let r = try await pagina.web.evaluateJavaScript("""
+            [...document.querySelectorAll('blockquote')].map(q => q.className)
+            """) as? [String]
+        #expect(r == ["mencionado", "erro-comum"])
+    }
+
     /// A mesma fórmula renderiza uma vez (cache do KaTeX) e dá o mesmo HTML nas duas.
     @Test func formulasRepetidasSaemIguais() async throws {
         let pagina = try await Pagina.carregar()
