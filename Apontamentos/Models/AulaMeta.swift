@@ -27,6 +27,18 @@ struct Geracao: Codable, Hashable, Sendable, Identifiable {
 
     var viaClaudeCode: Bool { motor == "claude-code" }
 
+    /// Junta a esta geração um pedido feito a seguir sobre os mesmos apontamentos (as explicações 💡).
+    mutating func somar(_ outra: Geracao) {
+        inputTokens += outra.inputTokens
+        outputTokens += outra.outputTokens
+        cacheReadTokens += outra.cacheReadTokens
+        cacheWriteTokens += outra.cacheWriteTokens
+        custoUSD += outra.custoUSD
+        if let c = outra.custoEquivalenteAPI { custoEquivalenteAPI = (custoEquivalenteAPI ?? 0) + c }
+        usoSubscricao5h = outra.usoSubscricao5h ?? usoSubscricao5h
+        data = outra.data
+    }
+
     /// "subscrição · 12 400 + 6 100 tokens · 5 h: 23 %" ou "$0,31 (12 400 + 6 100 tokens)".
     var resumo: String {
         let tokens = "\(inputTokens.formatted()) + \(outputTokens.formatted()) tokens"
