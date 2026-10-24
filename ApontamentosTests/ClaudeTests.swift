@@ -157,6 +157,22 @@ struct ClaudeCodeTests {
         #expect(g.resumo.hasPrefix("subscrição"))
         #expect(g.resumo.contains("23"))
     }
+
+    /// O subtítulo da aula diz quando foram gerados os últimos apontamentos.
+    @Test func quandoForamGeradosOsApontamentos() throws {
+        var meta = AulaMeta(titulo: "T", data: .now, video: nil)
+        #expect(meta.quandoGerados == nil)
+        let antes = try #require(Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 14, hour: 19, minute: 30)))
+        let depois = try #require(Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 24, hour: 14, minute: 7)))
+        for d in [antes, depois] {
+            meta.geracoes.append(Geracao(data: d, modeloPedido: "m", modeloServido: "m", inputTokens: 0, outputTokens: 0,
+                                         cacheReadTokens: 0, cacheWriteTokens: 0, custoUSD: 0, truncada: false))
+        }
+        let texto = try #require(meta.quandoGerados)
+        #expect(texto.hasPrefix("Apontamentos de 24"))
+        #expect(texto.contains("2026"))
+        #expect(texto.contains("14:07"))
+    }
 }
 
 struct PDFProfessorTests {
