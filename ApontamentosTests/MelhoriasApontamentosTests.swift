@@ -260,6 +260,13 @@ struct PromptStoreTests {
         #expect(PromptStore.original.contains("nunca entra, mesmo que o professor concorde"))
         #expect(!PromptStore.original.contains("validado em aula"))
     }
+
+    /// O espaço de cada tema segue o que o professor explicou: o que só mencionou fica numa linha, não numa secção.
+    @Test func oQueSoFoiMencionadoFicaNumaLinha() {
+        #expect(PromptStore.original.contains("*Só mencionado:*"))
+        #expect(!PromptStore.original.contains("mesmo que o professor o tenha só lido ou passado depressa"))
+        #expect(RotulosApontamentos.rotulo("Só mencionado", .es) == "Solo mencionado")
+    }
 }
 
 /// Separação por vozes com o modelo real (descarrega ~30 MB). Só com `APONTAMENTOS_VOZES=<pasta com professor.aiff e aluno.aiff>`.
