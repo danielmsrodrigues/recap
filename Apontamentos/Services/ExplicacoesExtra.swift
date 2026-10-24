@@ -1,7 +1,8 @@
 import Foundation
 
 /// O segundo passo dos apontamentos: o Claude relê-os só para encontrar os termos que ficaram sem explicação
-/// ("Estratégico: donde se formulan las estrategias") e a app acrescenta-lhe, na mesma linha, `💡 *o que quer dizer*`.
+/// ("Estratégico: donde se formulan las estrategias") e a app acrescenta-lhe, na mesma linha, o que quer dizer:
+/// `📘 *Guía (p. N): …*` quando a guía de estudio o explica, `💡 *Ext.: …*` quando é conhecimento externo.
 /// Ao gerar os apontamentos esta regra perde-se entre as outras; um pedido só com ela cumpre-a. Nunca apaga nem
 /// reescreve texto: só acrescenta ao fim de linhas que já existem.
 enum ExplicacoesExtra {
@@ -9,6 +10,14 @@ enum ExplicacoesExtra {
         /// Número da linha nos apontamentos, a contar de 1 (o "L" de `numeradas`).
         var linha: Int
         var explicacao: String
+        var fonte: Fonte = .ext
+    }
+
+    enum Fonte: Equatable, Sendable {
+        /// Conhecimento externo: nem a aula nem a guía o explicam.
+        case ext
+        /// Tirado da guía de estudio, com a página impressa quando o Claude a deu.
+        case guia(pagina: Int?)
     }
 
     static let sistema = """
@@ -23,13 +32,15 @@ enum ExplicacoesExtra {
 
     Não precisam de explicação: linhas que já explicam bem, exemplos, avisos, frases de contexto, títulos, imagens, as caixas 👀 (o que o professor só mencionou), linhas que já têm 💡, o glossário, as dúvidas e as perguntas de revisão.
 
+    Quando recebes secções da guía de estudio da cadeira, procura primeiro aí: se a guía explica o termo, a explicação vem dela (com as palavras dela, resumidas) e diz a página [p. N] onde está. Só quando a guía não o explica usas conhecimento externo.
+
     Cada explicação:
     - uma ou duas frases curtas, na língua dos apontamentos;
     - diz o que o termo é e o que faz na prática, com um exemplo do dia a dia se ajudar;
     - conhecimento padrão e certo, coerente com o que os apontamentos dizem; nada de matéria nova (teoremas, métodos, exercícios);
     - não repete o que a linha já diz.
 
-    Responde só com JSON: uma lista com um objeto por linha, com as chaves "linha" (o número L da linha) e "explicacao" (só o texto, sem 💡 nem asteriscos). Se nenhuma linha precisar, responde [].
+    Responde só com JSON: uma lista com um objeto por linha, com as chaves "linha" (o número L da linha), "fonte" ("guia" ou "ext"), "pagina" (a página da guía, só quando a fonte é "guia") e "explicacao" (só o texto, sem 💡, 📘, "Ext." nem asteriscos). Se nenhuma linha precisar, responde [].
     """
 
     /// Os apontamentos com o número de cada linha à frente ("L12: …"), para o Claude responder com o número.
@@ -38,18 +49,22 @@ enum ExplicacoesExtra {
     }
 
     /// A mensagem com os apontamentos numerados. As instruções estão em português: a língua das explicações vai aqui.
-    static func pedido(_ md: String, lingua: LinguaApontamentos) -> String {
-        "Apontamentos, com o número de cada linha. Escreve as explicações em \(lingua.nomeNoPrompt), a língua destes apontamentos.\n\n<apontamentos>\n\(numeradas(md))\n</apontamentos>"
+    static func pedido(_ md: String, lingua: LinguaApontamentos, guia: GuiaDaAula?) -> String {
+        var texto = "Apontamentos, com o número de cada linha. Escreve as explicações em \(lingua.nomeNoPrompt), a língua destes apontamentos.\n\n<apontamentos>\n\(numeradas(md))\n</apontamentos>"
+        if let guia {
+            texto += "\n\n\(guia.blocoParaPedido())\n\nSó usa Ext. quando a guía não explica o termo."
+        }
+        return texto
     }
 
     /// Pede as explicações ao Claude e põe-nas nos apontamentos.
-    static func rever(_ md: String, lingua: LinguaApontamentos, gerador: NotesGenerator,
+    static func rever(_ md: String, lingua: LinguaApontamentos, guia: GuiaDaAula?, gerador: NotesGenerator,
                       aoRepetir: (Int, Double, ErroClaude) -> Void = { _, _, _ in }) async throws -> ResultadoApontamentos {
         var g = gerador
         g.maxTokens = 8_000
-        let r = try await g.gerar(sistema: sistema, conteudo: [.texto(pedido(md, lingua: lingua))],
+        let r = try await g.gerar(sistema: sistema, conteudo: [.texto(pedido(md, lingua: lingua, guia: guia))],
                                   aoRecomecar: {}, aoReceber: { _ in }, aoRepetir: aoRepetir)
-        return ResultadoApontamentos(markdown: aplicar(daResposta(r.markdown), em: md), geracao: r.geracao)
+        return ResultadoApontamentos(markdown: aplicar(daResposta(r.markdown), em: md, lingua: lingua), geracao: r.geracao)
     }
 
     /// Lê a resposta (tolera ``` à volta e as chaves traduzidas). O que não se perceber fica de fora.
@@ -59,16 +74,22 @@ enum ExplicacoesExtra {
         else { return [] }
         return lista.compactMap { objeto in
             // A chave do número e a do texto, em qualquer língua: o número é o valor que se lê como inteiro.
+            // "fonte" e "pagina" têm nomes fixos e leem-se primeiro; o resto, pelo valor.
+            var fonte = Fonte.ext
+            if (objeto["fonte"] as? String)?.lowercased().hasPrefix("gu") == true {
+                let pagina = objeto["pagina"].flatMap { ($0 as? Int) ?? ($0 as? String).flatMap(numero) }
+                fonte = .guia(pagina: pagina)
+            }
             var linha: Int?
             var explicacao: String?
-            for (_, valor) in objeto.sorted(by: { $0.key < $1.key }) {
+            for (chave, valor) in objeto.sorted(by: { $0.key < $1.key }) where chave != "fonte" && chave != "pagina" {
                 if let n = valor as? Int { linha = linha ?? n }
                 else if let s = valor as? String {
                     if let n = numero(s) { linha = linha ?? n } else { explicacao = explicacao ?? s }
                 }
             }
             guard let linha, let texto = explicacao.map(limpar), !texto.isEmpty else { return nil }
-            return Explicacao(linha: linha, explicacao: texto)
+            return Explicacao(linha: linha, explicacao: texto, fonte: fonte)
         }
     }
 
@@ -82,14 +103,16 @@ enum ExplicacoesExtra {
     private static func limpar(_ s: String) -> String {
         var t = s.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }.joined(separator: " ")
-        if t.hasPrefix("💡") { t.removeFirst() }
+        if t.hasPrefix("💡") || t.hasPrefix("📘") { t.removeFirst() }
+        t = t.trimmingCharacters(in: CharacterSet(charactersIn: "* ").union(.whitespaces))
+        if t.hasPrefix("Ext.:") { t = String(t.dropFirst(5)) }
         return t.trimmingCharacters(in: CharacterSet(charactersIn: "* ").union(.whitespaces))
     }
 
     /// Os apontamentos com cada explicação no fim da sua linha (numa tabela, dentro da última célula).
-    /// Títulos, imagens, fórmulas, código, caixas 👀 e 🔗, linhas que já têm 💡, cabeçalhos de tabelas e tudo o que
+    /// Títulos, imagens, fórmulas, código, caixas 👀 e 🔗, linhas que já têm 💡 ou 📘, cabeçalhos de tabelas e tudo o que
     /// vem a partir do glossário, das dúvidas ou das perguntas de revisão ficam como estão.
-    static func aplicar(_ itens: [Explicacao], em md: String) -> String {
+    static func aplicar(_ itens: [Explicacao], em md: String, lingua: LinguaApontamentos) -> String {
         var linhas = md.components(separatedBy: "\n")
         let fim = linhas.firstIndex(where: seccaoFinal) ?? linhas.count
         var dentroDeCodigo = Set<Int>()
@@ -106,7 +129,13 @@ enum ExplicacoesExtra {
             guard pode(linhas[i], seguinte: seguinte) else { continue }
             var base = linhas[i]
             while base.last?.isWhitespace == true { base.removeLast() }
-            let nota = "💡 *\(item.explicacao)*"
+            let nota: String
+            switch item.fonte {
+            case .ext: nota = "💡 *Ext.: \(item.explicacao)*"
+            case .guia(let pagina):
+                let rotulo = RotulosApontamentos.rotulo("Guia", lingua) + (pagina.map { " (p. \($0))" } ?? "")
+                nota = "📘 *\(rotulo): \(item.explicacao)*"
+            }
             if base.hasPrefix("|"), base.hasSuffix("|") {
                 base.removeLast()
                 while base.last?.isWhitespace == true { base.removeLast() }
@@ -121,7 +150,7 @@ enum ExplicacoesExtra {
 
     private static func pode(_ linha: String, seguinte: String) -> Bool {
         let t = linha.trimmingCharacters(in: .whitespaces)
-        if t.isEmpty || t.hasPrefix("#") || t.hasPrefix("![") || t.hasPrefix("$$") || t.contains("💡") || t.contains("👀") { return false }
+        if t.isEmpty || t.hasPrefix("#") || t.hasPrefix("![") || t.hasPrefix("$$") || t.contains("💡") || t.contains("📘") || t.contains("👀") { return false }
         if t.hasPrefix(NotasLigacoes.marca.trimmingCharacters(in: .whitespaces)) { return false }
         if separadorDeTabela(t) || (t.hasPrefix("|") && separadorDeTabela(seguinte.trimmingCharacters(in: .whitespaces))) { return false }
         return true

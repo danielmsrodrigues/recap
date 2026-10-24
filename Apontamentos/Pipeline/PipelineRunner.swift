@@ -235,7 +235,7 @@ final class PipelineRunner {
         var revisor = gerador
         revisor.esforco = .medium
         do {
-            let r = try await ExplicacoesExtra.rever(semSobre, lingua: definicoes.linguaApontamentos, gerador: revisor)
+            let r = try await ExplicacoesExtra.rever(semSobre, lingua: definicoes.linguaApontamentos, guia: nil, gerador: revisor)
             semSobre = r.markdown
             geracao.somar(r.geracao)
         } catch is CancellationError {
