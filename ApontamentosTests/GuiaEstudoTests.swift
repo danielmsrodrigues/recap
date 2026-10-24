@@ -50,6 +50,22 @@ struct GuiaEstudoTests {
         #expect(i.seccoes.last?.paginaFim == 65)                  // última página impressa (66 − 1)
     }
 
+    /// Índice sem pontinhos e com números de um só nível (guía de Cálculo, como o PDFKit a lê).
+    @Test func indiceSemPontos() throws {
+        var paginas = Array(repeating: "", count: 30)
+        paginas[4] = "C´alculo\n´\nIndice general\n1. N´umeros racionales, reales y complejos 9\n2. Funciones 13\n3. L´ımites, continuidad y c´alculo diferencial 17\nGu´ıa de Estudio 5"
+        paginas[9] = "1. N´umeros racionales, reales y complejos\ntexto"
+        paginas[13] = "2. Funciones\ntexto"
+        let i = try #require(GuiaEstudo.indice(paginas: paginas, hash: "h"))
+        #expect(i.seccoes.map(\.id) == ["1", "2", "3"])
+        #expect(i.seccoes[0].titulo == "N´umeros racionales, reales y complejos")
+        #expect(i.desvio == 1)
+        // Fora de uma página de índice, uma linha "1. Algo 9" não conta.
+        var semIndice = paginas
+        semIndice[4] = semIndice[4].replacingOccurrences(of: "Indice general", with: "Capítulo")
+        #expect(GuiaEstudo.indice(paginas: semIndice, hash: "h") == nil)
+    }
+
     @Test func semIndiceDevolveNil() {
         #expect(GuiaEstudo.indice(paginas: ["", "texto sem índice"], hash: "h") == nil)
     }

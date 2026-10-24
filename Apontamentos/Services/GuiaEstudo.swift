@@ -31,6 +31,11 @@ enum GuiaEstudo {
         /^\s*(?:Tema\s+(\d+)|(\d+(?:\.\d+)+))\.?\s+(.+?)\s*\.{3,}\s*(\d+)\s*$/
     }
 
+    // Sem pontinhos, só numa página de índice: "3. Límites, continuidad y cálculo diferencial 17".
+    private static var linhaSemPontos: Regex<(Substring, Substring, Substring, Substring)> {
+        /^\s*(\d+(?:\.\d+)*)\.?\s+(.+?)\s+(\d+)\s*$/
+    }
+
     /// O texto de cada página, por ordem.
     static func paginas(_ pdf: PDFDocument) -> [String] {
         (0..<pdf.pageCount).map { pdf.page(at: $0)?.string ?? "" }
@@ -42,9 +47,13 @@ enum GuiaEstudo {
         var seccoes: [SeccaoGuia] = []
         var ultimaDoIndice = -1
         for (i, texto) in paginas.prefix(paginasDoIndice).enumerated() {
+            let paginaDeIndice = texto.range(of: "ndice", options: .caseInsensitive) != nil
             for l in texto.components(separatedBy: .newlines) {
-                guard let m = try? linha.wholeMatch(in: l), let inicio = Int(m.4) else { continue }
-                seccoes.append(SeccaoGuia(id: String(m.1 ?? m.2 ?? ""), titulo: String(m.3), paginaInicio: inicio, paginaFim: inicio))
+                if let m = try? linha.wholeMatch(in: l), let inicio = Int(m.4) {
+                    seccoes.append(SeccaoGuia(id: String(m.1 ?? m.2 ?? ""), titulo: String(m.3), paginaInicio: inicio, paginaFim: inicio))
+                } else if paginaDeIndice, let m = try? linhaSemPontos.wholeMatch(in: l), let inicio = Int(m.3) {
+                    seccoes.append(SeccaoGuia(id: String(m.1), titulo: String(m.2), paginaInicio: inicio, paginaFim: inicio))
+                } else { continue }
                 ultimaDoIndice = i
             }
         }
