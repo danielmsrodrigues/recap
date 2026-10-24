@@ -42,7 +42,7 @@ struct FichaCadeiraView: View {
                 } description: {
                     Text("A apresentação, a avaliação, as datas e os avisos que o professor der nas aulas juntam-se aqui, numa só ficha que vai crescendo de aula para aula. Para começar já com o essencial, junta o programa da cadeira.")
                 } actions: {
-                    Button("Juntar o programa (PDF)…") { escolherPrograma = true }
+                    Button("Juntar a guía de estudio (PDF)…") { escolherPrograma = true }
                         .disabled(fichas.aAtualizar(cadeira) != nil)
                 }
             }
@@ -51,14 +51,14 @@ struct FichaCadeiraView: View {
         .navigationSubtitle(cadeira.nome)
         .toolbar {
             ToolbarItemGroup {
-                Menu("Programa", systemImage: "doc.text") {
+                Menu("Guía de estudio", systemImage: "doc.text") {
                     if temPrograma {
-                        Button("Abrir o programa") { NSWorkspace.shared.open(FichaCadeira.urlPrograma(cadeira.pasta)) }
-                        Button("Trocar o programa…") { escolherPrograma = true }
+                        Button("Abrir a guía") { NSWorkspace.shared.open(FichaCadeira.urlPrograma(cadeira.pasta)) }
+                        Button("Trocar a guía…") { escolherPrograma = true }
                         Divider()
-                        Button("Remover o programa", role: .destructive) { removerPrograma() }
+                        Button("Remover a guía", role: .destructive) { removerPrograma() }
                     } else {
-                        Button("Juntar o programa (PDF)…") { escolherPrograma = true }
+                        Button("Juntar a guía de estudio (PDF)…") { escolherPrograma = true }
                     }
                 }
                 .labelStyle(.titleAndIcon)
