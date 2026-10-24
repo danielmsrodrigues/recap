@@ -189,6 +189,7 @@ struct AulaDetailView: View {
     private var subtitulo: String {
         var partes = [aula.cadeira, aula.meta.data.formatted(date: .long, time: .omitted)]
         if let d = aula.meta.duracao { partes.append(Timestamp.duracao(d)) }
+        if let gerados = aula.meta.quandoGerados { partes.append(gerados) }
         return partes.joined(separator: " · ")
     }
 

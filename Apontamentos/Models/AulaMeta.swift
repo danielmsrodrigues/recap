@@ -78,6 +78,12 @@ struct AulaMeta: Codable, Hashable, Sendable {
         self.revista = false
     }
 
+    /// "Apontamentos de 24/10/2026, 14:07", para o subtítulo da aula. nil se nunca foram gerados.
+    var quandoGerados: String? {
+        guard let d = geracoes.last?.data else { return nil }
+        return "Apontamentos de " + d.formatted(.dateTime.day().month(.twoDigits).year().hour().minute().locale(Locale(identifier: "pt_PT")))
+    }
+
     /// Há alterações à mão feitas depois da última geração (perdem-se ao regenerar, salvo a cópia de segurança).
     var temEdicoesManuais: Bool {
         guard let editadoEm else { return false }
