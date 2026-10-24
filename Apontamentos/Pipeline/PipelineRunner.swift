@@ -199,12 +199,17 @@ final class PipelineRunner {
 
         // A guía de estudio da cadeira: as secções que esta aula tocou entram no pedido. Se falhar, gera-se sem ela.
         var avisos: [String] = []
+        var geracaoSelecao: Geracao?
         if let pasta = cadeira?.pasta, FichaCadeira.temPrograma(pasta) {
             if let (indice, paginas) = await Task.detached(operation: { GuiaEstudo.carregar(cadeira: pasta) }).value {
                 job.atualizar(.apontamentos, progresso: nil, detalhe: "A escolher as secções da guía…")
                 do {
-                    let selecao = try await SeccoesDaAula.escolher(indice, transcricao: transcricao, gerador: gerador)
-                    contexto.guia = GuiaDaAula.montar(indice, paginas: paginas, selecao: selecao)
+                    let r = try await SeccoesDaAula.escolher(indice, transcricao: transcricao, gerador: gerador)
+                    geracaoSelecao = r.geracao
+                    contexto.guia = GuiaDaAula.montar(indice, paginas: paginas, selecao: r.selecao)
+                    if let semEspaco = contexto.guia?.semEspaco, !semEspaco.isEmpty {
+                        avisos.append("Secções da guía que não couberam no pedido (só com a referência): \(semEspaco.map(\.id).joined(separator: ", ")).")
+                    }
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
@@ -250,6 +255,7 @@ final class PipelineRunner {
 
         // Segundo passo: o que o professor deixou vago ganha uma 💡 na mesma linha. Se falhar, ficam os apontamentos sem elas.
         var geracao = resultado.geracao
+        if let geracaoSelecao { geracao.somar(geracaoSelecao) }
         job.atualizar(.apontamentos, progresso: nil, detalhe: "A acrescentar explicações 💡…")
         var revisor = gerador
         revisor.esforco = .medium
@@ -265,13 +271,18 @@ final class PipelineRunner {
 
         // As páginas da guía citadas têm de vir das secções enviadas; as outras ficam "por confirmar".
         if let guia = contexto.guia {
-            let v = CitacoesGuia.verificar(semSobre, paginas: guia.paginasPermitidas)
+            let v = CitacoesGuia.verificar(semSobre, paginas: guia.paginasPermitidas, seccoes: guia.idsPermitidos)
             semSobre = v.markdown
             if v.invalidas > 0 {
                 avisos.append("\(v.invalidas) páginas da guía citadas não foram enviadas ao Claude: estão marcadas «página por confirmar».")
             }
         }
+        if resultado.geracao.truncada {
+            avisos.append("Os apontamentos atingiram o limite de \(gerador.maxTokens.formatted()) tokens e ficaram incompletos.")
+        }
         job.aviso = avisos.isEmpty ? nil : avisos.joined(separator: " ")
+
+        try Task.checkCancellation()
 
         try Disco.guardarCopiaApontamentos(em: job.pastaAula)
         try Disco.escreverApontamentos(semSobre, em: job.pastaAula)
@@ -288,9 +299,6 @@ final class PipelineRunner {
         if sobre != nil { fichas.atualizar(nomeCadeira: aula.cadeira) }
         // As ligações com as outras aulas da cadeira fazem-se logo, sem ter de as pedir.
         if let nova = library.aula(em: job.pastaAula) { estudo.aposApontamentos(nova) }
-        if g.truncada {
-            job.aviso = "Os apontamentos atingiram o limite de \(gerador.maxTokens.formatted()) tokens e ficaram incompletos."
-        }
         job.textoEmCurso = ""
     }
 }

@@ -58,6 +58,19 @@ struct ExplicacoesExtraTests {
         #expect(daGuia == "- **A:** b. 📘 *Guía (p. 3): c*")
     }
 
+    /// Dentro de uma caixa 📘 (texto oficial da guía) nunca entra uma explicação, nem nas tabelas dela.
+    @Test func naoMexeNasCaixasDaGuia() {
+        let md = "> 📘 **Guía (1.3, p. 8):** Por tamaño:\n> - **Micro:** hasta 10.\n> | Tipo | Empleados |\n> |---|---|\n> | Micro | 10 |\n\n- **Otra:** cosa."
+        let r = ExplicacoesExtra.aplicar((2...7).map { .init(linha: $0, explicacao: "x") }, em: md, lingua: .es)
+        #expect(r == md + " 💡 *Ext.: x*")
+    }
+
+    /// Sem guía na cadeira, uma resposta "guia" do Claude passa a Ext.: não há guía para citar.
+    @Test func semGuiaNuncaHaGuia() {
+        let itens = [ExplicacoesExtra.Explicacao(linha: 1, explicacao: "x", fonte: .guia(pagina: 4))]
+        #expect(ExplicacoesExtra.semGuiaInventada(itens, guia: nil).map(\.fonte) == [.ext])
+    }
+
     /// O que a guía explica leva 📘 com a página, no rótulo da língua dos apontamentos; o resto leva Ext.
     @Test func explicacaoDaGuia() {
         let r = ExplicacoesExtra.aplicar([
@@ -82,6 +95,7 @@ struct ExplicacoesExtraTests {
             .init(linha: 12, explicacao: "Doce."),
         ])
         #expect(ExplicacoesExtra.daResposta("Nada a acrescentar.").isEmpty)
+        #expect(ExplicacoesExtra.daResposta(#"[{"linea":2,"fuente":"guía","página":"7","explicación":"Y."}]"#) == [.init(linha: 2, explicacao: "Y.", fonte: .guia(pagina: 7))])
         let fontes = #"[{"linha":4,"fonte":"guia","pagina":48,"explicacao":"Reglas."},{"linha":"L9","fonte":"ext","explicacao":"Fuera."},{"linha":10,"fonte":"otra","explicacao":"X."}]"#
         #expect(ExplicacoesExtra.daResposta(fontes) == [
             .init(linha: 4, explicacao: "Reglas.", fonte: .guia(pagina: 48)),

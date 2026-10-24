@@ -40,7 +40,7 @@ struct FichaCadeiraView: View {
                 ContentUnavailableView {
                     Label("Ainda sem informação sobre a cadeira", systemImage: "info.circle")
                 } description: {
-                    Text("A apresentação, a avaliação, as datas e os avisos que o professor der nas aulas juntam-se aqui, numa só ficha que vai crescendo de aula para aula. Para começar já com o essencial, junta o programa da cadeira.")
+                    Text("A apresentação, a avaliação, as datas e os avisos que o professor der nas aulas juntam-se aqui, numa só ficha que vai crescendo de aula para aula. Para começar já com o essencial, junta a guía de estudio da cadeira.")
                 } actions: {
                     Button("Juntar a guía de estudio (PDF)…") { escolherPrograma = true }
                         .disabled(fichas.aAtualizar(cadeira) != nil)
@@ -90,7 +90,7 @@ struct FichaCadeiraView: View {
                 temPrograma = true
                 fichas.atualizar(nomeCadeira: cadeira.nome)
             } catch {
-                erro = "Não foi possível juntar o programa: \(error.localizedDescription)"
+                erro = "Não foi possível juntar a guía: \(error.localizedDescription)"
             }
         }
         .alert("Erro", isPresented: Binding(get: { erro != nil }, set: { if !$0 { erro = nil } }), presenting: erro) { _ in
@@ -132,7 +132,7 @@ struct FichaCadeiraView: View {
             try FichaCadeira.removerPrograma(em: cadeira.pasta)
             temPrograma = false
         } catch {
-            erro = "Não foi possível remover o programa: \(error.localizedDescription)"
+            erro = "Não foi possível remover a guía: \(error.localizedDescription)"
         }
     }
 

@@ -24,7 +24,7 @@ enum SeccoesDaAula {
 
     Cada secção entra, no máximo, numa categoria. Se a secção foi explicada e depois remetida, é remetida. Fica de fora tudo o que a aula não tocou: na dúvida, não incluas.
 
-    Responde só com JSON: {"explicadas":["S…"],"remetidas":["S…"],"mencionadas":["S…"]}, com os números do índice. Listas vazias se nenhuma secção couber.
+    Responde só com JSON: {"explicadas":["S…"],"remetidas":["S…"],"mencionadas":["S…"]}, com os rótulos S do índice (por exemplo "S3"), nunca o número da secção (1.2). Listas vazias se nenhuma secção couber.
     """
 
     /// A lista numerada de secções ("S3: 1.2 Título (p. 7–9)") e a transcrição.
@@ -36,30 +36,37 @@ enum SeccoesDaAula {
     }
 
     /// Pede a escolha ao Claude (esforço baixo e resposta curta: é só uma lista de números).
-    static func escolher(_ indice: IndiceGuia, transcricao: Transcricao, gerador: NotesGenerator) async throws -> SelecaoGuia {
+    /// Lança `ErroSelecao` se a resposta vier cortada ou sem JSON: a app avisa em vez de gerar sem guía em silêncio.
+    static func escolher(_ indice: IndiceGuia, transcricao: Transcricao, gerador: NotesGenerator) async throws -> (selecao: SelecaoGuia, geracao: Geracao) {
         var g = gerador
         g.esforco = .low
         g.maxTokens = 2_000
         let r = try await g.gerar(sistema: sistema, conteudo: [.texto(pedido(indice, transcricao: transcricao))],
                                   aoRecomecar: {}, aoReceber: { _ in }, aoRepetir: { _, _, _ in })
-        return daResposta(r.markdown, total: indice.seccoes.count)
+        guard !r.geracao.truncada, let selecao = daResposta(r.markdown, total: indice.seccoes.count) else { throw ErroSelecao.resposta }
+        return (selecao, r.geracao)
+    }
+
+    enum ErroSelecao: LocalizedError {
+        case resposta
+        var errorDescription: String? { "a resposta do Claude não trazia a lista de secções" }
     }
 
     /// Lê a resposta (tolera ``` à volta e as chaves traduzidas). Aceita "S3", "3" ou 3; o que estiver fora
-    /// de 1…total ou não se perceber fica de fora.
-    static func daResposta(_ texto: String, total: Int) -> SelecaoGuia {
+    /// de 1…total ou não se perceber fica de fora. nil se não houver nenhum objeto JSON.
+    static func daResposta(_ texto: String, total: Int) -> SelecaoGuia? {
         var explicadas: [Int] = [], remetidas: [Int] = [], mencionadas: [Int] = []
-        if let a = texto.firstIndex(of: "{"), let b = texto.lastIndex(of: "}"), a < b,
-           let objeto = try? JSONSerialization.jsonObject(with: Data(texto[a...b].utf8)) as? [String: Any] {
-            for (chave, valor) in objeto {
-                let posicoes = ((valor as? [Any]) ?? []).compactMap { posicao($0, total: total) }
-                // Pelo início da chave, que muda pouco entre línguas (remetidas/remitidas/referred).
-                switch chave.lowercased().prefix(3) {
-                case "exp": explicadas = posicoes
-                case "rem", "ref": remetidas = posicoes
-                case "men": mencionadas = posicoes
-                default: break
-                }
+        guard let a = texto.firstIndex(of: "{"), let b = texto.lastIndex(of: "}"), a < b,
+              let objeto = try? JSONSerialization.jsonObject(with: Data(texto[a...b].utf8)) as? [String: Any]
+        else { return nil }
+        for (chave, valor) in objeto.sorted(by: { $0.key < $1.key }) {
+            let posicoes = ((valor as? [Any]) ?? []).compactMap { posicao($0, total: total) }
+            // Pelo início da chave, que muda pouco entre línguas (remetidas/remitidas/referred).
+            switch chave.lowercased().prefix(3) {
+            case "exp": explicadas = posicoes
+            case "rem", "ref": remetidas = posicoes
+            case "men": mencionadas = posicoes
+            default: break
             }
         }
         var vistas = Set<Int>()
@@ -71,7 +78,7 @@ enum SeccoesDaAula {
     /// "S3", "3" ou 3 -> posição 2; fora de 1…total -> nil.
     private static func posicao(_ valor: Any, total: Int) -> Int? {
         var n: Int?
-        if let i = valor as? Int { n = i }
+        if let i = valor as? Int, !(valor is Bool) { n = i }
         else if var s = (valor as? String)?.trimmingCharacters(in: .whitespaces) {
             if s.first == "S" || s.first == "s" { s.removeFirst() }
             n = Int(s)

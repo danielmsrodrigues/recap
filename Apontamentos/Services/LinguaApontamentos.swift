@@ -125,7 +125,6 @@ enum RotulosApontamentos {
         ("Só mencionado", nil, "Solo mencionado", "Only mentioned"),
         ("Guia", nil, "Guía", "Study guide"),
         ("Para estudar", nil, "Para estudiar", "To study"),
-        ("Segundo o professor", nil, "Según el profesor", "According to the lecturer"),
         ("Segundo a guia", nil, "Según la guía", "According to the study guide"),
         ("Segundo o slide", nil, "Según el slide", "According to slide"),
         ("Exercícios", nil, "Ejercicios", "Exercises"),

@@ -40,8 +40,11 @@ struct SeccoesDaAulaTests {
         #expect(r == SelecaoGuia(explicadas: [0], remetidas: [1], mencionadas: [2]))
     }
 
-    @Test func respostaInvalidaFicaVazia() {
-        #expect(SeccoesDaAula.daResposta("não sei", total: 7) == SelecaoGuia(explicadas: [], remetidas: [], mencionadas: []))
+    /// Sem JSON não há seleção (nil): a app avisa em vez de gerar sem guía em silêncio. Um JSON vazio é uma resposta.
+    @Test func respostaInvalidaDaNil() {
+        #expect(SeccoesDaAula.daResposta("não sei", total: 7) == nil)
+        #expect(SeccoesDaAula.daResposta(#"{"explicadas":[],"remetidas":[],"mencionadas":[]}"#, total: 7) == SelecaoGuia(explicadas: [], remetidas: [], mencionadas: []))
+        #expect(SeccoesDaAula.sistema.contains("nunca o número da secção"))
     }
 
     @Test func promptDefineAsTresCategorias() {

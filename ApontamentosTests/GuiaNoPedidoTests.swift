@@ -43,6 +43,8 @@ struct GuiaNoPedidoTests {
         #expect(guia.partes.map(\.seccao.id) == ["1", "3"])
         #expect(guia.partes.map(\.categoria) == [.explicada, .remetida])
         #expect(guia.mencionadas.map(\.id) == ["2"])
+        #expect(guia.semEspaco.map(\.id) == ["2"])
+        #expect(guia.idsPermitidos == ["1", "2", "3"])
         #expect(guia.blocoParaPedido().contains("Outras secções tocadas pela aula, sem texto"))
         #expect(!guia.blocoParaPedido().contains("só mencionou"))
     }

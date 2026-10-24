@@ -58,7 +58,8 @@ enum GuiaEstudo {
             if let (pagina, _) = corpo.first(where: { $0.1.contains(titulo) }) { votos[pagina - s.paginaInicio, default: 0] += 1 }
         }
         // Em empate, o desvio menor (determinista).
-        guard let desvio = votos.max(by: { ($0.value, -$0.key) < ($1.value, -$1.key) })?.key else { return nil }
+        // Um desvio negativo deslocaria o texto e as citações de todas as páginas: melhor sem guía.
+        guard let desvio = votos.max(by: { ($0.value, -$0.key) < ($1.value, -$1.key) })?.key, desvio >= 0 else { return nil }
 
         let ultima = max(paginas.count - desvio, 1)
         for i in seccoes.indices {

@@ -30,7 +30,7 @@ enum ExplicacoesExtra {
     - ou só diz onde aparece ou a que pertence, sem dizer o que é;
     - ou explica com palavras técnicas que os apontamentos não explicaram antes.
 
-    Não precisam de explicação: linhas que já explicam bem, exemplos, avisos, frases de contexto, títulos, imagens, as caixas 👀 (o que o professor só mencionou), linhas que já têm 💡 ou 📘, o glossário, as dúvidas e as perguntas de revisão. Também não as listas de nomes que o professor só enumerou (áreas, tipos, impostos) quando o nome já diz o que é ("Logística", "Producción").
+    Não precisam de explicação: linhas que já explicam bem, exemplos, avisos, frases de contexto, títulos, imagens, as caixas 👀 (o que o professor só mencionou), linhas que já têm 💡 ou 📘, as caixas 📘 (texto da guía), o glossário, as dúvidas e as perguntas de revisão. Também não as listas de nomes que o professor só enumerou (áreas, tipos, impostos) quando o nome já diz o que é ("Logística", "Producción").
 
     Escolhe no máximo 10 linhas: as que mais fazem falta para perceber a matéria. Mais explicações tornam os apontamentos confusos.
 
@@ -66,7 +66,14 @@ enum ExplicacoesExtra {
         g.maxTokens = 8_000
         let r = try await g.gerar(sistema: sistema, conteudo: [.texto(pedido(md, lingua: lingua, guia: guia))],
                                   aoRecomecar: {}, aoReceber: { _ in }, aoRepetir: aoRepetir)
-        return ResultadoApontamentos(markdown: aplicar(daResposta(r.markdown), em: md, lingua: lingua), geracao: r.geracao)
+        let itens = semGuiaInventada(daResposta(r.markdown), guia: guia)
+        return ResultadoApontamentos(markdown: aplicar(itens, em: md, lingua: lingua), geracao: r.geracao)
+    }
+
+    /// Sem guía (ou sem texto dela) no pedido, uma explicação "da guía" não pode ter vindo de lá: passa a Ext.
+    static func semGuiaInventada(_ itens: [Explicacao], guia: GuiaDaAula?) -> [Explicacao] {
+        guard guia?.partes.isEmpty ?? true else { return itens }
+        return itens.map { var e = $0; e.fonte = .ext; return e }
     }
 
     /// Lê a resposta (tolera ``` à volta e as chaves traduzidas). O que não se perceber fica de fora.
@@ -77,14 +84,17 @@ enum ExplicacoesExtra {
         return lista.compactMap { objeto in
             // A chave do número e a do texto, em qualquer língua: o número é o valor que se lê como inteiro.
             // "fonte" e "pagina" têm nomes fixos e leem-se primeiro; o resto, pelo valor.
+            // Também traduzidas: fuente/source, página/page.
+            let chaveFonte = objeto.keys.first { ["fonte", "fuente", "source"].contains($0.lowercased()) }
+            let chavePagina = objeto.keys.first { ["pagina", "página", "page"].contains($0.lowercased()) }
             var fonte = Fonte.ext
-            if (objeto["fonte"] as? String)?.lowercased().hasPrefix("gu") == true {
-                let pagina = objeto["pagina"].flatMap { ($0 as? Int) ?? ($0 as? String).flatMap(numero) }
+            if let c = chaveFonte, (objeto[c] as? String)?.lowercased().hasPrefix("gu") == true {
+                let pagina = chavePagina.flatMap { objeto[$0] }.flatMap { ($0 as? Int) ?? ($0 as? String).flatMap(numero) }
                 fonte = .guia(pagina: pagina)
             }
             var linha: Int?
             var explicacao: String?
-            for (chave, valor) in objeto.sorted(by: { $0.key < $1.key }) where chave != "fonte" && chave != "pagina" {
+            for (chave, valor) in objeto.sorted(by: { $0.key < $1.key }) where chave != chaveFonte && chave != chavePagina {
                 if let n = valor as? Int { linha = linha ?? n }
                 else if let s = valor as? String {
                     if let n = numero(s) { linha = linha ?? n } else { explicacao = explicacao ?? s }
@@ -117,11 +127,17 @@ enum ExplicacoesExtra {
     static func aplicar(_ itens: [Explicacao], em md: String, lingua: LinguaApontamentos) -> String {
         var linhas = md.components(separatedBy: "\n")
         let fim = linhas.firstIndex(where: seccaoFinal) ?? linhas.count
+        // Linhas onde nada se acrescenta: dentro de código e dentro das caixas 📘 (texto oficial da guía).
         var dentroDeCodigo = Set<Int>()
         var aberto = false
+        var naCaixaDaGuia = false
         for (i, l) in linhas.enumerated() {
-            if l.trimmingCharacters(in: .whitespaces).hasPrefix("```") { aberto.toggle(); dentroDeCodigo.insert(i) }
+            let t = l.trimmingCharacters(in: .whitespaces)
+            if t.hasPrefix("```") { aberto.toggle(); dentroDeCodigo.insert(i) }
             else if aberto { dentroDeCodigo.insert(i) }
+            if t.hasPrefix(">") { naCaixaDaGuia = naCaixaDaGuia || t.dropFirst().trimmingCharacters(in: .whitespaces).hasPrefix("📘") }
+            else { naCaixaDaGuia = false }
+            if naCaixaDaGuia || (t.hasPrefix(">") && t.contains("|")) { dentroDeCodigo.insert(i) }
         }
         var feitas = Set<Int>()
         for item in itens {

@@ -10,7 +10,7 @@ A regra, por cada conceito:
 
 1. **Base:** slides + guía (material oficial). A definição principal vem daqui.
 2. **Por cima:** o que a professora explicou na aula (exemplos, intuições), com [mm:ss].
-3. **Divergência** professora ↔ guía: as duas versões lado a lado, identificadas ("Según la profesora" / "Según la guía"), sem escolher uma.
+3. **Divergência** professora ↔ guía: as duas versões lado a lado, identificadas ("Según la profesora" / "Según la guía"), sem as juntar. Por baixo, uma linha **"Para estudar:"** diz qual usar, para o Daniel nunca ter de escolher sozinho: por defeito a guía; a da professora quando ela disse que a guía está errada ou desatualizada, ou que no exame conta o que ela disse (decisão do Daniel a 24 out: "não quero ficar confuso entre ter de escolher").
 4. **Conhecimento externo** só para resolver uma dúvida ou um ponto ambíguo, sempre marcado "Ext.", nunca misturado com a aula.
 
 Sucesso: ao ler uma linha dos apontamentos, o Daniel sabe sempre de onde ela vem (aula, slide, guía ou externo), e o que a guía diz sobre a matéria da aula está lá, com a página para ir confirmar.

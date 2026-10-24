@@ -207,7 +207,7 @@ struct IntegracaoApontamentosTests {
         let pdfs = Disco.pdfsProfessor(pasta).compactMap { pdf in (try? Data(contentsOf: pdf.url(em: pasta))).map { PDFComDados(pdf: pdf, dados: $0) } }
         var ctx = ContextoAula(cadeira: cadeira.lastPathComponent, titulo: "Aula", data: .now, glossario: "", transcricao: transcricao, pdfsProfessor: pdfs)
         let (indice, paginas) = try #require(GuiaEstudo.carregar(cadeira: cadeira))
-        let selecao = try await SeccoesDaAula.escolher(indice, transcricao: transcricao, gerador: gerador)
+        let selecao = try await SeccoesDaAula.escolher(indice, transcricao: transcricao, gerador: gerador).selecao
         print("secções: explicadas \(selecao.explicadas.map { indice.seccoes[$0].id }), remetidas \(selecao.remetidas.map { indice.seccoes[$0].id }), mencionadas \(selecao.mencionadas.map { indice.seccoes[$0].id })")
         ctx.guia = GuiaDaAula.montar(indice, paginas: paginas, selecao: selecao)
         let guia = try #require(ctx.guia)
@@ -216,7 +216,7 @@ struct IntegracaoApontamentosTests {
         var revisor = gerador
         revisor.esforco = .medium
         let revisto = try await ExplicacoesExtra.rever(r.markdown, lingua: .es, guia: guia, gerador: revisor)
-        let v = CitacoesGuia.verificar(revisto.markdown, paginas: guia.paginasPermitidas)
+        let v = CitacoesGuia.verificar(revisto.markdown, paginas: guia.paginasPermitidas, seccoes: guia.idsPermitidos)
         if let saida = ProcessInfo.processInfo.environment["APONTAMENTOS_SAIDA"] {
             try v.markdown.write(toFile: saida, atomically: true, encoding: .utf8)
         }

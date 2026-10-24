@@ -14,6 +14,14 @@ struct CitacoesGuiaTests {
         #expect(r.markdown.hasSuffix("- Pág. 99 de otra cosa"))
     }
 
+    /// Uma secção citada que não foi enviada também fica marcada, mesmo com uma página válida.
+    @Test func seccoesForaDasEnviadas() {
+        let r = CitacoesGuia.verificar("- *(Guía 2.4, p. 18)*\n> 📘 **Guía (Tema 1, p. 4):** a\n- (Guía 1.3, pág. 7)", paginas: [4, 7, 18], seccoes: ["1", "1.3"])
+        #expect(r.invalidas == 1)
+        #expect(r.markdown.contains("(Guía 2.4, p. 18, página por confirmar)"))
+        #expect(r.markdown.contains("(Tema 1, p. 4):**"))
+    }
+
     @Test func intervalosContamComoValidos() {
         #expect(CitacoesGuia.verificar("(Guía 1.3, p. 7–8)", paginas: [7, 8]).invalidas == 0)
         #expect(CitacoesGuia.verificar("(Guía 1.3, pp. 7–9)", paginas: [7, 8]).invalidas == 1)

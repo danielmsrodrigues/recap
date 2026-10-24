@@ -19,6 +19,8 @@ struct GuiaDaAula: Sendable, Equatable {
 
     var partes: [Parte]
     var mencionadas: [SeccaoGuia]
+    /// Explicadas ou remetidas que não couberam em `maxCaracteres` (estão também em `mencionadas`, sem texto).
+    var semEspaco: [SeccaoGuia] = []
 
     /// Texto da guía num pedido, no máximo (cerca de 15 mil tokens). O que não cabe fica só com o nome e a página.
     static let maxCaracteres = 60_000
@@ -33,6 +35,7 @@ struct GuiaDaAula: Sendable, Equatable {
         var partes: [(posicao: Int, parte: Parte)] = []
         var mencionadas = Set(selecao.mencionadas)
         var total = 0
+        var semEspaco: [Int] = []
         let ordem = categorias.keys.sorted { (categorias[$0] == .remetida ? 0 : 1, $0) < (categorias[$1] == .remetida ? 0 : 1, $1) }
         for i in ordem where indice.seccoes.indices.contains(i) {
             let s = indice.seccoes[i]
@@ -43,17 +46,22 @@ struct GuiaDaAula: Sendable, Equatable {
                 total += texto.count
             } else {
                 mencionadas.insert(i)
+                semEspaco.append(i)
             }
         }
         let outras = mencionadas.sorted().filter { indice.seccoes.indices.contains($0) }.map { indice.seccoes[$0] }
         guard !partes.isEmpty || !outras.isEmpty else { return nil }
-        return GuiaDaAula(partes: partes.sorted { $0.posicao < $1.posicao }.map(\.parte), mencionadas: outras)
+        return GuiaDaAula(partes: partes.sorted { $0.posicao < $1.posicao }.map(\.parte), mencionadas: outras,
+                          semEspaco: semEspaco.sorted().map { indice.seccoes[$0] })
     }
 
     /// As páginas impressas que os apontamentos podem citar: as das partes e as das mencionadas.
     var paginasPermitidas: Set<Int> {
         (partes.map(\.seccao) + mencionadas).reduce(into: []) { r, s in r.formUnion(s.paginaInicio...max(s.paginaInicio, s.paginaFim)) }
     }
+
+    /// Os ids das secções que os apontamentos podem citar (as enviadas, com ou sem texto).
+    var idsPermitidos: Set<String> { Set((partes.map(\.seccao) + mencionadas).map(\.id)) }
 
     /// O bloco de texto da guía para um pedido ao Claude (apontamentos ou explicações 💡).
     func blocoParaPedido() -> String {
