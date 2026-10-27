@@ -10,6 +10,8 @@ struct SidebarView: View {
     @State private var paraLixo: Aula?
     @State private var cadeiraParaLixo: Cadeira?
     @State private var aEditarAula: Aula?
+    /// A segunda gravação de uma aula a juntar a seguir à primeira (ver `Library.juntar`).
+    @State private var aJuntar: (primeira: Aula, segunda: Aula)?
     @State private var erro: String?
     /// nil = o semestre mais recente. Não fica guardado: ao abrir, a app mostra sempre o semestre em curso.
     @State private var semestreEscolhido: Semestre?
@@ -84,6 +86,12 @@ struct SidebarView: View {
             Button("Cancelar", role: .cancel) {}
         } message: { aula in
             Text("A pasta \"\(aula.pasta.lastPathComponent)\" vai para o Lixo, de onde a podes recuperar. O vídeo original não é tocado.")
+        }
+        .confirmationDialog("Juntar as duas gravações?", isPresented: Binding(get: { aJuntar != nil }, set: { if !$0 { aJuntar = nil } }), presenting: aJuntar) { par in
+            Button("Juntar e gerar apontamentos") { juntar(par.segunda, a: par.primeira) }
+            Button("Cancelar", role: .cancel) {}
+        } message: { par in
+            Text("A transcrição, os slides e os PDFs de \"\(par.segunda.meta.titulo)\" passam para \"\(par.primeira.meta.titulo)\", a seguir ao que lá está, e os apontamentos são gerados de novo. A pasta de \"\(par.segunda.meta.titulo)\" vai para o Lixo, de onde a podes recuperar.")
         }
         .confirmationDialog("Mover a cadeira para o Lixo?", isPresented: Binding(get: { cadeiraParaLixo != nil }, set: { if !$0 { cadeiraParaLixo = nil } }), presenting: cadeiraParaLixo) { cadeira in
             Button("Mover para o Lixo", role: .destructive) {
@@ -164,6 +172,18 @@ struct SidebarView: View {
                 fila.adicionar(Job(pastaAula: aula.pasta, titulo: aula.meta.titulo, video: url, gerarApontamentos: true))
             }
         }
+        let outras = (library.cadeira(nome: aula.cadeira)?.aulas.reversed() ?? []).filter {
+            !$0.pasta.mesmoCaminho(aula.pasta) && $0.temTranscricao && fila.job(para: $0.pasta)?.ativo != true
+        }
+        Menu("Juntar a seguir a esta") {
+            ForEach(outras) { outra in
+                Button("\(outra.meta.titulo) · \(outra.meta.data.formatted(.dateTime.day().month(.wide).locale(Locale(identifier: "pt_PT"))))") {
+                    aJuntar = (aula, outra)
+                }
+            }
+        }
+        .disabled(ativa || !aula.temTranscricao || outras.isEmpty)
+        .help("Para uma aula gravada em duas partes: a aula escolhida entra a seguir a esta")
         Divider()
         Button("Mover para o Lixo…", role: .destructive) { paraLixo = aula }.disabled(ativa)
     }
@@ -177,6 +197,17 @@ struct SidebarView: View {
     }
 
     // MARK: Ações
+
+    private func juntar(_ segunda: Aula, a primeira: Aula) {
+        tentar {
+            let pasta = try library.juntar(segunda, a: primeira)
+            var video: URL?
+            if let ref = primeira.meta.video, case .ok(let url) = VideoResolver.resolver(ref) { video = url }
+            fila.adicionar(Job(pastaAula: pasta, titulo: primeira.meta.titulo, video: video,
+                               gerarApontamentos: true, soApontamentos: true))
+            selecao = pasta
+        }
+    }
 
     private func tentar(_ acao: () throws -> Void) {
         do { try acao() } catch { erro = error.localizedDescription }

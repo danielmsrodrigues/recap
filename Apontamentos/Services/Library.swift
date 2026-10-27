@@ -236,6 +236,15 @@ final class Library {
         try atualizarMeta(em: pasta) { $0.revista = revista }
     }
 
+    /// Junta a `segunda` gravação a seguir à `primeira` (ver `JuntarAulas`) e manda a pasta da segunda para o Lixo.
+    /// Os apontamentos da primeira ficam como estavam: quem chama gera-os de novo. Devolve a pasta da primeira.
+    func juntar(_ segunda: Aula, a primeira: Aula) throws -> URL {
+        try JuntarAulas.juntar(segunda.pasta, a: primeira.pasta)
+        try FileManager.default.trashItem(at: segunda.pasta, resultingItemURL: nil)
+        recarregar()
+        return canonico(primeira.pasta)
+    }
+
     /// Vai para o Lixo (recuperável), não é apagado.
     func moverParaLixo(_ pasta: URL) throws {
         try FileManager.default.trashItem(at: pasta, resultingItemURL: nil)
