@@ -270,7 +270,7 @@
 		A10000000000000000000C03 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_IDENTITY = "Apple Development: Sérgio Ferreira (8D687QQ8JQ)";
+				CODE_SIGN_IDENTITY = "Apple Development: Sérgio Ferreira (7T6235VJN6)";
 				OTHER_CODE_SIGN_FLAGS = "--timestamp=none";
 				CODE_SIGN_STYLE = Manual;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -299,7 +299,7 @@
 		A10000000000000000000C04 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_IDENTITY = "Apple Development: Sérgio Ferreira (8D687QQ8JQ)";
+				CODE_SIGN_IDENTITY = "Apple Development: Sérgio Ferreira (7T6235VJN6)";
 				OTHER_CODE_SIGN_FLAGS = "--timestamp=none";
 				CODE_SIGN_STYLE = Manual;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
