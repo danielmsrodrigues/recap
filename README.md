@@ -65,7 +65,9 @@ cd recap
 open Apontamentos.xcodeproj
 ```
 
-O projeto assina com um certificado local chamado "Recap Local", que não vais ter. No Xcode, em Signing & Capabilities do alvo Apontamentos, muda para **Sign to Run Locally**.
+O projeto assina com o certificado "Apple Development: Sérgio Ferreira (8D687QQ8JQ)", que não vais ter. No Xcode, em Signing & Capabilities do alvo Apontamentos, muda para **Sign to Run Locally**.
+
+As versões publicadas têm de ser assinadas sempre com esse certificado: o Recap só aceita uma atualização assinada pelo mesmo certificado da versão instalada. Quem publica importa-o no Acesso a Porta-chaves a partir do `.p12` (com a chave privada) e confirma com `security find-identity -v -p codesigning`.
 
 O `Ferramentas/publicar.sh` compila a versão final e instala-a em /Applications. Com `--github 1.3`, também a publica como release (as apps instaladas atualizam-se a partir daí).
 
