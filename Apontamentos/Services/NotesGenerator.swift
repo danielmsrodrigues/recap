@@ -14,6 +14,8 @@ struct ContextoAula: Sendable {
     var pdfsProfessor: [PDFComDados] = []
     /// A ficha da cadeira (ver `FichaCadeira`): situa a aula no programa.
     var fichaCadeira: String?
+    /// As secções da guía de estudio que a aula tocou (ver `GuiaDaAula`). nil sem guía ou se a aula não tocou nenhuma.
+    var guia: GuiaDaAula? = nil
 }
 
 struct PDFComDados: Sendable {
@@ -112,7 +114,7 @@ struct NotesGenerator: Sendable {
         return materiais(c) + [.texto(pedido)]
     }
 
-    /// Cabeçalho, glossário, PDFs do professor, capturas dos slides e transcrição: o que se sabe da aula.
+    /// Cabeçalho, glossário, PDFs do professor, guía de estudio, capturas dos slides e transcrição: o que se sabe da aula.
     static func materiais(_ c: ContextoAula) -> [BlocoConteudo] {
         var cabecalho = """
         Cadeira: \(c.cadeira)
@@ -140,6 +142,9 @@ struct NotesGenerator: Sendable {
                 blocos.append(.texto("PDF \(p.pdf.numero)\(nome)\(p.paginas.map { " (\($0) páginas)" } ?? ""):"))
                 blocos.append(.documentoPDF(base64: p.base64))
             }
+        }
+        if let guia = c.guia {
+            blocos.append(.texto(guia.blocoParaPedido()))
         }
         if !c.slides.isEmpty {
             blocos.append(.texto(c.pdfsProfessor.isEmpty

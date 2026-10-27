@@ -51,6 +51,16 @@ struct NotesWebTests {
         #expect(r == ["mencionado", "erro-comum"])
     }
 
+    /// O que vem da guía de estudio fica numa caixa própria, ao lado das outras.
+    @Test func caixaGuia() async throws {
+        let pagina = try await Pagina.carregar()
+        try await pagina.render("> 📘 **Guía (1.3, p. 7):** x\n\n> 👀 **Solo mencionado:** y")
+        let r = try await pagina.web.evaluateJavaScript("""
+            [...document.querySelectorAll('blockquote')].map(q => q.className)
+            """) as? [String]
+        #expect(r == ["guia", "mencionado"])
+    }
+
     /// A mesma fórmula renderiza uma vez (cache do KaTeX) e dá o mesmo HTML nas duas.
     @Test func formulasRepetidasSaemIguais() async throws {
         let pagina = try await Pagina.carregar()

@@ -270,9 +270,9 @@ struct PromptStoreTests {
         #expect(RotulosApontamentos.rotulo("Só mencionado", .es) == "Solo mencionado")
     }
 
-    /// Quando o professor explica um termo só com o próprio termo, o Claude diz o que quer dizer, marcado com 💡 na mesma linha.
+    /// Quando o professor explica um termo só com o próprio termo, o Claude diz o que quer dizer, marcado com 💡 Ext. na mesma linha.
     @Test func explicaOQueOProfessorDeixouVago() {
-        #expect(PromptStore.original.contains("- **<termo>:** <o que o professor disse>. 💡 *<o que quer dizer na prática>*"))
+        #expect(PromptStore.original.contains("- **<termo>:** <o que o professor disse>. 💡 *Ext.: <o que quer dizer na prática>*"))
     }
 }
 

@@ -15,6 +15,8 @@
   --erro: #c9452f;
   --fundo-erro: #fdf0ed;
   --mencionado: #a1a1a6;
+  --guia: #0f8a8a;
+  --fundo-guia: #e8f6f6;
   /* A folha e a mesa por baixo. */
   --papel: #ffffff;
   --mesa: #e8e8eb;
@@ -37,6 +39,8 @@
     --erro: #f08a76;
     --fundo-erro: #3a2320;
     --mencionado: #6e6e73;
+    --guia: #4cc7c7;
+    --fundo-guia: #1b3132;
     --papel: #2b2b2e;
     --mesa: #111112;
     --fundo-bloco: #343438;
@@ -162,6 +166,8 @@ html.impressao {
   --erro: #c9452f;
   --fundo-erro: #fdf0ed;
   --mencionado: #a1a1a6;
+  --guia: #0f8a8a;
+  --fundo-guia: #e8f6f6;
   --texto: #1d1d1f;
   --texto-suave: #6e6e73;
   --fundo: #ffffff;
@@ -214,13 +220,15 @@ body.editar .math:hover { background: var(--chip); outline: 1px dashed var(--des
 #editor-formula button { font: inherit; padding: 4px 12px; border-radius: 6px; border: 1px solid var(--borda); background: var(--fundo-bloco); color: var(--texto); }
 #editor-formula .ef-aplicar { background: var(--destaque); color: white; border-color: var(--destaque); }
 
-/* "💡 Explicação extra": o que o professor não disse, à parte das definições. */
+/* "💡 Ext.": conhecimento externo (nem da aula nem da guía), à parte das definições. */
 blockquote.extra { border-left-color: var(--extra); background: var(--fundo-extra); }
 /* "⭐ Importante": o que o professor sublinhou (costuma sair no exame). "⚠️ Erro comum": a correção de um erro. */
 blockquote.importante { border-left-color: var(--importante); background: var(--fundo-importante); }
 blockquote.erro-comum { border-left-color: var(--erro); background: var(--fundo-erro); }
 /* "👀 Só mencionado": o professor só o nomeou; fica registado, mas não é matéria dada. */
 blockquote.mencionado { border-left-color: var(--mencionado); color: var(--texto-suave); }
+/* "📘 Guia": o que vem da guía de estudio da cadeira e não foi dito na aula. */
+blockquote.guia { border-left-color: var(--guia); background: var(--fundo-guia); }
 
 /* Slides dentro dos apontamentos, com a legenda por baixo. */
 p.figura { margin: 1.1em 0 1.3em; text-align: center; break-inside: avoid; }

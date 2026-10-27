@@ -191,10 +191,34 @@ final class PipelineRunner {
 
         // As páginas dos PDFs viram imagens antes do pedido, para os slides poderem entrar nos apontamentos.
         let paginasPDF = await SlidesNosApontamentos.garantirPaginasEmFundo(em: job.pastaAula)
-        let contexto = await ContextoAula.carregar(aula, cadeira: library.cadeira(nome: aula.cadeira), transcricao: transcricao)
+        let cadeira = library.cadeira(nome: aula.cadeira)
+        var contexto = await ContextoAula.carregar(aula, cadeira: cadeira, transcricao: transcricao)
         let prompt = definicoes.promptApontamentos(idioma: IdiomaAula(codigo: transcricao.idioma))
 
         job.iniciar(.apontamentos, detalhe: "A preparar o pedido…")
+
+        // A guía de estudio da cadeira: as secções que esta aula tocou entram no pedido. Se falhar, gera-se sem ela.
+        var avisos: [String] = []
+        var geracaoSelecao: Geracao?
+        if let pasta = cadeira?.pasta, FichaCadeira.temPrograma(pasta) {
+            if let (indice, paginas) = await Task.detached(operation: { GuiaEstudo.carregar(cadeira: pasta) }).value {
+                job.atualizar(.apontamentos, progresso: nil, detalhe: "A escolher as secções da guía…")
+                do {
+                    let r = try await SeccoesDaAula.escolher(indice, transcricao: transcricao, gerador: gerador)
+                    geracaoSelecao = r.geracao
+                    contexto.guia = GuiaDaAula.montar(indice, paginas: paginas, selecao: r.selecao)
+                    if let semEspaco = contexto.guia?.semEspaco, !semEspaco.isEmpty {
+                        avisos.append("Secções da guía que não couberam no pedido (só com a referência): \(semEspaco.map(\.id).joined(separator: ", ")).")
+                    }
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    avisos.append("Não foi possível escolher as secções da guía (\(error.localizedDescription)); os apontamentos saíram sem ela.")
+                }
+            } else {
+                avisos.append("Não consegui ler o índice da guía; os apontamentos saíram sem ela.")
+            }
+        }
         var detalheBase = "A gerar com \(definicoes.modeloClaude) via \(definicoes.motor.nome)"
         if let estimativa = try? await gerador.estimar(contexto, prompt: prompt) {
             detalheBase += " · \(estimativa.tokens.formatted()) tokens de entrada (≈ \(TabelaPrecos.formatar(estimativa.custoEntrada)) + saída)"
@@ -231,18 +255,34 @@ final class PipelineRunner {
 
         // Segundo passo: o que o professor deixou vago ganha uma 💡 na mesma linha. Se falhar, ficam os apontamentos sem elas.
         var geracao = resultado.geracao
+        if let geracaoSelecao { geracao.somar(geracaoSelecao) }
         job.atualizar(.apontamentos, progresso: nil, detalhe: "A acrescentar explicações 💡…")
         var revisor = gerador
         revisor.esforco = .medium
         do {
-            let r = try await ExplicacoesExtra.rever(semSobre, lingua: definicoes.linguaApontamentos, gerador: revisor)
+            let r = try await ExplicacoesExtra.rever(semSobre, lingua: definicoes.linguaApontamentos, guia: contexto.guia, gerador: revisor)
             semSobre = r.markdown
             geracao.somar(r.geracao)
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            job.aviso = "Não foi possível acrescentar as explicações 💡: \(error.localizedDescription)"
+            avisos.append("Não foi possível acrescentar as explicações 💡: \(error.localizedDescription)")
         }
+
+        // As páginas da guía citadas têm de vir das secções enviadas; as outras ficam "por confirmar".
+        if let guia = contexto.guia {
+            let v = CitacoesGuia.verificar(semSobre, paginas: guia.paginasPermitidas, seccoes: guia.idsPermitidos)
+            semSobre = v.markdown
+            if v.invalidas > 0 {
+                avisos.append("\(v.invalidas) páginas da guía citadas não foram enviadas ao Claude: estão marcadas «página por confirmar».")
+            }
+        }
+        if resultado.geracao.truncada {
+            avisos.append("Os apontamentos atingiram o limite de \(gerador.maxTokens.formatted()) tokens e ficaram incompletos.")
+        }
+        job.aviso = avisos.isEmpty ? nil : avisos.joined(separator: " ")
+
+        try Task.checkCancellation()
 
         try Disco.guardarCopiaApontamentos(em: job.pastaAula)
         try Disco.escreverApontamentos(semSobre, em: job.pastaAula)
@@ -259,9 +299,6 @@ final class PipelineRunner {
         if sobre != nil { fichas.atualizar(nomeCadeira: aula.cadeira) }
         // As ligações com as outras aulas da cadeira fazem-se logo, sem ter de as pedir.
         if let nova = library.aula(em: job.pastaAula) { estudo.aposApontamentos(nova) }
-        if g.truncada {
-            job.aviso = "Os apontamentos atingiram o limite de \(gerador.maxTokens.formatted()) tokens e ficaram incompletos."
-        }
         job.textoEmCurso = ""
     }
 }
