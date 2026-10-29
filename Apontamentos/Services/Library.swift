@@ -16,6 +16,8 @@ final class Library {
     /// Muda quando uma leitura do disco encontra algo diferente; as vistas usam-no para recarregar ficheiros.
     private(set) var versao = 0
     private(set) var erro: String?
+    /// Avisa quando outro dispositivo (pelo iCloud Drive) ou outra app muda a pasta. Só depois de `vigiar()`.
+    @ObservationIgnored private var observador: ObservadorPasta?
 
     init(raiz: URL = Disco.raizPorDefeito, organizacao: OrganizacaoCurso = .anoESemestre,
          iniciosPeriodos: [Int] = CalendarioLetivo.porDefeito, duracaoCurso: Int = 4) {
@@ -28,14 +30,17 @@ final class Library {
 
     /// Volta a ler o disco. Só avisa as vistas (`versao`) se algo mudou: cada ação pequena chamava aqui e todas as
     /// vistas abertas reliam a transcrição, os apontamentos e a pesquisa sem necessidade.
-    func recarregar() {
+    ///
+    /// Com `forcar`, avisa sempre: uma mudança vinda de fora (apontamentos editados no iPad, uma resposta nova)
+    /// pode não mexer na lista de cadeiras e aulas, mas as vistas abertas têm de reler os ficheiros.
+    func recarregar(forcar: Bool = false) {
         do {
             try FileManager.default.createDirectory(at: raiz, withIntermediateDirectories: true)
             let novas = try Self.ler(raiz: raiz, organizacao: organizacao, inicios: iniciosPeriodos)
             let mudou = novas != cadeiras || erro != nil
             cadeiras = novas
             erro = nil
-            if mudou { versao += 1 }
+            if mudou || forcar { versao += 1 }
         } catch {
             erro = "Não foi possível ler \(raiz.path): \(error.localizedDescription)"
             versao += 1
@@ -49,6 +54,12 @@ final class Library {
         if mover { try Self.moverCadeiras(de: raiz, para: nova) }
         raiz = nova
         recarregar()
+        if observador != nil { vigiar() }
+    }
+
+    /// Passa a reler sozinha quando a pasta muda fora da app (por exemplo o iCloud a trazer o que se fez no iPad).
+    func vigiar() {
+        observador = ObservadorPasta(raiz) { [weak self] in self?.recarregar(forcar: true) }
     }
 
     /// Move cada pasta de `origem` para `destino`. Recusa antes de mexer em nada se uma já existir lá
@@ -73,7 +84,7 @@ final class Library {
         let fm = FileManager.default
         let pastas = try fm.contentsOfDirectory(at: raiz, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles)
         let lidas = pastas
-            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+            .filter { $0.lastPathComponent != Disco.pastaSistema && (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
             .map { pasta in
                 let nome = pasta.lastPathComponent
                 let subpastas = (try? fm.contentsOfDirectory(at: pasta, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []

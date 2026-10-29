@@ -113,7 +113,7 @@ enum Pesquisa {
         var resultados: [ResultadoPesquisa] = []
         // As fichas primeiro: é lá que estão datas, avaliação e regras, o que mais se procura assim.
         for f in fichas {
-            guard let md = try? String(contentsOf: f.url, encoding: .utf8) else { continue }
+            guard let md = try? Disco.lerTexto(f.url) else { continue }
             let linhas = md.components(separatedBy: .newlines).filter { !$0.hasPrefix("# ") && contem($0, palavras) }
             for linha in linhas.prefix(maximoPorAula) {
                 resultados.append(ResultadoPesquisa(pasta: f.url, titulo: FichaCadeira.tituloSeccao, cadeira: f.cadeira,
