@@ -189,31 +189,31 @@ extension Disco {
     static let ligacoesJSON = "ligacoes.json"
 
     static func lerLigacoes(_ pasta: URL) -> LigacoesAula? {
-        guard let dados = try? Data(contentsOf: pasta.appending(path: ligacoesJSON)) else { return nil }
+        guard let dados = try? lerDados(pasta.appending(path: ligacoesJSON)) else { return nil }
         return try? decoder.decode(LigacoesAula.self, from: dados)
     }
 
     static func escreverLigacoes(_ l: LigacoesAula, em pasta: URL) throws {
-        try encoder.encode(l).write(to: pasta.appending(path: ligacoesJSON), options: .atomic)
+        try gravar(encoder.encode(l), em: pasta.appending(path: ligacoesJSON))
     }
 
     static func lerPerguntas(_ pasta: URL) -> [PerguntaAula] {
-        guard let dados = try? Data(contentsOf: pasta.appending(path: perguntasJSON)) else { return [] }
+        guard let dados = try? lerDados(pasta.appending(path: perguntasJSON)) else { return [] }
         return (try? decoder.decode([PerguntaAula].self, from: dados)) ?? []
     }
 
     static func escreverPerguntas(_ perguntas: [PerguntaAula], em pasta: URL) throws {
         let url = pasta.appending(path: perguntasJSON)
         if perguntas.isEmpty { try? FileManager.default.removeItem(at: url); return }
-        try encoder.encode(perguntas).write(to: url, options: .atomic)
+        try gravar(encoder.encode(perguntas), em: url)
     }
 
     static func lerTexto(_ nome: String, em pasta: URL) -> String? {
-        try? String(contentsOf: pasta.appending(path: nome), encoding: .utf8)
+        try? Disco.lerTexto(pasta.appending(path: nome))
     }
 
     static func escreverTexto(_ texto: String, _ nome: String, em pasta: URL) throws {
-        try texto.write(to: pasta.appending(path: nome), atomically: true, encoding: .utf8)
+        try gravar(texto, em: pasta.appending(path: nome))
     }
 
     static func dataModificacao(_ url: URL) -> Date? {
@@ -228,10 +228,10 @@ extension ContextoAula {
     @concurrent
     static func carregar(_ aula: Aula, cadeira: Cadeira?, transcricao: Transcricao) async -> ContextoAula {
         let pdfs = Disco.pdfsProfessor(aula.pasta, nomes: aula.meta.nomesPDFs ?? [:]).compactMap { pdf in
-            (try? Data(contentsOf: pdf.url(em: aula.pasta))).map { PDFComDados(pdf: pdf, dados: $0) }
+            (try? Disco.lerDados(pdf.url(em: aula.pasta), esperar: true)).map { PDFComDados(pdf: pdf, dados: $0) }
         }
         var slides = (Disco.lerSlides(aula.pasta) ?? []).compactMap { s in
-            (try? Data(contentsOf: Disco.urlSlide(s, em: aula.pasta))).map { SlideComImagem(slide: s, jpeg: $0) }
+            (try? Disco.lerDados(Disco.urlSlide(s, em: aula.pasta), esperar: true)).map { SlideComImagem(slide: s, jpeg: $0) }
         }
         if !pdfs.isEmpty {
             slides = capturasQueCabem(slides, bytes: Disco.tamanhoMaximoPDF - pdfs.reduce(0) { $0 + $1.dados.count })

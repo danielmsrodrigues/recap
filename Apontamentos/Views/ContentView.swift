@@ -53,6 +53,11 @@ struct ContentView: View {
         .modifier(AvisosAtualizacao(ocupado: direto.ativa || fila.jobs.contains(where: \.ativo)))
         // Aulas antigas com "Sobre a cadeira" nos apontamentos, ou que ainda não entraram na ficha da cadeira.
         .task { fichas.atualizarTodas() }
+        // O iPad e o iPhone leem a pasta pelo iCloud Drive: o que muda lá aparece aqui sem voltar à app.
+        .task { library.vigiar() }
+        .onChange(of: PartilhaDefinicoes(definicoes: definicoes.partilhadas, raiz: library.raiz), initial: true) { _, p in
+            try? DefinicoesPartilhadas.escrever(p.definicoes, raiz: p.raiz)
+        }
         .task {
             #if DEBUG
             // `APONTAMENTOS_ATUALIZAR=1`: procura e instala logo (teste da atualização de ponta a ponta).
@@ -358,4 +363,10 @@ private struct AvisosAtualizacao: ViewModifier {
                 }
             }
     }
+}
+
+/// O que o iPad e o iPhone precisam de saber das Definições, e onde o escrever.
+private struct PartilhaDefinicoes: Equatable {
+    var definicoes: DefinicoesPartilhadas
+    var raiz: URL
 }

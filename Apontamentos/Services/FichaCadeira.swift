@@ -85,11 +85,11 @@ enum FichaCadeira {
     static func url(_ cadeira: URL) -> URL { cadeira.appending(path: fichaMD) }
 
     static func lerFicha(_ cadeira: URL) -> String? {
-        try? String(contentsOf: url(cadeira), encoding: .utf8)
+        try? Disco.lerTexto(url(cadeira))
     }
 
     static func escreverFicha(_ texto: String, em cadeira: URL) throws {
-        try texto.write(to: url(cadeira), atomically: true, encoding: .utf8)
+        try Disco.gravar(texto, em: url(cadeira))
     }
 
     static func lerRegisto(_ cadeira: URL) -> Registo {
@@ -101,13 +101,13 @@ enum FichaCadeira {
     }
 
     static func lerExcerto(_ aula: URL) -> String? {
-        try? String(contentsOf: aula.appending(path: excertoMD), encoding: .utf8)
+        try? Disco.lerTexto(aula.appending(path: excertoMD))
     }
 
     /// Guarda o que a aula disse sobre a cadeira; sem nada, apaga o excerto antigo.
     static func escreverExcerto(_ texto: String?, em aula: URL) throws {
         let url = aula.appending(path: excertoMD)
-        if let texto { try texto.write(to: url, atomically: true, encoding: .utf8) }
+        if let texto { try Disco.gravar(texto, em: url) }
         else { try? FileManager.default.removeItem(at: url) }
     }
 
@@ -157,7 +157,7 @@ enum FichaCadeira {
         else { return nil }
         var registo = lerRegisto(cadeira)
         if let visto = registo.programa, visto.tamanho == tamanho, visto.modificado == modificado { return visto.hash }
-        guard let dados = try? Data(contentsOf: url) else { return nil }
+        guard let dados = try? Disco.lerDados(url) else { return nil }
         let h = hash(dados)
         registo.programa = Registo.ProgramaVisto(tamanho: tamanho, modificado: modificado, hash: h)
         try? escreverRegisto(registo, em: cadeira)
@@ -338,7 +338,7 @@ final class Fichas {
     }
 
     private func juntarPrograma(a cadeira: Cadeira) async throws {
-        let pdf = try Data(contentsOf: FichaCadeira.urlPrograma(cadeira.pasta))
+        let pdf = try Disco.lerDados(FichaCadeira.urlPrograma(cadeira.pasta))
         let jaJuntado = FichaCadeira.lerRegisto(cadeira.pasta).aulas[FichaCadeira.chavePrograma] != nil
         try await juntar(em: cadeira, chave: FichaCadeira.chavePrograma, hash: FichaCadeira.hashDoPrograma(cadeira.pasta) ?? FichaCadeira.hash(pdf)) { ficha in
             FichaCadeira.conteudoPrograma(ficha: ficha, pdf: pdf, jaJuntado: jaJuntado)

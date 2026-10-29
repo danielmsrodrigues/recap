@@ -337,7 +337,7 @@ final class EsquemaAula: NSObject, WKURLSchemeHandler {
         }
         let ficheiro = pasta.appending(path: String(url.path(percentEncoded: false).drop { $0 == "/" })).standardizedFileURL
         // Só ficheiros dentro da pasta da aula.
-        guard ficheiro.path.hasPrefix(pasta.path + "/"), let dados = try? Data(contentsOf: ficheiro) else {
+        guard ficheiro.path.hasPrefix(pasta.path + "/"), let dados = try? Disco.lerDados(ficheiro) else {
             tarefa.didFailWithError(URLError(.fileDoesNotExist))
             return
         }

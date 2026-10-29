@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Leitura e escrita dos ficheiros de uma aula. `~/Aulas` é a fonte de verdade:
 ///
@@ -21,6 +22,9 @@ enum Disco {
     /// Acima disto (somando os PDFs do professor) o pedido ao Claude fica demasiado grande (o limite é ~32 MB no total).
     static let tamanhoMaximoPDF = 24 * 1_048_576
     static let pastaSlides = "slides"
+    /// Na raiz, ao lado das cadeiras: o que o Mac e o iPad/iPhone trocam (definições, pedidos ao Claude). Não é uma cadeira.
+    /// Sem ponto no nome: o iCloud Drive pode não sincronizar pastas escondidas.
+    static let pastaSistema = "_recap"
 
     /// No iOS só serve até se escolher a pasta do iCloud Drive (ver `PastaAulas`).
     static var raizPorDefeito: URL {
@@ -78,11 +82,80 @@ enum Disco {
     // MARK: JSON
 
     static func ler<T: Decodable>(_ tipo: T.Type, de url: URL) throws -> T {
-        try decoder.decode(tipo, from: Data(contentsOf: url))
+        try decoder.decode(tipo, from: lerDados(url))
     }
 
     static func escrever<T: Encodable>(_ valor: T, em url: URL) throws {
-        try encoder.encode(valor).write(to: url, options: .atomic)
+        try gravar(encoder.encode(valor), em: url)
+    }
+
+    // MARK: Ficheiros (iCloud Drive)
+
+    /// A pasta das aulas pode estar no iCloud Drive e ser mudada ao mesmo tempo noutro dispositivo: lê-se e
+    /// grava-se com `NSFileCoordinator`, para o iCloud nunca apanhar um ficheiro a meio nem nós um a meio de chegar.
+    ///
+    /// Um ficheiro ainda não descarregado: com `esperar`, espera pelo download (só fora do fio principal); sem ele,
+    /// pede o download e falha já, para a interface não ficar parada (volta-se a ler quando o `ObservadorPasta` avisar).
+    static func lerDados(_ url: URL, esperar: Bool = false) throws -> Data {
+        if !esperar, porDescarregar(url) {
+            try? FileManager.default.startDownloadingUbiquitousItem(at: url)
+            throw CocoaError(.fileReadNoSuchFile, userInfo: [NSURLErrorKey: url])
+        }
+        var erro: NSError?
+        var resultado: Result<Data, any Error> = .failure(CocoaError(.fileReadUnknown))
+        NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &erro) { url in
+            resultado = Result { try Data(contentsOf: url) }
+        }
+        if let erro { throw erro }
+        return try resultado.get()
+    }
+
+    static func lerTexto(_ url: URL, esperar: Bool = false) throws -> String {
+        String(decoding: try lerDados(url, esperar: esperar), as: UTF8.self)
+    }
+
+    /// Escrita atómica e coordenada. Fica registada para o `ObservadorPasta` não tomar as nossas escritas por mudanças de fora.
+    static func gravar(_ dados: Data, em url: URL) throws {
+        var erro: NSError?
+        var resultado: Result<Void, any Error> = .success(())
+        NSFileCoordinator().coordinate(writingItemAt: url, options: .forReplacing, error: &erro) { url in
+            resultado = Result { try dados.write(to: url, options: .atomic) }
+        }
+        if let erro { throw erro }
+        try resultado.get()
+        escritas.withLock { $0[url.standardizedFileURL.path] = .now }
+    }
+
+    static func gravar(_ texto: String, em url: URL) throws {
+        try gravar(Data(texto.utf8), em: url)
+    }
+
+    /// Está no iCloud Drive, mas ainda não neste dispositivo.
+    static func porDescarregar(_ url: URL) -> Bool {
+        let estado = try? url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey]).ubiquitousItemDownloadingStatus
+        return estado == .notDownloaded
+    }
+
+    /// Pede ao iCloud tudo o que falta da pasta de uma aula (os slides e os PDFs só se descarregam quando a aula abre).
+    /// Devolve quantos ficheiros ainda estavam por descarregar.
+    @discardableResult
+    static func descarregar(_ pasta: URL) -> Int {
+        let chaves: [URLResourceKey] = [.ubiquitousItemDownloadingStatusKey]
+        guard let itens = FileManager.default.enumerator(at: pasta, includingPropertiesForKeys: chaves) else { return 0 }
+        var faltam = 0
+        for case let url as URL in itens where porDescarregar(url) {
+            try? FileManager.default.startDownloadingUbiquitousItem(at: url)
+            faltam += 1
+        }
+        return faltam
+    }
+
+    /// Quando gravámos cada ficheiro (caminho → data), para o `ObservadorPasta` ignorar o eco das nossas escritas.
+    static let escritas = Mutex<[String: Date]>([:])
+
+    /// Gravado por nós há menos de `segundos`.
+    static func gravadoHaPouco(_ url: URL, segundos: TimeInterval = 3) -> Bool {
+        escritas.withLock { e in e[url.standardizedFileURL.path].map { Date.now.timeIntervalSince($0) < segundos } ?? false }
     }
 
     // MARK: Aula
@@ -101,15 +174,15 @@ enum Disco {
 
     static func escreverTranscricao(_ t: Transcricao, em pasta: URL) throws {
         try escrever(t, em: pasta.appending(path: transcricaoJSON))
-        try t.textoComTimestamps.write(to: pasta.appending(path: transcricaoTXT), atomically: true, encoding: .utf8)
+        try gravar(t.textoComTimestamps, em: pasta.appending(path: transcricaoTXT))
     }
 
     static func lerApontamentos(_ pasta: URL) -> String? {
-        try? String(contentsOf: pasta.appending(path: apontamentosMD), encoding: .utf8)
+        try? lerTexto(pasta.appending(path: apontamentosMD))
     }
 
     static func escreverApontamentos(_ texto: String, em pasta: URL) throws {
-        try texto.write(to: pasta.appending(path: apontamentosMD), atomically: true, encoding: .utf8)
+        try gravar(texto, em: pasta.appending(path: apontamentosMD))
     }
 
     /// Copia os apontamentos atuais para `apontamentos.anterior.md` antes de os substituir.

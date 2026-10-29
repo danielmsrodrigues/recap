@@ -38,6 +38,36 @@ enum MotorTipo: String, CaseIterable, Identifiable, Sendable {
     #endif
 }
 
+/// As preferências de que o estudo precisa (os prompts das perguntas, exercícios e ligações, e a barra lateral),
+/// escritas pelo Mac em `_recap/definicoes.json`: o `UserDefaults` não passa para o iPad e o iPhone.
+/// As línguas e a organização vão pelo `rawValue`: um valor que a outra versão não conheça é ignorado.
+struct DefinicoesPartilhadas: Codable, Equatable, Sendable {
+    var contextoCurso: String
+    var linguaApontamentos: String
+    var idiomaAulas: String
+    var modeloClaude: String
+    var organizacao: String
+    var iniciosPeriodos: [Int]
+    var duracaoCurso: Int
+
+    static let ficheiro = "definicoes.json"
+
+    static func url(raiz: URL) -> URL {
+        raiz.appending(path: Disco.pastaSistema).appending(path: ficheiro)
+    }
+
+    static func ler(raiz: URL) -> DefinicoesPartilhadas? {
+        try? Disco.ler(DefinicoesPartilhadas.self, de: url(raiz: raiz))
+    }
+
+    /// Só escreve se mudou: cada escrita é um envio para o iCloud.
+    static func escrever(_ d: DefinicoesPartilhadas, raiz: URL) throws {
+        guard ler(raiz: raiz) != d else { return }
+        try FileManager.default.createDirectory(at: raiz.appending(path: Disco.pastaSistema), withIntermediateDirectories: true)
+        try Disco.escrever(d, em: url(raiz: raiz))
+    }
+}
+
 /// Preferências da app em `UserDefaults`. A chave API fica na Keychain e o prompt num ficheiro.
 @MainActor @Observable
 final class Definicoes {
@@ -125,6 +155,23 @@ final class Definicoes {
     }
 
     var tabelaPrecos: TabelaPrecos { TabelaPrecos(personalizados: precosPersonalizados) }
+
+    var partilhadas: DefinicoesPartilhadas {
+        DefinicoesPartilhadas(contextoCurso: contextoCurso, linguaApontamentos: linguaApontamentos.rawValue,
+                              idiomaAulas: idiomaAulas.rawValue, modeloClaude: modeloClaude, organizacao: organizacao.rawValue,
+                              iniciosPeriodos: iniciosPeriodos, duracaoCurso: duracaoCurso)
+    }
+
+    /// Passa a usar as preferências escritas pelo Mac (no iPad e no iPhone, ao abrir a pasta).
+    func aplicar(_ p: DefinicoesPartilhadas) {
+        contextoCurso = p.contextoCurso
+        modeloClaude = p.modeloClaude
+        duracaoCurso = max(1, p.duracaoCurso)
+        if let l = LinguaApontamentos(rawValue: p.linguaApontamentos) { linguaApontamentos = l }
+        if let i = IdiomaAula(rawValue: p.idiomaAulas) { idiomaAulas = i }
+        if let o = OrganizacaoCurso(rawValue: p.organizacao) { organizacao = o }
+        if CalendarioLetivo.valido(p.iniciosPeriodos) { iniciosPeriodos = p.iniciosPeriodos }
+    }
 
     /// Um prompt com os marcadores (`{{contexto}}`, `{{idioma}}`…) já substituídos pelo curso e pelas línguas escolhidos.
     /// `idioma` é o da aula, quando não é o das Definições (uma cadeira dada noutra língua).

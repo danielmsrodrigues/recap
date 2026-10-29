@@ -8,9 +8,21 @@ struct InicioIOS: View {
 
     init(raiz: URL) {
         let d = Definicoes()
+        if let p = DefinicoesPartilhadas.ler(raiz: raiz) { d.aplicar(p) }
         _definicoes = State(initialValue: d)
         _library = State(initialValue: Library(raiz: raiz, organizacao: d.organizacao,
                                                iniciosPeriodos: d.iniciosPeriodos, duracaoCurso: d.duracaoCurso))
+    }
+
+    /// As preferências podem ter mudado no Mac desde a última vez.
+    private func atualizar() {
+        if let p = DefinicoesPartilhadas.ler(raiz: library.raiz) {
+            definicoes.aplicar(p)
+            library.duracaoCurso = definicoes.duracaoCurso
+            library.organizacao = definicoes.organizacao
+            library.iniciosPeriodos = definicoes.iniciosPeriodos
+        }
+        library.recarregar(forcar: true)
     }
 
     var body: some View {
@@ -42,11 +54,12 @@ struct InicioIOS: View {
                     .navigationTitle(cadeira.nome)
                 }
             }
-            .refreshable { library.recarregar() }
+            .refreshable { atualizar() }
         } detail: {
             ContentUnavailableView("Escolhe uma aula", systemImage: "book")
         }
-        .onChange(of: fase) { if fase == .active { library.recarregar() } }
+        .task { library.vigiar() }
+        .onChange(of: fase) { if fase == .active { atualizar() } }
     }
 }
 
