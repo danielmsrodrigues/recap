@@ -257,7 +257,7 @@ extension ContextoAula {
 /// para continuarem quando se muda de aula ou de separador.
 @MainActor @Observable
 final class Estudo {
-    enum Tipo: String, Sendable { case pergunta, exercicios, ligacoes }
+    enum Tipo: String, Codable, Sendable { case pergunta, exercicios, ligacoes }
 
     struct Chave: Hashable { var pasta: String; var tipo: Tipo }
 
@@ -267,6 +267,10 @@ final class Estudo {
         var pergunta: String?
         var citacao: CitacaoPergunta?
         var tarefa: Task<Void, Never>?
+        /// Pedido entregue ao Recap do Mac (motor "Mac", no iOS).
+        var pedidoMac: PedidoMac?
+        /// O Mac ainda não pegou no pedido ao fim de algum tempo (fechado, a dormir, sem iCloud).
+        var aEsperarMac = false
     }
 
     private(set) var emCurso: [Chave: EmCurso] = [:]
@@ -315,11 +319,15 @@ final class Estudo {
 
     // MARK: Pedidos
 
-    func perguntar(_ pergunta: String, sobre aula: Aula, citacao: CitacaoPergunta? = nil) {
+    /// `motor`: em vez do das Definições (o iOS usa a API quando o Mac não responde).
+    func perguntar(_ pergunta: String, sobre aula: Aula, citacao: CitacaoPergunta? = nil, motor: MotorTipo? = nil) {
         let anteriores = Disco.lerPerguntas(aula.pasta)
         let chave = Self.chave(aula, .pergunta)
         defer { if let citacao, emCurso[chave]?.citacao == citacao { citacoes[chave] = nil } }
-        executar(aula, .pergunta, pergunta: pergunta, citacao: citacao, esforco: .medium,
+        #if !os(macOS)
+        if (motor ?? definicoes.motor) == .mac { return pedirAoMac(.pergunta, aula, pergunta: pergunta, citacao: citacao) }
+        #endif
+        executar(aula, .pergunta, pergunta: pergunta, citacao: citacao, esforco: .medium, motor: motor,
                  sistema: definicoes.prompt(Self.sistemaPerguntas, idioma: definicoes.idioma(da: library.cadeira(nome: aula.cadeira)))) { contexto in
             var blocos = contexto.map(NotesGenerator.materiais) ?? []
             if let notas = Disco.lerApontamentos(aula.pasta) {
@@ -364,8 +372,11 @@ final class Estudo {
         return "Sobre este trecho \(onde):\n\n<trecho>\n\(citacao.texto)\n</trecho>\n\n\(pergunta)"
     }
 
-    func gerarExercicios(_ aula: Aula) {
-        executar(aula, .exercicios, sistema: definicoes.prompt(Self.sistemaExercicios, idioma: definicoes.idioma(da: library.cadeira(nome: aula.cadeira)))) { contexto in
+    func gerarExercicios(_ aula: Aula, motor: MotorTipo? = nil) {
+        #if !os(macOS)
+        if (motor ?? definicoes.motor) == .mac { return pedirAoMac(.exercicios, aula) }
+        #endif
+        executar(aula, .exercicios, motor: motor, sistema: definicoes.prompt(Self.sistemaExercicios, idioma: definicoes.idioma(da: library.cadeira(nome: aula.cadeira)))) { contexto in
             var blocos = contexto.map(NotesGenerator.materiais) ?? []
             if let notas = Disco.lerApontamentos(aula.pasta) {
                 blocos.append(.texto("Apontamentos desta aula:\n\n<apontamentos>\n\(notas)\n</apontamentos>"))
@@ -387,7 +398,10 @@ final class Estudo {
         gerarLigacoes(aula)
     }
 
-    func gerarLigacoes(_ aula: Aula) {
+    func gerarLigacoes(_ aula: Aula, motor: MotorTipo? = nil) {
+        #if !os(macOS)
+        if (motor ?? definicoes.motor) == .mac { return pedirAoMac(.ligacoes, aula) }
+        #endif
         let outras = outrasAulas(de: aula)
         guard let notas = Disco.lerApontamentos(aula.pasta).map(NotasLigacoes.tirar) else { return }
         guard !outras.isEmpty else {
@@ -395,7 +409,7 @@ final class Estudo {
             return
         }
         let raiz = library.raiz
-        executar(aula, .ligacoes, comTranscricao: false, sistema: definicoes.prompt(Self.sistemaLigacoes)) { _ in
+        executar(aula, .ligacoes, comTranscricao: false, motor: motor, sistema: definicoes.prompt(Self.sistemaLigacoes)) { _ in
             let lista = outras.enumerated().map { i, o in
                 let data = o.meta.data.formatted(.dateTime.day().month(.wide).year().locale(Locale(identifier: "pt_PT")))
                 let md = NotasLigacoes.tirar(Disco.lerApontamentos(o.pasta) ?? "")
@@ -594,7 +608,7 @@ final class Estudo {
 
     private func executar(
         _ aula: Aula, _ tipo: Tipo, pergunta: String? = nil, citacao: CitacaoPergunta? = nil, comTranscricao: Bool = true, esforco: Esforco? = nil,
-        sistema: String,
+        motor: MotorTipo? = nil, sistema: String,
         conteudo: @escaping @MainActor (ContextoAula?) -> [BlocoConteudo],
         concluir: @escaping @MainActor (String) throws -> Void
     ) {
@@ -602,7 +616,7 @@ final class Estudo {
         guard emCurso[chave] == nil else { return }
         erros[chave] = nil
         let gerador: NotesGenerator
-        do { gerador = try definicoes.gerador(esforco: esforco) } catch {
+        do { gerador = try definicoes.gerador(esforco: esforco, motor: motor) } catch {
             erros[chave] = error.localizedDescription
             return
         }
@@ -637,6 +651,86 @@ final class Estudo {
             versao += 1
         }
     }
+
+    #if !os(macOS)
+    // MARK: Pelo Mac
+
+    /// Entrega o pedido ao Recap do Mac (`CaixaPedidos`) e vai lendo o estado que ele escreve. O resultado chega
+    /// pelo iCloud no ficheiro de sempre (`perguntas.json`, `exercicios.md`, `ligacoes.json`): espera-se por ele.
+    private func pedirAoMac(_ tipo: Tipo, _ aula: Aula, pergunta: String? = nil, citacao: CitacaoPergunta? = nil) {
+        let chave = Self.chave(aula, tipo)
+        guard emCurso[chave] == nil else { return }
+        erros[chave] = nil
+        let raiz = library.raiz
+        let pedido = PedidoMac(tipo: tipo, aula: Self.caminhoRelativo(aula.pasta, raiz: raiz), pergunta: pergunta, citacao: citacao)
+        // Um URL novo de cada vez: o `URL` guarda em cache a data de modificação.
+        let resultado = { aula.pasta.appending(path: Self.ficheiro(tipo)) }
+        let antes = Disco.dataModificacao(resultado())
+        do { try CaixaPedidos.enviar(pedido, raiz: raiz) } catch {
+            erros[chave] = "Não foi possível enviar o pedido ao Mac: \(error.localizedDescription)"
+            return
+        }
+        emCurso[chave] = EmCurso(pergunta: pergunta, citacao: citacao, pedidoMac: pedido)
+        emCurso[chave]?.tarefa = Task {
+            let inicio = Date.now
+            var recebido = false
+            ciclo: while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1.5))
+                guard let e = CaixaPedidos.estado(pedido.id, raiz: raiz) else {
+                    if !recebido, Date.now.timeIntervalSince(inicio) > 30, emCurso[chave]?.aEsperarMac == false { emCurso[chave]?.aEsperarMac = true }
+                    continue
+                }
+                recebido = true
+                if emCurso[chave]?.aEsperarMac == true { emCurso[chave]?.aEsperarMac = false }
+                if let t = e.texto, !t.isEmpty, t != emCurso[chave]?.texto { emCurso[chave]?.texto = t }
+                switch e.fase {
+                case .recebido, .aGerar:
+                    if Date.now.timeIntervalSince(e.atualizadoEm) > 180 {
+                        erros[chave] = "O Recap no Mac deixou de responder (fechou-se ou adormeceu)."
+                        break ciclo
+                    }
+                case .erro:
+                    erros[chave] = e.erro ?? "O Mac não conseguiu responder."
+                    break ciclo
+                case .feito:
+                    // O estado pode chegar antes do ficheiro: até um minuto à espera de o ver mudar e descarregado.
+                    let fim = Date.now.addingTimeInterval(60)
+                    while !Task.isCancelled, Date.now < fim,
+                          Disco.dataModificacao(resultado()) == antes || Disco.porDescarregar(resultado()) {
+                        try? await Task.sleep(for: .seconds(1.5))
+                    }
+                    break ciclo
+                }
+            }
+            if Task.isCancelled { CaixaPedidos.apagar(pedido.id, raiz: raiz) }
+            // "Usar a API" já pôs outro pedido no lugar deste: não o apagar.
+            if emCurso[chave]?.pedidoMac?.id == pedido.id { emCurso[chave] = nil }
+            versao += 1
+        }
+    }
+
+    /// O Mac não está a responder: faz o mesmo pedido pela API (se houver chave).
+    func usarAPI(_ aula: Aula, _ tipo: Tipo) {
+        let chave = Self.chave(aula, tipo)
+        guard let pedido = emCurso[chave]?.pedidoMac else { return }
+        emCurso[chave]?.tarefa?.cancel()
+        emCurso[chave] = nil
+        switch tipo {
+        case .pergunta: perguntar(pedido.pergunta ?? "", sobre: aula, citacao: pedido.citacao, motor: .api)
+        case .exercicios: gerarExercicios(aula, motor: .api)
+        case .ligacoes: gerarLigacoes(aula, motor: .api)
+        }
+    }
+
+    /// Onde o Mac grava o resultado de cada tipo de pedido.
+    private static func ficheiro(_ tipo: Tipo) -> String {
+        switch tipo {
+        case .pergunta: Disco.perguntasJSON
+        case .exercicios: Disco.exerciciosMD
+        case .ligacoes: Disco.ligacoesJSON
+        }
+    }
+    #endif
 
     // MARK: Ajudas
 

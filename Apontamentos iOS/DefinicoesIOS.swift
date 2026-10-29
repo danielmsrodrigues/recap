@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// As definições do iPad e do iPhone. As do curso (línguas, contexto, organização) vêm do Mac
-/// (`_recap/definicoes.json`); aqui fica só o que é deste dispositivo: a pasta e o acesso ao Claude.
+/// As definições do iPad e do iPhone. As do curso (línguas, contexto, organização) vêm do Mac (`_recap/definicoes.json`);
+/// aqui fica só o que é deste dispositivo: a pasta e por onde se chega ao Claude (com o motor "Mac", o modelo é o do Mac).
 struct DefinicoesIOS: View {
     @Environment(Library.self) private var library
     @Environment(Definicoes.self) private var definicoes
@@ -25,8 +25,22 @@ struct DefinicoesIOS: View {
                 }
 
                 Section {
-                    Picker("Modelo", selection: $definicoes.modeloClaude) {
-                        ForEach(Definicoes.modelosClaude, id: \.id) { Text($0.nome).tag($0.id) }
+                    Picker("Por onde", selection: $definicoes.motor) {
+                        ForEach(MotorTipo.allCases) { Text($0.nome).tag($0) }
+                    }
+                } header: {
+                    Text("Claude")
+                } footer: {
+                    Text(definicoes.motor == .mac
+                         ? "As perguntas, os exercícios e as ligações vão para o Recap do Mac, que responde com o Claude Code e a tua subscrição. O Mac tem de estar ligado, com o Recap aberto."
+                         : "As perguntas, os exercícios e as ligações pedem-se à API da Anthropic, paga à parte.")
+                }
+
+                Section {
+                    if definicoes.motor == .api {
+                        Picker("Modelo", selection: $definicoes.modeloClaude) {
+                            ForEach(Definicoes.modelosClaude, id: \.id) { Text($0.nome).tag($0.id) }
+                        }
                     }
                     if definicoes.temChaveAPI {
                         LabeledContent("Chave da API", value: "Guardada")
@@ -48,9 +62,11 @@ struct DefinicoesIOS: View {
                     }
                     if let erro { Text(erro).foregroundStyle(.red) }
                 } header: {
-                    Text("Claude")
+                    Text("API da Anthropic")
                 } footer: {
-                    Text("As perguntas, os exercícios e as ligações pedem-se à API da Anthropic, paga à parte. A chave fica só neste dispositivo.")
+                    Text(definicoes.motor == .mac
+                         ? "Opcional: com uma chave, quando o Mac não responde podes pedir pela API. A chave fica só neste dispositivo."
+                         : "A chave fica só neste dispositivo.")
                 }
             }
             .navigationTitle("Definições")

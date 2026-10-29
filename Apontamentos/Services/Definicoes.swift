@@ -20,12 +20,18 @@ enum MotorTipo: String, CaseIterable, Identifiable, Sendable {
     /// Só no Mac: o iOS não corre processos.
     case claudeCode
     #endif
+    #if !os(macOS)
+    /// Só no iOS: o pedido vai ao Recap do Mac, que responde com o Claude Code (ver `PonteMac`).
+    case mac
+    #endif
     case api
     var id: String { rawValue }
     var nome: String {
         switch self {
         #if os(macOS)
         case .claudeCode: "Claude Code (subscrição)"
+        #else
+        case .mac: "Recap no Mac (subscrição)"
         #endif
         case .api: "API da Anthropic"
         }
@@ -34,7 +40,7 @@ enum MotorTipo: String, CaseIterable, Identifiable, Sendable {
     #if os(macOS)
     static let porDefeito = MotorTipo.claudeCode
     #else
-    static let porDefeito = MotorTipo.api
+    static let porDefeito = MotorTipo.mac
     #endif
 }
 
@@ -45,7 +51,6 @@ struct DefinicoesPartilhadas: Codable, Equatable, Sendable {
     var contextoCurso: String
     var linguaApontamentos: String
     var idiomaAulas: String
-    var modeloClaude: String
     var organizacao: String
     var iniciosPeriodos: [Int]
     var duracaoCurso: Int
@@ -92,6 +97,8 @@ final class Definicoes {
     var modeloClaude: String { didSet { defaults.set(modeloClaude, forKey: "modeloClaude") } }
     var esforco: Esforco { didSet { defaults.set(esforco.rawValue, forKey: "esforco") } }
     #if os(macOS)
+    /// Responder aos pedidos ao Claude feitos no iPad e no iPhone (`PonteMac`).
+    var responderPedidos: Bool { didSet { defaults.set(responderPedidos, forKey: "responderPedidos") } }
     var modeloWhisper: WhisperModelo { didSet { defaults.set(modeloWhisper.rawValue, forKey: "modeloWhisper") } }
     var slidesLimiar: Double { didSet { defaults.set(slidesLimiar, forKey: "slidesLimiar") } }
     var slidesIntervalo: Double { didSet { defaults.set(slidesIntervalo, forKey: "slidesIntervalo") } }
@@ -125,6 +132,7 @@ final class Definicoes {
         modeloClaude = defaults.string(forKey: "modeloClaude") ?? Self.modeloClaudePorDefeito
         esforco = defaults.string(forKey: "esforco").flatMap(Esforco.init) ?? .high
         #if os(macOS)
+        responderPedidos = defaults.object(forKey: "responderPedidos") as? Bool ?? true
         modeloWhisper = defaults.string(forKey: "modeloWhisper").flatMap(WhisperModelo.init) ?? .largeV3Turbo
         #endif
         pastaAulas = defaults.string(forKey: "pastaAulas") ?? ""
@@ -158,14 +166,13 @@ final class Definicoes {
 
     var partilhadas: DefinicoesPartilhadas {
         DefinicoesPartilhadas(contextoCurso: contextoCurso, linguaApontamentos: linguaApontamentos.rawValue,
-                              idiomaAulas: idiomaAulas.rawValue, modeloClaude: modeloClaude, organizacao: organizacao.rawValue,
+                              idiomaAulas: idiomaAulas.rawValue, organizacao: organizacao.rawValue,
                               iniciosPeriodos: iniciosPeriodos, duracaoCurso: duracaoCurso)
     }
 
     /// Passa a usar as preferências escritas pelo Mac (no iPad e no iPhone, ao abrir a pasta).
     func aplicar(_ p: DefinicoesPartilhadas) {
         contextoCurso = p.contextoCurso
-        modeloClaude = p.modeloClaude
         duracaoCurso = max(1, p.duracaoCurso)
         if let l = LinguaApontamentos(rawValue: p.linguaApontamentos) { linguaApontamentos = l }
         if let i = IdiomaAula(rawValue: p.idiomaAulas) { idiomaAulas = i }
@@ -208,13 +215,18 @@ final class Definicoes {
     #endif
 
     /// O gerador com o motor, o modelo e o esforço escolhidos; falha se faltar o Claude Code ou a chave.
-    func gerador(esforco: Esforco? = nil) throws -> NotesGenerator {
+    /// `motor`: outro que não o das Definições.
+    func gerador(esforco: Esforco? = nil, motor tipo: MotorTipo? = nil) throws -> NotesGenerator {
         let motor: Motor
-        switch self.motor {
+        switch tipo ?? self.motor {
         #if os(macOS)
         case .claudeCode:
             guard let url = claudeCode else { throw ErroClaudeCode.naoEncontrado }
             motor = .claudeCode(ClaudeCodeClient(executavel: url))
+        #else
+        case .mac:
+            // Os pedidos pelo Mac não passam por aqui: o `Estudo` entrega-os inteiros (`PonteMac`).
+            throw ErroClaude.semChave
         #endif
         case .api:
             guard let chave = KeychainStore.chaveAPI() else { throw ErroClaude.semChave }
@@ -228,6 +240,8 @@ final class Definicoes {
         switch motor {
         #if os(macOS)
         case .claudeCode: claudeCode == nil ? ErroClaudeCode.naoEncontrado.localizedDescription : nil
+        #else
+        case .mac: nil
         #endif
         case .api: temChaveAPI ? nil : ErroClaude.semChave.localizedDescription
         }

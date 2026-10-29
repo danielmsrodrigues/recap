@@ -33,7 +33,6 @@ struct PastaPartilhadaTests {
         mac.linguaApontamentos = try #require(LinguaApontamentos.allCases.last)
         mac.idiomaAulas = try #require(IdiomaAula.allCases.last)
         mac.organizacao = try #require(OrganizacaoCurso.allCases.last)
-        mac.modeloClaude = "claude-opus-5-5"
         mac.duracaoCurso = 3
         try DefinicoesPartilhadas.escrever(mac.partilhadas, raiz: raiz)
 

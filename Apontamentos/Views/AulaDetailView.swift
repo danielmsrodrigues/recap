@@ -40,6 +40,10 @@ struct AulaDetailView: View {
     @State private var houveEdicao = false
     @State private var pdfPronto = false
     @State private var aCriarPDF = false
+    #if !os(macOS)
+    /// PDF criado na hora para partilhar (quando o do Mac está desatualizado).
+    @State private var pdfPartilhado: FicheiroPartilhado?
+    #endif
     /// Procurar nos apontamentos (⌘F).
     @State private var procurando = false
     @State private var termoProcura = ""
@@ -136,6 +140,17 @@ struct AulaDetailView: View {
             navegacao.destino = DestinoAula(pasta: aula.pasta, separador: .apontamentos,
                                             seccao: LigacaoSeccao(ancora: partes[0], texto: partes.count > 1 ? partes[1] : ""))
         }
+        #if !os(macOS)
+        .task {
+            // `APONTAMENTOS_PDF="<caminho>"`: exporta os apontamentos para esse PDF (o exportador do iOS, sem tocar no ecrã).
+            guard let caminho = ProcessInfo.processInfo.environment["APONTAMENTOS_PDF"] else { return }
+            // Depois das vistas web da aula e do painel: como quando se toca em "Partilhar".
+            try? await Task.sleep(for: .seconds(8))
+            guard let apontamentos else { return }
+            do { try await ExportadorPDF.exportar(markdown: apontamentos, pastaAula: aula.pasta, para: URL(fileURLWithPath: caminho)) }
+            catch { erro = "PDF: \(error.localizedDescription)" }
+        }
+        #endif
         .task {
             // `APONTAMENTOS_SEPARADOR="Ligações"`: abre a aula nesse separador.
             if let nome = ProcessInfo.processInfo.environment["APONTAMENTOS_SEPARADOR"], let t = Tab(rawValue: nome) { tab = t }
@@ -162,6 +177,9 @@ struct AulaDetailView: View {
             if controlador.editando, houveEdicao { try? library.atualizarMeta(em: aula.pasta) { $0.editadoEm = .now } }
             if controlador.editando { largarEdicaoNasLigacoes() }
         }
+        #if !os(macOS)
+        .sheet(item: $pdfPartilhado) { FolhaPartilha(ficheiro: $0) }
+        #endif
         .alert("Erro", isPresented: Binding(get: { erro != nil }, set: { if !$0 { erro = nil } }), presenting: erro) { _ in
             Button("OK") { erro = nil }
         } message: { Text($0) }
@@ -391,12 +409,15 @@ struct AulaDetailView: View {
             Button("Editar", systemImage: "pencil") { comecarEdicao() }
                 .disabled(apontamentos == nil || controlador.editando)
             Menu("Partilhar", systemImage: "square.and.arrow.up") {
-                // O PDF é feito no Mac (ao lado do Markdown); se estiver desatualizado, partilha-se só o Markdown.
+                // O PDF é feito no Mac (ao lado do Markdown); se estiver desatualizado, cria-se aqui na hora.
                 if pdfPronto {
                     ShareLink(item: aula.pasta.appending(path: Disco.apontamentosPDF),
                               preview: SharePreview(aula.meta.titulo, icon: Image(systemName: "doc.richtext"))) {
                         Label("Apontamentos em PDF", systemImage: "doc.richtext")
                     }
+                } else {
+                    Button("Apontamentos em PDF", systemImage: "doc.richtext") { criarPDF() }
+                        .disabled(aCriarPDF)
                 }
                 ShareLink(item: aula.pasta.appending(path: Disco.apontamentosMD),
                           preview: SharePreview(aula.meta.titulo, icon: Image(systemName: "doc.plaintext"))) {
@@ -588,9 +609,25 @@ struct AulaDetailView: View {
         }
     }
     #else
-    /// No iOS o PDF não se refaz: é o que o Mac deixou, se estiver em dia com o Markdown.
+    /// No iOS o PDF não se refaz sozinho: é o que o Mac deixou, se estiver em dia com o Markdown.
     private func atualizarPDF() {
         pdfPronto = apontamentos != nil && Disco.pdfAtualizado(em: aula.pasta)
+    }
+
+    /// Um PDF dos apontamentos atuais num ficheiro temporário, para partilhar (não vai para a pasta da aula).
+    private func criarPDF() {
+        guard let apontamentos else { return }
+        aCriarPDF = true
+        let destino = FileManager.default.temporaryDirectory.appending(path: Disco.nomeDePasta(aula.meta.titulo) + ".pdf")
+        Task {
+            defer { aCriarPDF = false }
+            do {
+                try await ExportadorPDF.exportar(markdown: apontamentos, pastaAula: aula.pasta, para: destino)
+                pdfPartilhado = FicheiroPartilhado(url: destino)
+            } catch {
+                erro = "Não foi possível criar o PDF: \(error.localizedDescription)"
+            }
+        }
     }
     #endif
 

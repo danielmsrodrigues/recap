@@ -45,6 +45,7 @@ struct PainelEstudo: View {
 struct PerguntasView: View {
     @Environment(Estudo.self) private var estudo
     @Environment(Definicoes.self) private var definicoes
+    @Environment(Library.self) private var library
     let aula: Aula
     var aoClicarTimestamp: (Double) -> Void
     /// Um link para uma secção dos apontamentos numa resposta.
@@ -54,6 +55,9 @@ struct PerguntasView: View {
     @State private var perguntas: [PerguntaAula] = []
     @State private var confirmarApagar = false
     @State private var erroPDF: String?
+    #if !os(macOS)
+    @State private var pdfPartilhado: FicheiroPartilhado?
+    #endif
     @FocusState private var focado: Bool
 
     private var emCurso: Estudo.EmCurso? { estudo.emCurso(aula, .pergunta) }
@@ -81,6 +85,7 @@ struct PerguntasView: View {
                 NotesWebView(markdown: conversa, emStreaming: emCurso != nil, aoClicarTimestamp: aoClicarTimestamp, modo: "conversa",
                              aoClicarSeccao: aoClicarSeccao, aoGuardarPDF: aoGuardarPDF)
             }
+            AvisoEsperaMac(aula: aula, tipo: .pergunta)
             if let erro = erroPDF ?? estudo.erro(aula, .pergunta) {
                 Label(erro, systemImage: "exclamationmark.triangle")
                     .font(.callout).foregroundStyle(.red)
@@ -91,7 +96,11 @@ struct PerguntasView: View {
             campo
         }
         .background(.background)
-        .task(id: estudo.versao) { perguntas = Disco.lerPerguntas(aula.pasta) }
+        #if !os(macOS)
+        .sheet(item: $pdfPartilhado) { FolhaPartilha(ficheiro: $0) }
+        #endif
+        // `library.versao`: uma resposta pode chegar pelo iCloud (dada no Mac, ou pedida aqui ao Mac).
+        .task(id: [estudo.versao, library.versao]) { perguntas = Disco.lerPerguntas(aula.pasta) }
         // Um trecho escolhido (ou o painel aberto por causa dele): o cursor vai para o campo.
         .task(id: estudo.pedidosCitacao) {
             guard citacao != nil, estudo.consumirFoco() else { return }
@@ -267,8 +276,24 @@ struct PerguntasView: View {
         }
     }
     #else
-    private static let podeGuardarPDF = false
-    private var aoGuardarPDF: ((Int) -> Void)? { nil }
+    private static let podeGuardarPDF = true
+    private var aoGuardarPDF: ((Int) -> Void)? { guardarPDF }
+
+    /// No iOS o PDF é criado num ficheiro temporário e vai para a folha de partilha (guardar no Ficheiros, GoodNotes…).
+    private func guardarPDF(_ indice: Int) {
+        guard perguntas.indices.contains(indice), let documento = perguntas[indice].documentoPDF else { return }
+        let destino = FileManager.default.temporaryDirectory
+            .appending(path: Disco.nomeDePasta(TituloAula.tema(documento) ?? aula.meta.titulo) + ".pdf")
+        erroPDF = nil
+        Task {
+            do {
+                try await ExportadorPDF.exportar(markdown: documento, pastaAula: aula.pasta, para: destino)
+                pdfPartilhado = FicheiroPartilhado(url: destino)
+            } catch {
+                erroPDF = "Não foi possível criar o PDF: \(error.localizedDescription)"
+            }
+        }
+    }
     #endif
 
     private func enviar(_ texto: String) { enviar(texto, citacao: citacao) }
@@ -284,6 +309,7 @@ struct PerguntasView: View {
 struct ExerciciosView: View {
     @Environment(Estudo.self) private var estudo
     @Environment(Definicoes.self) private var definicoes
+    @Environment(Library.self) private var library
     let aula: Aula
     var aoClicarTimestamp: (Double) -> Void
 
@@ -307,8 +333,9 @@ struct ExerciciosView: View {
             } else {
                 vazio.frame(maxHeight: .infinity)
             }
+            AvisoEsperaMac(aula: aula, tipo: .exercicios)
         }
-        .task(id: estudo.versao) { markdown = Disco.lerTexto(Disco.exerciciosMD, em: aula.pasta) }
+        .task(id: [estudo.versao, library.versao]) { markdown = Disco.lerTexto(Disco.exerciciosMD, em: aula.pasta) }
     }
 
     private var barra: some View {
@@ -343,6 +370,32 @@ struct ExerciciosView: View {
                 Button("Gerar exercícios") { estudo.gerarExercicios(aula) }
                     .buttonStyle(.borderedProminent)
             }
+        }
+    }
+}
+
+/// O pedido foi para o Recap do Mac (motor "Mac", no iOS) e ele ainda não pegou nele. No Mac nunca aparece.
+struct AvisoEsperaMac: View {
+    @Environment(Estudo.self) private var estudo
+    @Environment(Definicoes.self) private var definicoes
+    let aula: Aula
+    let tipo: Estudo.Tipo
+
+    var body: some View {
+        if estudo.emCurso(aula, tipo)?.aEsperarMac == true {
+            VStack(alignment: .leading, spacing: 6) {
+                Label("À espera do Recap no Mac. Tem de estar aberto, com a pasta das aulas no iCloud Drive.", systemImage: "desktopcomputer")
+                    .foregroundStyle(.secondary)
+                #if !os(macOS)
+                if definicoes.temChaveAPI {
+                    Button("Usar a API desta vez") { estudo.usarAPI(aula, tipo) }
+                        .buttonStyle(.bordered)
+                }
+                #endif
+            }
+            .font(.callout)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14).padding(.vertical, 8)
         }
     }
 }
