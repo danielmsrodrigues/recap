@@ -35,10 +35,15 @@ final class PastaAulas {
         }
     }
 
-    /// Guarda a pasta vinda do seletor de pastas (`fileImporter` com `.folder`).
+    /// Guarda a pasta vinda do seletor de pastas (`fileImporter` com `.folder`). Recusa uma pasta sem aulas do Recap
+    /// (o seletor abre em "No iPhone" e é fácil carregar em Abrir no sítio errado): a anterior, se houver, continua.
     func escolher(_ nova: URL) throws {
         guard nova.startAccessingSecurityScopedResource() else {
             throw NSError(domain: "Recap", code: 30, userInfo: [NSLocalizedDescriptionKey: "Sem acesso à pasta \(nova.lastPathComponent)."])
+        }
+        if let problema = Disco.problemaPastaAulas(nova) {
+            nova.stopAccessingSecurityScopedResource()
+            throw NSError(domain: "Recap", code: 31, userInfo: [NSLocalizedDescriptionKey: problema])
         }
         defaults.set(try nova.bookmarkData(), forKey: Self.chave)
         url?.stopAccessingSecurityScopedResource()

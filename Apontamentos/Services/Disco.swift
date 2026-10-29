@@ -259,6 +259,28 @@ enum Disco {
         SlidesNosApontamentos.apagarPaginas(de: pdf, em: pasta)
     }
 
+    /// nil se `pasta` parece a pasta das aulas do Recap (tem `_recap` ou alguma cadeira); senão, o que dizer a quem a escolheu.
+    /// No iOS escolhe-se a pasta no Ficheiros, e é fácil ficar num nível acima ou abaixo do certo.
+    static func problemaPastaAulas(_ pasta: URL) -> String? {
+        let fm = FileManager.default
+        let itens = (try? fm.contentsOfDirectory(at: pasta, includingPropertiesForKeys: nil)) ?? []
+        let nomes = itens.map(\.lastPathComponent)
+        func eCadeira(_ url: URL) -> Bool { fm.fileExists(atPath: url.appending(path: cadeiraJSON).path) }
+        // O nome que o Ficheiros mostra: a raiz de "No iPhone" chama-se "File Provider Storage" no disco.
+        let nome = pasta.lastPathComponent == "File Provider Storage" ? "No iPhone" : pasta.lastPathComponent
+        if nomes.contains(pastaSistema) || itens.contains(where: eCadeira) { return nil }
+        if nomes.contains(cadeiraJSON) {
+            return "\"\(nome)\" é uma cadeira. Escolhe a pasta de cima, onde estão todas as cadeiras."
+        }
+        if nomes.contains(aulaJSON) {
+            return "\"\(nome)\" é uma aula. Escolhe a pasta onde estão todas as cadeiras (duas acima)."
+        }
+        if let aulas = itens.first(where: { $0.lastPathComponent == "Aulas" }), problemaPastaAulas(aulas) == nil {
+            return "As aulas estão dentro de \"\(nome)\": abre a pasta Aulas e escolhe-a."
+        }
+        return "\"\(nome)\" não tem aulas do Recap. Escolhe a pasta que o Recap usa no Mac (Definições → Aulas), normalmente iCloud Drive → Documents → Recap → Aulas."
+    }
+
     static func urlSlide(_ slide: Slide, em pasta: URL) -> URL {
         pasta.appending(path: pastaSlides).appending(path: slide.ficheiro)
     }
