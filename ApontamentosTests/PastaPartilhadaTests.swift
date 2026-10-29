@@ -101,4 +101,22 @@ struct PastaPartilhadaTests {
         for _ in 0..<40 where avisos == 0 { try await Task.sleep(for: .milliseconds(250)) }
         #expect(avisos == 1)
     }
+
+    @Test func reconheceAPastaDasAulas() throws {
+        let raiz = try pasta()
+        defer { try? FileManager.default.removeItem(at: raiz) }
+        let recap = raiz.appending(path: "Recap"), aulas = recap.appending(path: "Aulas")
+        let lib = Library(raiz: aulas)
+        try lib.criarCadeira(nome: "Cálculo")
+        let cadeira = aulas.appending(path: "Cálculo")
+        let aula = cadeira.appending(path: "2026-10-27_Aula 1")
+        try FileManager.default.createDirectory(at: aula, withIntermediateDirectories: true)
+        try Disco.escreverMeta(AulaMeta(titulo: "Aula 1", data: .now, video: nil), em: aula)
+
+        #expect(Disco.problemaPastaAulas(aulas) == nil)
+        #expect(Disco.problemaPastaAulas(recap)?.contains("abre a pasta Aulas") == true)
+        #expect(Disco.problemaPastaAulas(cadeira)?.contains("é uma cadeira") == true)
+        #expect(Disco.problemaPastaAulas(aula)?.contains("é uma aula") == true)
+        #expect(Disco.problemaPastaAulas(raiz)?.contains("não tem aulas do Recap") == true)
+    }
 }

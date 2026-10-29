@@ -38,8 +38,21 @@ struct EscolherPastaView: View {
         ContentUnavailableView {
             Label("Escolhe a pasta das aulas", systemImage: "folder")
         } description: {
-            Text("A mesma pasta do iCloud Drive que o Recap usa no Mac (Definições → Aulas).")
-            if let e = erro ?? pasta.erro { Text(e).foregroundStyle(.red) }
+            VStack(spacing: 14) {
+                Text("A mesma pasta do iCloud Drive que o Recap usa no Mac (Definições → Aulas).")
+                // O seletor abre em "Recentes" e o Explorar começa em "No iPhone": sem isto, ninguém dá com o iCloud Drive.
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Toca em **Explorar**, em baixo.", systemImage: "1.circle")
+                    Label("Se estiveres em \"No iPhone\", volta atrás com **‹**, em cima à esquerda.", systemImage: "2.circle")
+                    Label("Abre **iCloud Drive → Documents → Recap → Aulas**.", systemImage: "3.circle")
+                    Label("Dentro de Aulas, toca em **Abrir**.", systemImage: "4.circle")
+                }
+                .font(.callout)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if let e = erro ?? pasta.erro {
+                    Label(e, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red).font(.callout)
+                }
+            }
         } actions: {
             Button("Escolher pasta…") { aEscolher = true }
                 .buttonStyle(.borderedProminent)
