@@ -517,6 +517,12 @@ struct AulaDetailView: View {
     }
 
     private func carregar() {
+        // Mudanças feitas ao mesmo tempo noutro dispositivo (pelo iCloud): decide-se antes de ler.
+        ConflitosICloud.resolverPerguntas(aula.pasta)
+        let copias = ConflitosICloud.resolver(aula.pasta.appending(path: Disco.apontamentosMD))
+        if !copias.isEmpty {
+            erro = "Os apontamentos foram mudados noutro dispositivo ao mesmo tempo. Ficou a versão mais recente; a outra está na pasta da aula, em \(copias.map(\.lastPathComponent).joined(separator: ", "))."
+        }
         transcricao = Disco.lerTranscricao(aula.pasta)
         apontamentos = Disco.lerApontamentos(aula.pasta)
         slides = Disco.lerSlides(aula.pasta)

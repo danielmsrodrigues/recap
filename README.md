@@ -10,6 +10,7 @@ App para Mac que transforma aulas em apontamentos de estudo em português (PT-PT
   - ligações entre as aulas da cadeira;
   - procura em todas as aulas.
 - **Exportação:** apontamentos em PDF (para o Freeform, iPad…) ou em Markdown.
+- **iPad e iPhone:** tudo o que é estudo, com as aulas sincronizadas pelo iCloud Drive (ver abaixo). A gravação e a transcrição ficam no Mac.
 
 As aulas ficam em `~/Aulas/<cadeira>/<data>_<título>/`, em ficheiros normais. A pasta muda-se em Definições → Aulas (por exemplo para o iCloud Drive). Nada é enviado para lado nenhum além do pedido ao Claude.
 
@@ -55,6 +56,31 @@ Na primeira abertura, a janela **Preparar o Recap** guia os três passos que fal
 - **Sobre a cadeira:** a primeira linha de cada cadeira na barra lateral. Junta numa ficha a avaliação, as datas, o programa e os avisos de todas as aulas, e vai crescendo a cada aula. Para começar já com o essencial, junta o programa da cadeira em PDF no menu **Programa**.
 - **Revisão:** o ponto azul na barra lateral marca as aulas por rever. Marca-as como revistas no botão do canto superior direito.
 
+## No iPad e no iPhone
+
+No iPad e no iPhone fazes tudo o que é estudo:
+
+- lês e editas os apontamentos, com as fórmulas;
+- vês os slides, os PDFs do professor e a transcrição;
+- tens a ficha da cadeira, as ligações e a procura em todas as aulas;
+- marcas as aulas como revistas;
+- perguntas à aula, pedes exercícios e guardas as respostas em PDF.
+
+Gravar e transcrever continua a ser só no Mac.
+
+1. **No Mac, põe as aulas no iCloud Drive:** em Definições → Aulas, escolhe uma pasta do iCloud Drive (por exemplo `iCloud Drive/Aulas`) e deixa o Recap movê-las.
+2. **Instala o Recap no iPad ou no iPhone pelo TestFlight:** pede o convite a quem publica.
+3. **Na primeira abertura, escolhe essa mesma pasta:** o Recap lembra-se dela.
+
+As perguntas à aula, os exercícios e as ligações vão para o **Recap do Mac**, que responde com o Claude Code e a tua subscrição, sem custos extra:
+
+- O Mac tem de estar ligado, com o Recap aberto. Para não adormecer quando está ligado à corrente, desliga a pausa automática em Definições do Sistema → Bateria → Opções.
+- A resposta demora alguns segundos a mais do que no Mac: vai e volta pelo iCloud.
+- Se o Mac não responder, o iPad avisa. Em alternativa, em Definições (⚙︎) escolhe "API da Anthropic" e guarda uma chave, que fica só nesse dispositivo.
+- No Mac, a opção está em Definições → Claude → "Responder às perguntas feitas no iPad e no iPhone".
+
+Se editares os mesmos apontamentos em dois dispositivos sem rede, fica a versão mais recente. A outra é guardada na pasta da aula, como `apontamentos.conflito-<data>.md`. As perguntas feitas nos dois juntam-se numa só conversa.
+
 ## Compilar a partir do código
 
 Precisas do Xcode 26 ou mais recente.
@@ -70,6 +96,16 @@ O projeto assina com o certificado "Apple Development: Sérgio Ferreira (7T6235V
 As versões publicadas têm de ser assinadas sempre com esse certificado: o Recap só aceita uma atualização assinada pelo mesmo certificado da versão instalada. Quem publica importa-o no Acesso a Porta-chaves a partir do `.p12` (com a chave privada) e confirma com `security find-identity -v -p codesigning`.
 
 O `Ferramentas/publicar.sh` compila a versão final e instala-a em /Applications. Com `--github 1.3`, também a publica como release (as apps instaladas atualizam-se a partir daí).
+
+A app do iPad e do iPhone é o alvo **Recap iOS** do mesmo projeto. Partilha com o Mac o código do estudo; o que é só do iOS está em `Apontamentos iOS/`. Para a correr no simulador, escolhe o esquema "Recap iOS".
+
+Para enviar uma versão para o TestFlight, a app `pt.danielrodrigues.Recap.ios` tem de existir no App Store Connect. Depois corre:
+
+```bash
+RECAP_EQUIPA=<ID da equipa> Ferramentas/publicar-ios.sh --versao 1.3
+```
+
+O script entra na conta da equipa de uma de duas formas: pela conta configurada em Xcode → Definições → Contas, ou por uma chave da API do App Store Connect (`RECAP_ASC_CHAVE`, `RECAP_ASC_ID`, `RECAP_ASC_EMISSOR`).
 
 ## Licenças de terceiros
 

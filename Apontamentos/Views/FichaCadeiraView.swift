@@ -92,6 +92,10 @@ struct FichaCadeiraView: View {
             if !controlador.editando { realce = d.termos }
         }
         .task(id: fichas.versao) {
+            let copias = ConflitosICloud.resolver(FichaCadeira.url(cadeira.pasta))
+            if !copias.isEmpty {
+                erro = "A ficha foi mudada noutro dispositivo ao mesmo tempo. Ficou a versão mais recente; a outra está na pasta da cadeira, em \(copias.map(\.lastPathComponent).joined(separator: ", "))."
+            }
             if !controlador.editando { ficha = FichaCadeira.lerFicha(cadeira.pasta) }
             temPrograma = FichaCadeira.temPrograma(cadeira.pasta)
         }
