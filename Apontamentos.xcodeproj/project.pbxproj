@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		A10000000000000000000101 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000401 /* WhisperKit */; };
 		A10000000000000000000103 /* SpeakerKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000403 /* SpeakerKit */; };
+		A10000000000000000000104 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000405 /* ZIPFoundation */; };
+		A10000000000000000001104 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000406 /* ZIPFoundation */; };
 		A10000000000000000000102 /* Web in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000203 /* Web */; };
 		A10000000000000000001102 /* Web in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000203 /* Web */; };
 /* End PBXBuildFile section */
@@ -89,6 +91,7 @@
 			files = (
 				A10000000000000000000101 /* WhisperKit in Frameworks */,
 				A10000000000000000000103 /* SpeakerKit in Frameworks */,
+				A10000000000000000000104 /* ZIPFoundation in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -103,6 +106,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000000000000000001104 /* ZIPFoundation in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -152,6 +156,7 @@
 			packageProductDependencies = (
 				A10000000000000000000401 /* WhisperKit */,
 				A10000000000000000000403 /* SpeakerKit */,
+				A10000000000000000000405 /* ZIPFoundation */,
 			);
 			productName = Apontamentos;
 			productReference = A10000000000000000000201 /* Apontamentos.app */;
@@ -196,6 +201,7 @@
 			);
 			name = "Recap iOS";
 			packageProductDependencies = (
+				A10000000000000000000406 /* ZIPFoundation */,
 			);
 			productName = "Recap iOS";
 			productReference = A10000000000000000001201 /* Recap.app */;
@@ -234,6 +240,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				A10000000000000000000402 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */,
+				A10000000000000000000404 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A10000000000000000000802 /* Products */;
@@ -569,6 +576,14 @@
 				minimumVersion = 1.1.1;
 			};
 		};
+		A10000000000000000000404 /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/weichsel/ZIPFoundation.git";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 0.9.19;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -581,6 +596,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A10000000000000000000402 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */;
 			productName = SpeakerKit;
+		};
+		A10000000000000000000405 /* ZIPFoundation */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000000000000000000404 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
+			productName = ZIPFoundation;
+		};
+		A10000000000000000000406 /* ZIPFoundation */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000000000000000000404 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
+			productName = ZIPFoundation;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -59,6 +59,15 @@ struct PerguntasView: View {
     @State private var pdfPartilhado: FicheiroPartilhado?
     #endif
     @FocusState private var focado: Bool
+    /// Ficheiros já copiados para `anexos-chat/`, à espera da pergunta.
+    @State private var anexos: [String] = []
+    @State private var escolherAnexos = false
+    @State private var erroAnexo: String?
+    #if os(macOS)
+    /// O campo do Mac é um `NSTextView` (`CampoPergunta`): o foco chega e sai por aqui.
+    @State private var focadoMac = false
+    @State private var pedidoFoco = 0
+    #endif
 
     private var emCurso: Estudo.EmCurso? { estudo.emCurso(aula, .pergunta) }
     /// Trecho selecionado nos apontamentos ou na transcrição, à espera da pergunta.
@@ -72,7 +81,15 @@ struct PerguntasView: View {
     ]
 
     private var podeEnviar: Bool {
-        Estudo.pergunta(texto, citacao: citacao) != nil && emCurso == nil && definicoes.faltaParaGerar == nil
+        Estudo.pergunta(texto, citacao: citacao, anexos: anexos) != nil && emCurso == nil && definicoes.faltaParaGerar == nil
+    }
+
+    private var campoFocado: Bool {
+        #if os(macOS)
+        focadoMac
+        #else
+        focado
+        #endif
     }
 
     var body: some View {
@@ -86,7 +103,7 @@ struct PerguntasView: View {
                              aoClicarSeccao: aoClicarSeccao, aoGuardarPDF: aoGuardarPDF)
             }
             AvisoEsperaMac(aula: aula, tipo: .pergunta)
-            if let erro = erroPDF ?? estudo.erro(aula, .pergunta) {
+            if let erro = erroAnexo ?? erroPDF ?? estudo.erro(aula, .pergunta) {
                 Label(erro, systemImage: "exclamationmark.triangle")
                     .font(.callout).foregroundStyle(.red)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -99,13 +116,24 @@ struct PerguntasView: View {
         #if !os(macOS)
         .sheet(item: $pdfPartilhado) { FolhaPartilha(ficheiro: $0) }
         #endif
+        .fileImporter(isPresented: $escolherAnexos, allowedContentTypes: Anexos.tiposAceites, allowsMultipleSelection: true) { r in
+            if case .success(let urls) = r { juntar(urls) }
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            juntar(urls)
+            return true
+        }
         // `library.versao`: uma resposta pode chegar pelo iCloud (dada no Mac, ou pedida aqui ao Mac).
         .task(id: [estudo.versao, library.versao]) { perguntas = Disco.lerPerguntas(aula.pasta) }
         // Um trecho escolhido (ou o painel aberto por causa dele): o cursor vai para o campo.
         .task(id: estudo.pedidosCitacao) {
             guard citacao != nil, estudo.consumirFoco() else { return }
             try? await Task.sleep(for: .milliseconds(80))
+            #if os(macOS)
+            pedidoFoco += 1
+            #else
             focado = true
+            #endif
         }
         #if DEBUG
         .task {
@@ -197,14 +225,87 @@ struct PerguntasView: View {
         .padding(.top, 10)
     }
 
+    private var marcador: String {
+        if citacao != nil { return "Pergunta sobre o trecho (↩ para o explicar)" }
+        return anexos.isEmpty ? "Pergunta sobre esta aula…" : "Pergunta sobre os ficheiros (↩ para os explicar)"
+    }
+
+    /// Os ficheiros juntados, cada um com um botão para o tirar.
+    private var fichas: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(anexos, id: \.self) { nome in
+                    HStack(spacing: 4) {
+                        Image(systemName: Self.icone(nome)).foregroundStyle(.secondary)
+                        Text(nome).lineLimit(1).truncationMode(.middle)
+                        Button("Tirar \(nome)", systemImage: "xmark.circle.fill") {
+                            Anexos.remover(nome, em: aula.pasta)
+                            anexos.removeAll { $0 == nome }
+                        }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(.secondary)
+                    }
+                    .font(.callout)
+                    .frame(maxWidth: 220)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(.quaternary.opacity(0.6), in: .rect(cornerRadius: 8))
+                }
+            }
+        }
+    }
+
+    private static func icone(_ nome: String) -> String {
+        switch Anexos.tipo(nome) {
+        case .imagem: "photo"
+        case .pdf: "doc.richtext"
+        case .folha: "tablecells"
+        case .apresentacao: "rectangle.on.rectangle"
+        default: "doc.text"
+        }
+    }
+
     private var campo: some View {
-        HStack(spacing: 6) {
-            TextField(citacao == nil ? "Pergunta sobre esta aula…" : "Pergunta sobre o trecho (↩ para o explicar)", text: $texto)
-                .textFieldStyle(.plain)
-                // O .title2 do HStack é só para os ícones dos botões.
-                .font(.body)
-                .focused($focado)
-                .onSubmit { enviar(texto) }
+        VStack(alignment: .leading, spacing: 6) {
+            if !anexos.isEmpty { fichas }
+            HStack(alignment: .bottom, spacing: 6) {
+                Button("Juntar ficheiros", systemImage: "paperclip") { escolherAnexos = true }
+                    .foregroundStyle(.secondary)
+                    .help("Juntar ficheiros à pergunta (imagens, PDF, Excel, Word, PowerPoint, texto). Também podes colar ou arrastar.")
+                caixaTexto
+                    // O .title2 do HStack é só para os ícones dos botões.
+                    .font(.body)
+                    .padding(.bottom, 4)
+                botaoEnviar
+            }
+        }
+        .labelStyle(.iconOnly)
+        .buttonStyle(.borderless)
+        .font(.title2)
+        .padding(.leading, 8)
+        .padding(.trailing, 6)
+        .padding(.vertical, 6)
+        .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(campoFocado ? Color.accentColor.opacity(0.6) : .clear, lineWidth: 1.5))
+        .padding(12)
+        .font(.body)
+    }
+
+    @ViewBuilder private var caixaTexto: some View {
+        #if os(macOS)
+        CampoPergunta(texto: $texto, marcador: marcador, pedidoFoco: pedidoFoco,
+                      aoMudarFoco: { focadoMac = $0 }, aoEnviar: { enviar(texto) }, aoJuntar: juntar)
+        #else
+        TextField(marcador, text: $texto, axis: .vertical)
+            .lineLimit(1...6)
+            .textFieldStyle(.plain)
+            .focused($focado)
+            .onSubmit { enviar(texto) }
+        #endif
+    }
+
+    @ViewBuilder private var botaoEnviar: some View {
+        Group {
             if emCurso != nil {
                 Button("Parar", systemImage: "stop.circle.fill") { estudo.cancelar(aula, .pergunta) }
                     .help("Parar a resposta")
@@ -212,40 +313,55 @@ struct PerguntasView: View {
                 Button("Perguntar", systemImage: "arrow.up.circle.fill") { enviar(texto) }
                     .foregroundStyle(podeEnviar ? Color.accentColor : Color.secondary)
                     .disabled(!podeEnviar)
-                    .help("Perguntar (↩)")
+                    .help("Perguntar (↩; ⇧↩ muda de linha)")
             }
         }
-        .labelStyle(.iconOnly)
-        .buttonStyle(.borderless)
-        .font(.title2)
-        .padding(.leading, 14)
-        .padding(.trailing, 6)
-        .padding(.vertical, 6)
-        .background(.quaternary.opacity(0.5), in: .capsule)
-        .overlay(Capsule().strokeBorder(focado ? Color.accentColor.opacity(0.6) : .clear, lineWidth: 1.5))
-        .padding(12)
-        .font(.body)
+    }
+
+    /// Copia os ficheiros para a pasta da aula. Os que não se aceitam ficam de fora, com o aviso do primeiro.
+    private func juntar(_ urls: [URL]) {
+        erroAnexo = nil
+        var total = anexos.reduce(0) { $0 + Anexos.tamanho($1, em: aula.pasta) }
+        for url in urls {
+            let acesso = url.startAccessingSecurityScopedResource()
+            defer { if acesso { url.stopAccessingSecurityScopedResource() } }
+            do {
+                let nome = try Anexos.juntar(url, em: aula.pasta)
+                let tamanho = Anexos.tamanho(nome, em: aula.pasta)
+                guard total + tamanho <= Anexos.tamanhoMaximo else {
+                    Anexos.remover(nome, em: aula.pasta)
+                    erroAnexo = "Os ficheiros desta pergunta passavam de \(Anexos.tamanhoMaximo / 1_048_576) MB: \"\(url.lastPathComponent)\" ficou de fora."
+                    continue
+                }
+                total += tamanho
+                anexos.append(nome)
+            } catch {
+                if erroAnexo == nil { erroAnexo = error.localizedDescription }
+            }
+        }
     }
 
     /// A conversa toda num só documento (uma vista web em vez de uma por resposta).
     private var conversa: String {
         var md = perguntas.enumerated().map { i, p in
-            Self.bloco(p.pergunta, p.citacao) + p.resposta
+            Self.bloco(p.pergunta, p.citacao, p.anexos ?? []) + p.resposta
                 + (p.documentoPDF == nil || !Self.podeGuardarPDF ? "" : "\n\n<div class=\"guardar-pdf\"><button data-resposta=\"\(i)\">Guardar PDF…</button></div>")
         }.joined(separator: "\n\n")
         if let emCurso, let pergunta = emCurso.pergunta {
-            md += (md.isEmpty ? "" : "\n\n") + Self.bloco(pergunta, emCurso.citacao)
+            md += (md.isEmpty ? "" : "\n\n") + Self.bloco(pergunta, emCurso.citacao, emCurso.anexos)
                 + (emCurso.texto.isEmpty ? "<div class=\"a-pensar\"><span></span><span></span><span></span></div>" : emCurso.texto)
         }
         return md
     }
 
     /// A pergunta numa bolha, com o trecho citado por cima (o `[mm:ss]` da legenda fica clicável).
-    private static func bloco(_ pergunta: String, _ citacao: CitacaoPergunta?) -> String {
+    private static func bloco(_ pergunta: String, _ citacao: CitacaoPergunta?, _ anexos: [String] = []) -> String {
         let trecho = citacao.map {
             "<div class=\"citacao\"><span class=\"origem\">\(html($0.legenda))</span>\(html($0.textoLimpo))</div>"
         } ?? ""
-        return "<div class=\"pergunta\">\(trecho)\(html(pergunta))</div>\n\n"
+        let ficheiros = anexos.isEmpty ? "" :
+            "<div class=\"citacao\"><span class=\"origem\">📎 \(anexos.count == 1 ? "Ficheiro" : "Ficheiros")</span>\(html(anexos.joined(separator: " · ")))</div>"
+        return "<div class=\"pergunta\">\(trecho)\(ficheiros)\(html(pergunta))</div>\n\n"
     }
 
     private static func html(_ texto: String) -> String {
@@ -299,9 +415,11 @@ struct PerguntasView: View {
     private func enviar(_ texto: String) { enviar(texto, citacao: citacao) }
 
     private func enviar(_ texto: String, citacao: CitacaoPergunta?) {
-        guard let pergunta = Estudo.pergunta(texto, citacao: citacao), emCurso == nil, definicoes.faltaParaGerar == nil else { return }
-        estudo.perguntar(pergunta, sobre: aula, citacao: citacao)
+        guard let pergunta = Estudo.pergunta(texto, citacao: citacao, anexos: anexos), emCurso == nil, definicoes.faltaParaGerar == nil else { return }
+        estudo.perguntar(pergunta, sobre: aula, citacao: citacao, anexos: anexos)
         self.texto = ""
+        anexos = []
+        erroAnexo = nil
     }
 }
 

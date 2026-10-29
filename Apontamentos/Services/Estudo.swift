@@ -9,6 +9,8 @@ struct PerguntaAula: Codable, Identifiable, Hashable, Sendable {
     var data = Date.now
     /// O trecho selecionado sobre o qual se perguntou.
     var citacao: CitacaoPergunta?
+    /// Ficheiros juntados à pergunta, em `anexos-chat/` (ver `Anexos`).
+    var anexos: [String]?
 }
 
 extension PerguntaAula {
@@ -226,15 +228,17 @@ extension ContextoAula {
     /// só vão até onde cabem no pedido, para se saber que páginas foram dadas.
     /// Lê PDFs (até 24 MB) e dezenas de JPEG e passa-os a base64: fora do fio principal.
     @concurrent
-    static func carregar(_ aula: Aula, cadeira: Cadeira?, transcricao: Transcricao) async -> ContextoAula {
+    /// `reservado`: bytes do pedido que já vão para outra coisa (os ficheiros juntados a uma pergunta).
+    static func carregar(_ aula: Aula, cadeira: Cadeira?, transcricao: Transcricao, reservado: Int = 0) async -> ContextoAula {
         let pdfs = Disco.pdfsProfessor(aula.pasta, nomes: aula.meta.nomesPDFs ?? [:]).compactMap { pdf in
             (try? Disco.lerDados(pdf.url(em: aula.pasta), esperar: true)).map { PDFComDados(pdf: pdf, dados: $0) }
         }
         var slides = (Disco.lerSlides(aula.pasta) ?? []).compactMap { s in
             (try? Disco.lerDados(Disco.urlSlide(s, em: aula.pasta), esperar: true)).map { SlideComImagem(slide: s, jpeg: $0) }
         }
-        if !pdfs.isEmpty {
-            slides = capturasQueCabem(slides, bytes: Disco.tamanhoMaximoPDF - pdfs.reduce(0) { $0 + $1.dados.count })
+        if !pdfs.isEmpty || reservado > 0 {
+            slides = capturasQueCabem(slides, bytes: Disco.tamanhoMaximoPDF - pdfs.reduce(0) { $0 + $1.dados.count } - reservado,
+                                      maximo: pdfs.isEmpty ? .max : 40)
         }
         return ContextoAula(cadeira: aula.cadeira, titulo: aula.meta.titulo, data: aula.meta.data,
                             glossario: cadeira?.meta.glossario ?? "",
@@ -266,6 +270,7 @@ final class Estudo {
         /// A pergunta a que se está a responder.
         var pergunta: String?
         var citacao: CitacaoPergunta?
+        var anexos: [String] = []
         var tarefa: Task<Void, Never>?
         /// Pedido entregue ao Recap do Mac (motor "Mac", no iOS).
         var pedidoMac: PedidoMac?
@@ -320,14 +325,23 @@ final class Estudo {
     // MARK: Pedidos
 
     /// `motor`: em vez do das Definições (o iOS usa a API quando o Mac não responde).
-    func perguntar(_ pergunta: String, sobre aula: Aula, citacao: CitacaoPergunta? = nil, motor: MotorTipo? = nil) {
+    func perguntar(_ pergunta: String, sobre aula: Aula, citacao: CitacaoPergunta? = nil, anexos: [String] = [], motor: MotorTipo? = nil) {
         let anteriores = Disco.lerPerguntas(aula.pasta)
         let chave = Self.chave(aula, .pergunta)
         defer { if let citacao, emCurso[chave]?.citacao == citacao { citacoes[chave] = nil } }
         #if !os(macOS)
-        if (motor ?? definicoes.motor) == .mac { return pedirAoMac(.pergunta, aula, pergunta: pergunta, citacao: citacao) }
+        if (motor ?? definicoes.motor) == .mac {
+            return pedirAoMac(.pergunta, aula, pergunta: pergunta, citacao: citacao, anexos: anexos)
+        }
         #endif
-        executar(aula, .pergunta, pergunta: pergunta, citacao: citacao, esforco: .medium, motor: motor,
+        // O Claude não se lembra das perguntas anteriores: os ficheiros delas voltam a ir, os mais recentes primeiro, enquanto couberem.
+        let tamanhoAnexos = anexos.reduce(0) { $0 + Anexos.tamanho($1, em: aula.pasta) }
+        let anexosAnteriores = Anexos.queCabem(
+            anteriores.suffix(8).reversed().flatMap { $0.anexos ?? [] }.filter { !anexos.contains($0) }
+                .map { ($0, Anexos.tamanho($0, em: aula.pasta)) },
+            bytes: Anexos.tamanhoMaximo - tamanhoAnexos)
+        let reservado = tamanhoAnexos + anexosAnteriores.reduce(0) { $0 + Anexos.tamanho($1, em: aula.pasta) }
+        executar(aula, .pergunta, pergunta: pergunta, citacao: citacao, anexos: anexos, reservado: reservado, esforco: .medium, motor: motor,
                  sistema: definicoes.prompt(Self.sistemaPerguntas, idioma: definicoes.idioma(da: library.cadeira(nome: aula.cadeira)))) { contexto in
             var blocos = contexto.map(NotesGenerator.materiais) ?? []
             if let notas = Disco.lerApontamentos(aula.pasta) {
@@ -341,28 +355,47 @@ final class Estudo {
                 blocos.append(.texto(outras))
             }
             if !anteriores.isEmpty {
-                let conversa = anteriores.suffix(8).map { "Pergunta: \(Self.pedido($0.pergunta, citacao: $0.citacao?.cortado(300)))\n\nResposta: \($0.resposta)" }
-                    .joined(separator: "\n\n---\n\n")
+                let conversa = anteriores.suffix(8).map {
+                    "Pergunta: \(Self.pedido($0.pergunta, citacao: $0.citacao?.cortado(300)))\(Self.juntou($0.anexos ?? []))\n\nResposta: \($0.resposta)"
+                }.joined(separator: "\n\n---\n\n")
                 blocos.append(.texto("Perguntas anteriores sobre esta aula:\n\n<conversa>\n\(conversa)\n</conversa>"))
+            }
+            if !anexosAnteriores.isEmpty {
+                blocos.append(.texto("Ficheiros que o estudante juntou às perguntas anteriores (voltam aqui para os poderes consultar):"))
+                blocos += Anexos.blocos(anexosAnteriores, em: aula.pasta)
+            }
+            if !anexos.isEmpty {
+                blocos.append(.texto("Ficheiros que o estudante juntou a esta pergunta:"))
+                blocos += Anexos.blocos(anexos, em: aula.pasta)
             }
             blocos.append(.texto("Pergunta do estudante:\n\n\(Self.pedido(pergunta, citacao: citacao))"))
             return blocos
         } concluir: { texto in
-            try Disco.escreverPerguntas(Disco.lerPerguntas(aula.pasta) + [PerguntaAula(pergunta: pergunta, resposta: texto, citacao: citacao)], em: aula.pasta)
+            let nova = PerguntaAula(pergunta: pergunta, resposta: texto, citacao: citacao, anexos: anexos.isEmpty ? nil : anexos)
+            try Disco.escreverPerguntas(Disco.lerPerguntas(aula.pasta) + [nova], em: aula.pasta)
         }
     }
 
     /// Enviar sem escrever nada com um trecho escolhido pede para o explicar.
     nonisolated static let perguntaSobreTrecho = "Explica este trecho"
 
+    /// Enviar sem escrever nada só com ficheiros juntados pede para os explicar.
+    nonisolated static let perguntaSobreFicheiros = "Explica o que está nestes ficheiros"
+
     /// A pergunta a enviar a partir do que foi escrito no campo, ou nil se não houver nada para perguntar.
-    nonisolated static func pergunta(_ escrito: String, citacao: CitacaoPergunta?) -> String? {
+    nonisolated static func pergunta(_ escrito: String, citacao: CitacaoPergunta?, anexos: [String] = []) -> String? {
         let p = escrito.trimmingCharacters(in: .whitespacesAndNewlines)
         if !p.isEmpty { return p }
-        return citacao == nil ? nil : perguntaSobreTrecho
+        if citacao != nil { return perguntaSobreTrecho }
+        return anexos.isEmpty ? nil : perguntaSobreFicheiros
     }
 
     /// A pergunta como vai para o Claude: o trecho selecionado (e de onde vem) antes da pergunta.
+    /// Na conversa enviada ao Claude: que ficheiros acompanharam uma pergunta anterior.
+    nonisolated static func juntou(_ anexos: [String]) -> String {
+        anexos.isEmpty ? "" : "\n(Juntou: " + anexos.map { "\"\($0)\"" }.joined(separator: ", ") + ")"
+    }
+
     nonisolated static func pedido(_ pergunta: String, citacao: CitacaoPergunta?) -> String {
         guard let citacao else { return pergunta }
         let onde = switch citacao.origem {
@@ -607,7 +640,8 @@ final class Estudo {
     // MARK: Execução
 
     private func executar(
-        _ aula: Aula, _ tipo: Tipo, pergunta: String? = nil, citacao: CitacaoPergunta? = nil, comTranscricao: Bool = true, esforco: Esforco? = nil,
+        _ aula: Aula, _ tipo: Tipo, pergunta: String? = nil, citacao: CitacaoPergunta? = nil, anexos: [String] = [], reservado: Int = 0,
+        comTranscricao: Bool = true, esforco: Esforco? = nil,
         motor: MotorTipo? = nil, sistema: String,
         conteudo: @escaping @MainActor (ContextoAula?) -> [BlocoConteudo],
         concluir: @escaping @MainActor (String) throws -> Void
@@ -626,11 +660,11 @@ final class Estudo {
             return
         }
         let cadeira = library.cadeira(nome: aula.cadeira)
-        emCurso[chave] = EmCurso(pergunta: pergunta, citacao: citacao)
+        emCurso[chave] = EmCurso(pergunta: pergunta, citacao: citacao, anexos: anexos)
         emCurso[chave]?.tarefa = Task {
             do {
                 // Só se leem os slides e os PDFs quando o pedido precisa deles, e fora do fio principal.
-                let contexto: ContextoAula? = if let transcricao { await ContextoAula.carregar(aula, cadeira: cadeira, transcricao: transcricao) } else { nil }
+                let contexto: ContextoAula? = if let transcricao { await ContextoAula.carregar(aula, cadeira: cadeira, transcricao: transcricao, reservado: reservado) } else { nil }
                 let blocos = conteudo(contexto)
                 let r = try await gerador.gerar(
                     sistema: sistema, conteudo: blocos,
@@ -657,12 +691,13 @@ final class Estudo {
 
     /// Entrega o pedido ao Recap do Mac (`CaixaPedidos`) e vai lendo o estado que ele escreve. O resultado chega
     /// pelo iCloud no ficheiro de sempre (`perguntas.json`, `exercicios.md`, `ligacoes.json`): espera-se por ele.
-    private func pedirAoMac(_ tipo: Tipo, _ aula: Aula, pergunta: String? = nil, citacao: CitacaoPergunta? = nil) {
+    private func pedirAoMac(_ tipo: Tipo, _ aula: Aula, pergunta: String? = nil, citacao: CitacaoPergunta? = nil, anexos: [String] = []) {
         let chave = Self.chave(aula, tipo)
         guard emCurso[chave] == nil else { return }
         erros[chave] = nil
         let raiz = library.raiz
-        let pedido = PedidoMac(tipo: tipo, aula: Self.caminhoRelativo(aula.pasta, raiz: raiz), pergunta: pergunta, citacao: citacao)
+        let pedido = PedidoMac(tipo: tipo, aula: Self.caminhoRelativo(aula.pasta, raiz: raiz), pergunta: pergunta, citacao: citacao,
+                               anexos: anexos.isEmpty ? nil : anexos)
         // Um URL novo de cada vez: o `URL` guarda em cache a data de modificação.
         let resultado = { aula.pasta.appending(path: Self.ficheiro(tipo)) }
         let antes = Disco.dataModificacao(resultado())
@@ -670,7 +705,7 @@ final class Estudo {
             erros[chave] = "Não foi possível enviar o pedido ao Mac: \(error.localizedDescription)"
             return
         }
-        emCurso[chave] = EmCurso(pergunta: pergunta, citacao: citacao, pedidoMac: pedido)
+        emCurso[chave] = EmCurso(pergunta: pergunta, citacao: citacao, anexos: anexos, pedidoMac: pedido)
         emCurso[chave]?.tarefa = Task {
             let inicio = Date.now
             var recebido = false
@@ -716,7 +751,7 @@ final class Estudo {
         emCurso[chave]?.tarefa?.cancel()
         emCurso[chave] = nil
         switch tipo {
-        case .pergunta: perguntar(pedido.pergunta ?? "", sobre: aula, citacao: pedido.citacao, motor: .api)
+        case .pergunta: perguntar(pedido.pergunta ?? "", sobre: aula, citacao: pedido.citacao, anexos: pedido.anexos ?? [], motor: .api)
         case .exercicios: gerarExercicios(aula, motor: .api)
         case .ligacoes: gerarLigacoes(aula, motor: .api)
         }

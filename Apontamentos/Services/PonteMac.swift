@@ -53,7 +53,7 @@ final class PonteMac {
         }
         estado(.recebido)
         switch pedido.tipo {
-        case .pergunta: estudo.perguntar(pedido.pergunta ?? "", sobre: aula, citacao: pedido.citacao)
+        case .pergunta: estudo.perguntar(pedido.pergunta ?? "", sobre: aula, citacao: pedido.citacao, anexos: pedido.anexos ?? [])
         case .exercicios: estudo.gerarExercicios(aula)
         case .ligacoes: estudo.gerarLigacoes(aula)
         }

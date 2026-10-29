@@ -10,6 +10,8 @@ struct PedidoMac: Codable, Identifiable, Equatable, Sendable {
     var aula: String
     var pergunta: String?
     var citacao: CitacaoPergunta?
+    /// Os ficheiros juntados, já na pasta da aula (chegam ao Mac pelo iCloud).
+    var anexos: [String]?
     var criadoEm = Date.now
 }
 
