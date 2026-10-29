@@ -228,8 +228,12 @@ extension ContextoAula {
     /// só vão até onde cabem no pedido, para se saber que páginas foram dadas.
     /// Lê PDFs (até 24 MB) e dezenas de JPEG e passa-os a base64: fora do fio principal.
     @concurrent
-    /// `reservado`: bytes do pedido que já vão para outra coisa (os ficheiros juntados a uma pergunta).
-    static func carregar(_ aula: Aula, cadeira: Cadeira?, transcricao: Transcricao, reservado: Int = 0) async -> ContextoAula {
+    /// `anexos`, `anexosAnteriores`: ficheiros juntados a uma pergunta (ver `Anexos`). Lê-los e convertê-los (um Excel
+    /// grande, um ficheiro ainda a descarregar do iCloud) também é aqui, fora do fio principal; as capturas dos slides
+    /// encolhem para lhes dar espaço.
+    static func carregar(_ aula: Aula, cadeira: Cadeira?, transcricao: Transcricao,
+                         anexos: [String] = [], anexosAnteriores: [String] = []) async -> ContextoAula {
+        let reservado = (anexos + anexosAnteriores).reduce(0) { $0 + Anexos.tamanho($1, em: aula.pasta) }
         let pdfs = Disco.pdfsProfessor(aula.pasta, nomes: aula.meta.nomesPDFs ?? [:]).compactMap { pdf in
             (try? Disco.lerDados(pdf.url(em: aula.pasta), esperar: true)).map { PDFComDados(pdf: pdf, dados: $0) }
         }
@@ -240,10 +244,13 @@ extension ContextoAula {
             slides = capturasQueCabem(slides, bytes: Disco.tamanhoMaximoPDF - pdfs.reduce(0) { $0 + $1.dados.count } - reservado,
                                       maximo: pdfs.isEmpty ? .max : 40)
         }
-        return ContextoAula(cadeira: aula.cadeira, titulo: aula.meta.titulo, data: aula.meta.data,
-                            glossario: cadeira?.meta.glossario ?? "",
-                            transcricao: transcricao, slides: slides, pdfsProfessor: pdfs,
-                            fichaCadeira: cadeira.flatMap { FichaCadeira.lerFicha($0.pasta) })
+        var contexto = ContextoAula(cadeira: aula.cadeira, titulo: aula.meta.titulo, data: aula.meta.data,
+                                    glossario: cadeira?.meta.glossario ?? "",
+                                    transcricao: transcricao, slides: slides, pdfsProfessor: pdfs,
+                                    fichaCadeira: cadeira.flatMap { FichaCadeira.lerFicha($0.pasta) })
+        contexto.anexos = Anexos.blocos(anexos, em: aula.pasta)
+        contexto.anexosAnteriores = Anexos.blocos(anexosAnteriores, em: aula.pasta)
+        return contexto
     }
 
     /// Até `maximo` capturas espalhadas pela aula, sem passar de `bytes` (o que sobra do pedido depois dos PDFs).
@@ -282,6 +289,8 @@ final class Estudo {
     private(set) var erros: [Chave: String] = [:]
     /// Trecho escolhido para a próxima pergunta de cada aula (fica até se perguntar ou o tirar).
     private(set) var citacoes: [Chave: CitacaoPergunta] = [:]
+    /// Ficheiros juntados para a próxima pergunta de cada aula (já em `anexos-chat/`). Voltam aqui se a pergunta falhar.
+    private(set) var anexosPorEnviar: [Chave: [String]] = [:]
     /// Muda a cada trecho escolhido, para o painel das perguntas pôr o cursor no campo.
     private(set) var pedidosCitacao = 0
     /// O último trecho escolhido ainda não levou o cursor ao campo (só uma vez: voltar à aula ou abrir o painel não o rouba).
@@ -309,6 +318,14 @@ final class Estudo {
     func citacao(_ aula: Aula) -> CitacaoPergunta? { citacoes[Self.chave(aula, .pergunta)] }
     func tirarCitacao(_ aula: Aula) { citacoes[Self.chave(aula, .pergunta)] = nil }
 
+    func anexosPorEnviar(_ aula: Aula) -> [String] { anexosPorEnviar[Self.chave(aula, .pergunta)] ?? [] }
+    func juntarAnexo(_ nome: String, a aula: Aula) { anexosPorEnviar[Self.chave(aula, .pergunta), default: []].append(nome) }
+    func tirarAnexo(_ nome: String, de aula: Aula) {
+        anexosPorEnviar[Self.chave(aula, .pergunta)]?.removeAll { $0 == nome }
+        Anexos.remover(nome, em: aula.pasta)
+    }
+    func tirarAnexosPorEnviar(_ aula: Aula) { anexosPorEnviar[Self.chave(aula, .pergunta)] = nil }
+
     /// Perguntar sobre um trecho: fica à espera da pergunta no painel.
     func citar(_ citacao: CitacaoPergunta, em aula: Aula) {
         citacoes[Self.chave(aula, .pergunta)] = citacao.cortado()
@@ -328,20 +345,33 @@ final class Estudo {
     func perguntar(_ pergunta: String, sobre aula: Aula, citacao: CitacaoPergunta? = nil, anexos: [String] = [], motor: MotorTipo? = nil) {
         let anteriores = Disco.lerPerguntas(aula.pasta)
         let chave = Self.chave(aula, .pergunta)
-        defer { if let citacao, emCurso[chave]?.citacao == citacao { citacoes[chave] = nil } }
+        defer {
+            if let citacao, emCurso[chave]?.citacao == citacao { citacoes[chave] = nil }
+            // Ficam no campo enquanto a pergunta não sai; se nem chegou a sair, voltam para lá.
+            if emCurso[chave] != nil { anexosPorEnviar[chave] = nil } else if !anexos.isEmpty { anexosPorEnviar[chave] = anexos }
+        }
         #if !os(macOS)
         if (motor ?? definicoes.motor) == .mac {
             return pedirAoMac(.pergunta, aula, pergunta: pergunta, citacao: citacao, anexos: anexos)
         }
         #endif
-        // O Claude não se lembra das perguntas anteriores: os ficheiros delas voltam a ir, os mais recentes primeiro, enquanto couberem.
-        let tamanhoAnexos = anexos.reduce(0) { $0 + Anexos.tamanho($1, em: aula.pasta) }
-        let anexosAnteriores = Anexos.queCabem(
-            anteriores.suffix(8).reversed().flatMap { $0.anexos ?? [] }.filter { !anexos.contains($0) }
-                .map { ($0, Anexos.tamanho($0, em: aula.pasta)) },
-            bytes: Anexos.tamanhoMaximo - tamanhoAnexos)
-        let reservado = tamanhoAnexos + anexosAnteriores.reduce(0) { $0 + Anexos.tamanho($1, em: aula.pasta) }
-        executar(aula, .pergunta, pergunta: pergunta, citacao: citacao, anexos: anexos, reservado: reservado, esforco: .medium, motor: motor,
+        // O Claude não se lembra das perguntas anteriores: os ficheiros delas voltam a ir, os mais recentes primeiro,
+        // enquanto couberem ao lado dos PDFs do professor (o pedido todo não pode passar de ~32 MB).
+        let pdfs = Disco.pdfsProfessor(aula.pasta).reduce(0) {
+            $0 + ((try? $1.url(em: aula.pasta).resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        }
+        let tamanhos = { (nomes: [String]) in nomes.map { ($0, Anexos.tamanho($0, em: aula.pasta)) } }
+        guard let escolhidos = Anexos.paraOPedido(
+            atuais: tamanhos(anexos),
+            anteriores: tamanhos(anteriores.suffix(8).reversed().flatMap { $0.anexos ?? [] }.filter { !anexos.contains($0) }),
+            espaco: Disco.tamanhoMaximoPDF - pdfs)
+        else {
+            erros[chave] = "Os PDFs do professor desta aula já ocupam quase todo o pedido: estes ficheiros não cabem. Tira algum, ou junta-os mais pequenos."
+            return
+        }
+        let anexosAnteriores = escolhidos.anteriores
+        executar(aula, .pergunta, pergunta: pergunta, citacao: citacao, anexos: anexos, anexosAnteriores: anexosAnteriores,
+                 esforco: .medium, motor: motor,
                  sistema: definicoes.prompt(Self.sistemaPerguntas, idioma: definicoes.idioma(da: library.cadeira(nome: aula.cadeira)))) { contexto in
             var blocos = contexto.map(NotesGenerator.materiais) ?? []
             if let notas = Disco.lerApontamentos(aula.pasta) {
@@ -360,13 +390,13 @@ final class Estudo {
                 }.joined(separator: "\n\n---\n\n")
                 blocos.append(.texto("Perguntas anteriores sobre esta aula:\n\n<conversa>\n\(conversa)\n</conversa>"))
             }
-            if !anexosAnteriores.isEmpty {
+            if let anteriores = contexto?.anexosAnteriores, !anteriores.isEmpty {
                 blocos.append(.texto("Ficheiros que o estudante juntou às perguntas anteriores (voltam aqui para os poderes consultar):"))
-                blocos += Anexos.blocos(anexosAnteriores, em: aula.pasta)
+                blocos += anteriores
             }
-            if !anexos.isEmpty {
+            if let atuais = contexto?.anexos, !atuais.isEmpty {
                 blocos.append(.texto("Ficheiros que o estudante juntou a esta pergunta:"))
-                blocos += Anexos.blocos(anexos, em: aula.pasta)
+                blocos += atuais
             }
             blocos.append(.texto("Pergunta do estudante:\n\n\(Self.pedido(pergunta, citacao: citacao))"))
             return blocos
@@ -634,13 +664,14 @@ final class Estudo {
 
     func apagarPerguntas(_ aula: Aula) {
         try? Disco.escreverPerguntas([], em: aula.pasta)
+        Anexos.limparOrfaos(em: aula.pasta, usados: Set(anexosPorEnviar(aula)), idade: 0)
         versao += 1
     }
 
     // MARK: Execução
 
     private func executar(
-        _ aula: Aula, _ tipo: Tipo, pergunta: String? = nil, citacao: CitacaoPergunta? = nil, anexos: [String] = [], reservado: Int = 0,
+        _ aula: Aula, _ tipo: Tipo, pergunta: String? = nil, citacao: CitacaoPergunta? = nil, anexos: [String] = [], anexosAnteriores: [String] = [],
         comTranscricao: Bool = true, esforco: Esforco? = nil,
         motor: MotorTipo? = nil, sistema: String,
         conteudo: @escaping @MainActor (ContextoAula?) -> [BlocoConteudo],
@@ -664,7 +695,7 @@ final class Estudo {
         emCurso[chave]?.tarefa = Task {
             do {
                 // Só se leem os slides e os PDFs quando o pedido precisa deles, e fora do fio principal.
-                let contexto: ContextoAula? = if let transcricao { await ContextoAula.carregar(aula, cadeira: cadeira, transcricao: transcricao, reservado: reservado) } else { nil }
+                let contexto: ContextoAula? = if let transcricao { await ContextoAula.carregar(aula, cadeira: cadeira, transcricao: transcricao, anexos: anexos, anexosAnteriores: anexosAnteriores) } else { nil }
                 let blocos = conteudo(contexto)
                 let r = try await gerador.gerar(
                     sistema: sistema, conteudo: blocos,
@@ -679,6 +710,7 @@ final class Estudo {
                     erros[chave] = error.localizedDescription
                     // O trecho volta para o campo, para tentar outra vez sem o selecionar de novo.
                     if let c = emCurso[chave]?.citacao, citacoes[chave] == nil { citacoes[chave] = c }
+                    if let a = emCurso[chave]?.anexos, !a.isEmpty, anexosPorEnviar[chave] == nil { anexosPorEnviar[chave] = a }
                 }
             }
             emCurso[chave] = nil
@@ -738,6 +770,7 @@ final class Estudo {
                 }
             }
             if Task.isCancelled { CaixaPedidos.apagar(pedido.id, raiz: raiz) }
+            if erros[chave] != nil, !anexos.isEmpty, anexosPorEnviar[chave] == nil { anexosPorEnviar[chave] = anexos }
             // "Usar a API" já pôs outro pedido no lugar deste: não o apagar.
             if emCurso[chave]?.pedidoMac?.id == pedido.id { emCurso[chave] = nil }
             versao += 1

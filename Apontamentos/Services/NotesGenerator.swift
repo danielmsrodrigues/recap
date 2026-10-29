@@ -16,6 +16,9 @@ struct ContextoAula: Sendable {
     var fichaCadeira: String?
     /// As secções da guía de estudio que a aula tocou (ver `GuiaDaAula`). nil sem guía ou se a aula não tocou nenhuma.
     var guia: GuiaDaAula? = nil
+    /// Ficheiros juntados a uma pergunta no chat (ver `Anexos`), já em blocos; e os das perguntas anteriores.
+    var anexos: [BlocoConteudo] = []
+    var anexosAnteriores: [BlocoConteudo] = []
 }
 
 struct PDFComDados: Sendable {

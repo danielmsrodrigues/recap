@@ -204,6 +204,68 @@ struct AnexosTests {
         #expect(Estudo.pergunta(" ", citacao: nil, anexos: []) == nil)
     }
 
+    @Test func osPDFsDaAulaTiramEspacoAosFicheiros() {
+        // Os desta pergunta vão sempre; dos anteriores, os mais recentes que ainda cabem.
+        let r = Anexos.paraOPedido(atuais: [("a.png", 300)], anteriores: [("b.pdf", 500), ("c.csv", 100)], espaco: 450)
+        #expect(r?.atuais == ["a.png"])
+        #expect(r?.anteriores == ["c.csv"])
+        // Nunca mais do que o máximo de uma pergunta, mesmo com espaço no pedido.
+        let grande = Anexos.tamanhoMaximo
+        #expect(Anexos.paraOPedido(atuais: [("a.png", grande - 10)], anteriores: [("b.png", 20)], espaco: 3 * grande)?.anteriores == [])
+        // Os desta pergunta já não cabem com os PDFs da aula: não se envia.
+        #expect(Anexos.paraOPedido(atuais: [("a.png", 300)], anteriores: [], espaco: 200) == nil)
+    }
+
+    @Test func nomesComCaminhoNaoSaemDaPastaDaAula() throws {
+        let raiz = try pastaTemporaria()
+        defer { try? FileManager.default.removeItem(at: raiz) }
+        let pasta = raiz.appending(path: "aula")
+        try FileManager.default.createDirectory(at: pasta.appending(path: Anexos.pasta), withIntermediateDirectories: true)
+        try "segredo".write(to: raiz.appending(path: "fora.txt"), atomically: true, encoding: .utf8)
+        #expect(Anexos.nomeSeguro("../../fora.txt") == nil)
+        #expect(Anexos.nomeSeguro("sub/x.txt") == nil)
+        #expect(Anexos.nomeSeguro("..") == nil)
+        #expect(Anexos.nomeSeguro("notas 2.csv") == "notas 2.csv")
+        #expect(Anexos.blocos(["../../fora.txt"], em: pasta) == [.texto("Ficheiro \"../../fora.txt\": não foi possível lê-lo.")])
+    }
+
+    @Test func ficheirosSemPerguntaSaoApagadosDepoisDeUmDia() throws {
+        let pasta = try pastaTemporaria()
+        defer { try? FileManager.default.removeItem(at: pasta) }
+        let origem = pasta.appending(path: "x.csv")
+        try "1".write(to: origem, atomically: true, encoding: .utf8)
+        let usado = try Anexos.juntar(origem, em: pasta), velho = try Anexos.juntar(origem, em: pasta), novo = try Anexos.juntar(origem, em: pasta)
+        for nome in [usado, velho] {
+            try FileManager.default.setAttributes([.modificationDate: Date.now.addingTimeInterval(-2 * 86_400)],
+                                                  ofItemAtPath: Anexos.url(nome, em: pasta).path)
+        }
+        Anexos.limparOrfaos(em: pasta, usados: [usado])
+        let restam = try FileManager.default.contentsOfDirectory(atPath: pasta.appending(path: Anexos.pasta).path).sorted()
+        // O novo pode estar à espera da pergunta.
+        #expect(restam == [usado, novo].sorted())
+    }
+
+    @Test func seAPerguntaFalhaOsFicheirosVoltamAoCampo() throws {
+        let raiz = try pastaTemporaria()
+        defer { try? FileManager.default.removeItem(at: raiz) }
+        let definicoes = Definicoes(defaults: UserDefaults(suiteName: "anexos-\(UUID().uuidString)")!)
+        definicoes.motor = .claudeCode
+        definicoes.caminhoClaude = raiz.appending(path: "nao-existe").path
+        let library = Library(raiz: raiz)
+        let pasta = try library.criarAula(cadeira: "Estatística", titulo: "Aula 3", data: .now, video: nil)
+        try Disco.escreverTranscricao(Transcricao(idioma: "es", modelo: "x", duracao: 60, criadaEm: .now,
+                                                  segmentos: [Segmento(inicio: 5, fim: 9, texto: "La media.")]), em: pasta)
+        library.recarregar()
+        let aula = try #require(library.aula(em: pasta))
+        let estudo = Estudo(library: library, definicoes: definicoes)
+
+        estudo.perguntar("?", sobre: aula, anexos: ["quadro.jpg"])
+        #expect(estudo.erro(aula, .pergunta) != nil)
+        #expect(estudo.anexosPorEnviar(aula) == ["quadro.jpg"])
+        estudo.tirarAnexosPorEnviar(aula)
+        #expect(estudo.anexosPorEnviar(aula).isEmpty)
+    }
+
     @Test func perguntasAntigasSemAnexosContinuamALer() throws {
         let json = #"[{"id":"7E1A0D7C-4B0B-4E6B-9E0B-8F1C2B3A4D5E","pergunta":"?","resposta":"!","data":"2026-10-20T10:00:00Z"}]"#
         let perguntas = try Disco.decoder.decode([PerguntaAula].self, from: Data(json.utf8))

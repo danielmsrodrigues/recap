@@ -63,8 +63,16 @@ enum Anexos {
         pastaAula.appending(path: pasta, directoryHint: .isDirectory).appending(path: nome)
     }
 
+    /// O nome, se for só um nome de ficheiro. Os nomes chegam também do iPhone (`PedidoMac`): um caminho
+    /// como `../../x` levava ao Claude um ficheiro de fora da aula.
+    static func nomeSeguro(_ nome: String) -> String? {
+        guard !nome.isEmpty, nome != ".", nome != "..", !nome.contains("/"), !nome.contains(":") else { return nil }
+        return nome
+    }
+
     static func tamanho(_ nome: String, em pastaAula: URL) -> Int {
-        (try? url(nome, em: pastaAula).resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        guard let nome = nomeSeguro(nome) else { return 0 }
+        return (try? url(nome, em: pastaAula).resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
     }
 
     // MARK: Juntar
@@ -93,7 +101,20 @@ enum Anexos {
     }
 
     static func remover(_ nome: String, em pastaAula: URL) {
+        guard let nome = nomeSeguro(nome) else { return }
         try? FileManager.default.removeItem(at: url(nome, em: pastaAula))
+    }
+
+    /// Apaga os ficheiros que nenhuma pergunta usa (juntados e nunca enviados) com mais de `idade` segundos:
+    /// um mais recente pode estar à espera da pergunta, ou da `perguntas.json` que ainda vem pelo iCloud.
+    static func limparOrfaos(em pastaAula: URL, usados: Set<String>, idade: TimeInterval = 86_400) {
+        let pasta = pastaAula.appending(path: pasta, directoryHint: .isDirectory)
+        guard let ficheiros = try? FileManager.default.contentsOfDirectory(at: pasta, includingPropertiesForKeys: [.contentModificationDateKey])
+        else { return }
+        for f in ficheiros where !usados.contains(f.lastPathComponent) {
+            let data = (try? f.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            if Date.now.timeIntervalSince(data) >= idade { try? FileManager.default.removeItem(at: f) }
+        }
     }
 
     private static func verificarTamanho(_ bytes: Int, _ nome: String) throws {
@@ -150,6 +171,7 @@ enum Anexos {
     }
 
     private static func blocos(_ nome: String, em pastaAula: URL) throws -> [BlocoConteudo] {
+        guard nomeSeguro(nome) != nil else { throw ErroAnexo.naoLido(nome) }
         guard let tipo = tipo(nome) else { throw ErroAnexo.tipoNaoSuportado(nome) }
         // Vindo do iPhone pelo iCloud, pode ainda estar a descarregar.
         let dados = try Disco.lerDados(url(nome, em: pastaAula), esperar: true)
@@ -189,6 +211,17 @@ enum Anexos {
             resta -= f.bytes
             return f.nome
         }
+    }
+
+    /// Os ficheiros que vão num pedido: os desta pergunta sempre (até `tamanhoMaximo`), e dos anteriores os mais
+    /// recentes que ainda cabem. `espaco` é o que sobra no pedido depois dos PDFs do professor; nil se nem os
+    /// desta pergunta cabem.
+    static func paraOPedido(atuais: [(nome: String, bytes: Int)], anteriores: [(nome: String, bytes: Int)],
+                            espaco: Int) -> (atuais: [String], anteriores: [String])? {
+        let limite = min(espaco, tamanhoMaximo)
+        let usados = atuais.reduce(0) { $0 + $1.bytes }
+        guard usados <= limite else { return nil }
+        return (atuais.map(\.nome), queCabem(anteriores, bytes: limite - usados))
     }
 
     // MARK: Office

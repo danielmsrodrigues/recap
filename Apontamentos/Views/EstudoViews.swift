@@ -59,8 +59,6 @@ struct PerguntasView: View {
     @State private var pdfPartilhado: FicheiroPartilhado?
     #endif
     @FocusState private var focado: Bool
-    /// Ficheiros já copiados para `anexos-chat/`, à espera da pergunta.
-    @State private var anexos: [String] = []
     @State private var escolherAnexos = false
     @State private var erroAnexo: String?
     #if os(macOS)
@@ -72,6 +70,8 @@ struct PerguntasView: View {
     private var emCurso: Estudo.EmCurso? { estudo.emCurso(aula, .pergunta) }
     /// Trecho selecionado nos apontamentos ou na transcrição, à espera da pergunta.
     private var citacao: CitacaoPergunta? { estudo.citacao(aula) }
+    /// Ficheiros já copiados para `anexos-chat/`, à espera da pergunta (ficam ao mudar de aula e voltam se a pergunta falhar).
+    private var anexos: [String] { estudo.anexosPorEnviar(aula) }
 
     private static let sugestoes = [
         "Resume a aula em 3 frases",
@@ -125,6 +125,10 @@ struct PerguntasView: View {
         }
         // `library.versao`: uma resposta pode chegar pelo iCloud (dada no Mac, ou pedida aqui ao Mac).
         .task(id: [estudo.versao, library.versao]) { perguntas = Disco.lerPerguntas(aula.pasta) }
+        .task(id: aula.pasta) {
+            let usados = Set(Disco.lerPerguntas(aula.pasta).flatMap { $0.anexos ?? [] } + anexos)
+            Anexos.limparOrfaos(em: aula.pasta, usados: usados)
+        }
         // Um trecho escolhido (ou o painel aberto por causa dele): o cursor vai para o campo.
         .task(id: estudo.pedidosCitacao) {
             guard citacao != nil, estudo.consumirFoco() else { return }
@@ -238,10 +242,7 @@ struct PerguntasView: View {
                     HStack(spacing: 4) {
                         Image(systemName: Self.icone(nome)).foregroundStyle(.secondary)
                         Text(nome).lineLimit(1).truncationMode(.middle)
-                        Button("Tirar \(nome)", systemImage: "xmark.circle.fill") {
-                            Anexos.remover(nome, em: aula.pasta)
-                            anexos.removeAll { $0 == nome }
-                        }
+                        Button("Tirar \(nome)", systemImage: "xmark.circle.fill") { estudo.tirarAnexo(nome, de: aula) }
                         .labelStyle(.iconOnly)
                         .buttonStyle(.borderless)
                         .foregroundStyle(.secondary)
@@ -334,7 +335,7 @@ struct PerguntasView: View {
                     continue
                 }
                 total += tamanho
-                anexos.append(nome)
+                estudo.juntarAnexo(nome, a: aula)
             } catch {
                 if erroAnexo == nil { erroAnexo = error.localizedDescription }
             }
@@ -418,7 +419,6 @@ struct PerguntasView: View {
         guard let pergunta = Estudo.pergunta(texto, citacao: citacao, anexos: anexos), emCurso == nil, definicoes.faltaParaGerar == nil else { return }
         estudo.perguntar(pergunta, sobre: aula, citacao: citacao, anexos: anexos)
         self.texto = ""
-        anexos = []
         erroAnexo = nil
     }
 }

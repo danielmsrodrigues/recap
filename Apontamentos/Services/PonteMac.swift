@@ -52,12 +52,14 @@ final class PonteMac {
             return
         }
         estado(.recebido)
-        switch pedido.tipo {
-        case .pergunta: estudo.perguntar(pedido.pergunta ?? "", sobre: aula, citacao: pedido.citacao, anexos: pedido.anexos ?? [])
-        case .exercicios: estudo.gerarExercicios(aula)
-        case .ligacoes: estudo.gerarLigacoes(aula)
-        }
         Task { [weak self] in
+            // Os ficheiros juntados no iPhone podem chegar pelo iCloud depois do pedido.
+            await Self.esperarAnexos(pedido.anexos ?? [], em: aula.pasta)
+            switch pedido.tipo {
+            case .pergunta: self?.estudo.perguntar(pedido.pergunta ?? "", sobre: aula, citacao: pedido.citacao, anexos: pedido.anexos ?? [])
+            case .exercicios: self?.estudo.gerarExercicios(aula)
+            case .ligacoes: self?.estudo.gerarLigacoes(aula)
+            }
             var escrito: String?
             var ultimaEscrita = Date.now
             while let self, let emCurso = self.estudo.emCurso(aula, pedido.tipo) {
@@ -80,6 +82,16 @@ final class PonteMac {
                 }
                 estado(.feito, texto: final ?? escrito)
             }
+        }
+    }
+
+    /// Até 2 minutos à espera de que os ficheiros apareçam na pasta da aula (descarregá-los fica para quando forem lidos).
+    private static func esperarAnexos(_ nomes: [String], em pasta: URL) async {
+        let fim = Date.now.addingTimeInterval(120)
+        while Date.now < fim, nomes.contains(where: { nome in
+            Anexos.nomeSeguro(nome).map { !FileManager.default.fileExists(atPath: Anexos.url($0, em: pasta).path) } ?? false
+        }) {
+            try? await Task.sleep(for: .seconds(1))
         }
     }
 }

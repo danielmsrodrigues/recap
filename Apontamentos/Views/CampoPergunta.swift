@@ -45,7 +45,11 @@ struct CampoPergunta: NSViewRepresentable {
     func sizeThatFits(_ proposta: ProposedViewSize, nsView scroll: NSScrollView, context: Context) -> CGSize? {
         guard let t = scroll.documentView as? TextoPergunta else { return nil }
         let largura = proposta.width ?? 300
-        return CGSize(width: largura, height: Self.altura(texto: t, largura: largura, linhasMaximas: linhasMaximas))
+        // O texto fica com a largura do scroll sem a barra (quando o sistema a mostra sempre).
+        let util = NSScrollView.contentSize(forFrameSize: NSSize(width: largura, height: 100), horizontalScrollerClass: nil,
+                                            verticalScrollerClass: NSScroller.self, borderType: .noBorder,
+                                            controlSize: .regular, scrollerStyle: scroll.scrollerStyle).width
+        return CGSize(width: largura, height: Self.altura(texto: t, largura: util, linhasMaximas: linhasMaximas))
     }
 
     /// A altura do texto, sem passar de `linhasMaximas` linhas.
@@ -109,16 +113,21 @@ final class TextoPergunta: NSTextView {
         isHorizontallyResizable = false
     }
 
-    var alturaDaLinha: CGFloat {
-        guard let font, let gestor = layoutManager else { return 17 }
-        return gestor.defaultLineHeight(for: font)
-    }
+    private var fonte: NSFont { font ?? .preferredFont(forTextStyle: .body) }
 
-    /// A altura de todo o texto com esta largura (uma linha, se estiver vazio).
+    var alturaDaLinha: CGFloat { NSLayoutManager().defaultLineHeight(for: fonte) }
+
+    /// A altura de todo o texto com esta largura (uma linha, se estiver vazio). Medida numa cópia do texto:
+    /// o SwiftUI experimenta várias larguras, e mexer no contentor do campo deixava-o com a errada.
     func alturaDoTexto(largura: CGFloat) -> CGFloat {
-        guard let gestor = layoutManager, let contentor = textContainer else { return alturaDaLinha }
-        contentor.containerSize = NSSize(width: max(1, largura), height: .greatestFiniteMagnitude)
+        let texto = NSTextStorage(string: string, attributes: [.font: fonte])
+        let gestor = NSLayoutManager()
+        let contentor = NSTextContainer(size: NSSize(width: max(1, largura), height: .greatestFiniteMagnitude))
+        contentor.lineFragmentPadding = 0
+        gestor.addTextContainer(contentor)
+        texto.addLayoutManager(gestor)
         gestor.ensureLayout(for: contentor)
+        // O `usedRect` já conta a linha vazia por baixo de um texto que acaba em ⇧↩.
         return max(alturaDaLinha, ceil(gestor.usedRect(for: contentor).height))
     }
 
@@ -133,7 +142,12 @@ final class TextoPergunta: NSTextView {
     }
 
     override func paste(_ sender: Any?) {
-        if let urls = Self.ficheirosParaColar(.general) { aoJuntar(urls) } else { super.paste(sender) }
+        guard let urls = Self.ficheirosParaColar(.general) else { return super.paste(sender) }
+        aoJuntar(urls)
+        // Uma imagem colada foi gravada numa pasta temporária: já foi copiada para a aula.
+        for url in urls where url.deletingLastPathComponent().lastPathComponent.hasPrefix("Recap-colado-") {
+            try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+        }
     }
 
     override func performDragOperation(_ arrasto: any NSDraggingInfo) -> Bool {
