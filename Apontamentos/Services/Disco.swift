@@ -22,8 +22,13 @@ enum Disco {
     static let tamanhoMaximoPDF = 24 * 1_048_576
     static let pastaSlides = "slides"
 
+    /// No iOS só serve até se escolher a pasta do iCloud Drive (ver `PastaAulas`).
     static var raizPorDefeito: URL {
+        #if os(macOS)
         FileManager.default.homeDirectoryForCurrentUser.appending(path: "Aulas", directoryHint: .isDirectory)
+        #else
+        URL.documentsDirectory.appending(path: "Aulas", directoryHint: .isDirectory)
+        #endif
     }
 
     static let encoder: JSONEncoder = {

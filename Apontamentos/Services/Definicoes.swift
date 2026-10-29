@@ -16,14 +16,26 @@ enum Esforco: String, CaseIterable, Identifiable, Sendable {
 }
 
 enum MotorTipo: String, CaseIterable, Identifiable, Sendable {
-    case claudeCode, api
+    #if os(macOS)
+    /// Só no Mac: o iOS não corre processos.
+    case claudeCode
+    #endif
+    case api
     var id: String { rawValue }
     var nome: String {
         switch self {
+        #if os(macOS)
         case .claudeCode: "Claude Code (subscrição)"
+        #endif
         case .api: "API da Anthropic"
         }
     }
+
+    #if os(macOS)
+    static let porDefeito = MotorTipo.claudeCode
+    #else
+    static let porDefeito = MotorTipo.api
+    #endif
 }
 
 /// Preferências da app em `UserDefaults`. A chave API fica na Keychain e o prompt num ficheiro.
@@ -43,14 +55,18 @@ final class Definicoes {
     private let defaults: UserDefaults
 
     var motor: MotorTipo { didSet { defaults.set(motor.rawValue, forKey: "motor") } }
+    #if os(macOS)
     /// Vazio = procurar o `claude` nos sítios habituais.
     var caminhoClaude: String { didSet { defaults.set(caminhoClaude, forKey: "caminhoClaude") } }
+    #endif
     var modeloClaude: String { didSet { defaults.set(modeloClaude, forKey: "modeloClaude") } }
     var esforco: Esforco { didSet { defaults.set(esforco.rawValue, forKey: "esforco") } }
+    #if os(macOS)
     var modeloWhisper: WhisperModelo { didSet { defaults.set(modeloWhisper.rawValue, forKey: "modeloWhisper") } }
     var slidesLimiar: Double { didSet { defaults.set(slidesLimiar, forKey: "slidesLimiar") } }
     var slidesIntervalo: Double { didSet { defaults.set(slidesIntervalo, forKey: "slidesIntervalo") } }
     var slidesMaximo: Int { didSet { defaults.set(slidesMaximo, forKey: "slidesMaximo") } }
+    #endif
     /// Vazio = `~/Aulas`.
     var pastaAulas: String { didSet { defaults.set(pastaAulas, forKey: "pastaAulas") } }
     var organizacao: OrganizacaoCurso { didSet { defaults.set(organizacao.rawValue, forKey: "organizacao") } }
@@ -72,11 +88,15 @@ final class Definicoes {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        motor = defaults.string(forKey: "motor").flatMap(MotorTipo.init) ?? .claudeCode
+        motor = defaults.string(forKey: "motor").flatMap(MotorTipo.init) ?? .porDefeito
+        #if os(macOS)
         caminhoClaude = defaults.string(forKey: "caminhoClaude") ?? ""
+        #endif
         modeloClaude = defaults.string(forKey: "modeloClaude") ?? Self.modeloClaudePorDefeito
         esforco = defaults.string(forKey: "esforco").flatMap(Esforco.init) ?? .high
+        #if os(macOS)
         modeloWhisper = defaults.string(forKey: "modeloWhisper").flatMap(WhisperModelo.init) ?? .largeV3Turbo
+        #endif
         pastaAulas = defaults.string(forKey: "pastaAulas") ?? ""
         organizacao = defaults.string(forKey: "organizacao").flatMap(OrganizacaoCurso.init) ?? .anoESemestre
         iniciosPeriodos = (defaults.array(forKey: "iniciosPeriodos") as? [Int]).flatMap { CalendarioLetivo.valido($0) ? $0 : nil }
@@ -85,10 +105,12 @@ final class Definicoes {
         idiomaAulas = defaults.string(forKey: "idiomaAulas").flatMap(IdiomaAula.init) ?? .espanhol
         contextoCurso = defaults.string(forKey: "contextoCurso") ?? ""
         linguaApontamentos = defaults.string(forKey: "linguaApontamentos").flatMap(LinguaApontamentos.init) ?? .ptPT
+        #if os(macOS)
         let padrao = ConfigSlides()
         slidesLimiar = defaults.object(forKey: "slidesLimiar") as? Double ?? padrao.limiar
         slidesIntervalo = defaults.object(forKey: "slidesIntervalo") as? Double ?? padrao.intervalo
         slidesMaximo = defaults.object(forKey: "slidesMaximo") as? Int ?? padrao.maximo
+        #endif
         precosPersonalizados = defaults.data(forKey: "precosPersonalizados")
             .flatMap { try? JSONDecoder().decode([String: Preco].self, from: $0) } ?? [:]
         temChaveAPI = KeychainStore.temChave()
@@ -118,6 +140,7 @@ final class Definicoes {
     /// O prompt de sistema dos apontamentos de uma aula transcrita em `idioma`, pronto a enviar.
     func promptApontamentos(idioma: IdiomaAula) -> String { prompt(PromptStore.ler(), idioma: idioma) }
 
+    #if os(macOS)
     func configSlides(regiao: RegiaoIgnorar) -> ConfigSlides {
         ConfigSlides(intervalo: slidesIntervalo, limiar: slidesLimiar, maximo: slidesMaximo, regiao: regiao)
     }
@@ -135,14 +158,17 @@ final class Definicoes {
 
     /// Volta a procurar o `claude` (depois de o instalar, por exemplo).
     func esquecerClaudeCode() { claudeCodeCache = nil }
+    #endif
 
     /// O gerador com o motor, o modelo e o esforço escolhidos; falha se faltar o Claude Code ou a chave.
     func gerador(esforco: Esforco? = nil) throws -> NotesGenerator {
         let motor: Motor
         switch self.motor {
+        #if os(macOS)
         case .claudeCode:
             guard let url = claudeCode else { throw ErroClaudeCode.naoEncontrado }
             motor = .claudeCode(ClaudeCodeClient(executavel: url))
+        #endif
         case .api:
             guard let chave = KeychainStore.chaveAPI() else { throw ErroClaude.semChave }
             motor = .api(AnthropicClient(chave: chave))
@@ -153,7 +179,9 @@ final class Definicoes {
     /// nil = pronto a gerar; caso contrário, o que falta.
     var faltaParaGerar: String? {
         switch motor {
+        #if os(macOS)
         case .claudeCode: claudeCode == nil ? ErroClaudeCode.naoEncontrado.localizedDescription : nil
+        #endif
         case .api: temChaveAPI ? nil : ErroClaude.semChave.localizedDescription
         }
     }

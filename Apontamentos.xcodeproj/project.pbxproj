@@ -10,6 +10,7 @@
 		A10000000000000000000101 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000401 /* WhisperKit */; };
 		A10000000000000000000103 /* SpeakerKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000403 /* SpeakerKit */; };
 		A10000000000000000000102 /* Web in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000203 /* Web */; };
+		A10000000000000000001102 /* Web in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000203 /* Web */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -26,17 +27,73 @@
 		A10000000000000000000201 /* Recap.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Recap.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000202 /* ApontamentosTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ApontamentosTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000203 /* Web */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Web; sourceTree = "<group>"; };
+		A10000000000000000001201 /* Recap.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Recap.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A10000000000000000001D01 /* Exceptions for "Apontamentos" folder in "Recap iOS" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				App/ApontamentosApp.swift,
+				Pipeline/Job.swift,
+				Pipeline/PipelineRunner.swift,
+				Pipeline/ProcessingQueue.swift,
+				Pipeline/SessaoDireto.swift,
+				Resources/Assets.xcassets,
+				Services/Atualizador.swift,
+				Services/AudioExtractor.swift,
+				Services/CapturaAudio.swift,
+				Services/ClaudeCodeClient.swift,
+				Services/ExportadorPDF.swift,
+				Services/ModelStore.swift,
+				Services/Oradores.swift,
+				Services/SlideExtractor.swift,
+				Services/Transcriber.swift,
+				Services/VideoResolver.swift,
+				Views/AulaDetailView.swift,
+				Views/BarraFormatacao.swift,
+				Views/BarraProcura.swift,
+				Views/CadeiraSheet.swift,
+				Views/ComandosAula.swift,
+				Views/ContentView.swift,
+				Views/DiretoViews.swift,
+				Views/EditarAulaSheet.swift,
+				Views/EstudoViews.swift,
+				Views/FichaCadeiraView.swift,
+				Views/FormularioAula.swift,
+				Views/Girador.swift,
+				Views/LigacoesView.swift,
+				Views/NotesWebView.swift,
+				Views/NovaAulaSheet.swift,
+				Views/PesquisaView.swift,
+				Views/PreparacaoView.swift,
+				Views/ProgressoJobView.swift,
+				Views/SettingsView.swift,
+				Views/SidebarView.swift,
+				Views/SlidesView.swift,
+				Views/TranscricaoView.swift,
+			);
+			target = A10000000000000000001601 /* Recap iOS */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A10000000000000000000301 /* Apontamentos */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A10000000000000000001D01 /* Exceptions for "Apontamentos" folder in "Recap iOS" target */,
+			);
 			path = Apontamentos;
 			sourceTree = "<group>";
 		};
 		A10000000000000000000302 /* ApontamentosTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = ApontamentosTests;
+			sourceTree = "<group>";
+		};
+		A10000000000000000001301 /* Apontamentos iOS */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Apontamentos iOS";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -58,6 +115,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000001701 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -66,6 +130,7 @@
 			children = (
 				A10000000000000000000301 /* Apontamentos */,
 				A10000000000000000000302 /* ApontamentosTests */,
+				A10000000000000000001301 /* Apontamentos iOS */,
 				A10000000000000000000203 /* Web */,
 				A10000000000000000000802 /* Products */,
 			);
@@ -76,6 +141,7 @@
 			children = (
 				A10000000000000000000201 /* Apontamentos.app */,
 				A10000000000000000000202 /* ApontamentosTests.xctest */,
+				A10000000000000000001201 /* Recap.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -128,6 +194,29 @@
 			productReference = A10000000000000000000202 /* ApontamentosTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		A10000000000000000001601 /* Recap iOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000001A01 /* Build configuration list for PBXNativeTarget "Recap iOS" */;
+			buildPhases = (
+				A10000000000000000001901 /* Sources */,
+				A10000000000000000001701 /* Frameworks */,
+				A10000000000000000001903 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A10000000000000000000301 /* Apontamentos */,
+				A10000000000000000001301 /* Apontamentos iOS */,
+			);
+			name = "Recap iOS";
+			packageProductDependencies = (
+			);
+			productName = "Recap iOS";
+			productReference = A10000000000000000001201 /* Recap.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -144,6 +233,9 @@
 					A10000000000000000000602 = {
 						CreatedOnToolsVersion = 27.0;
 						TestTargetID = A10000000000000000000601;
+					};
+					A10000000000000000001601 = {
+						CreatedOnToolsVersion = 27.0;
 					};
 				};
 			};
@@ -166,6 +258,7 @@
 			targets = (
 				A10000000000000000000601 /* Apontamentos */,
 				A10000000000000000000602 /* ApontamentosTests */,
+				A10000000000000000001601 /* Recap iOS */,
 			);
 		};
 /* End PBXProject section */
@@ -186,6 +279,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000001903 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000001102 /* Web in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -197,6 +298,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A10000000000000000000902 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000001901 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -359,6 +467,72 @@
 			};
 			name = Release;
 		};
+		A10000000000000000001C01 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Recap;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.education";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.2;
+				PRODUCT_BUNDLE_IDENTIFIER = pt.danielrodrigues.Recap.ios;
+				PRODUCT_MODULE_NAME = RecapIOS;
+				PRODUCT_NAME = Recap;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A10000000000000000001C02 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Recap;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.education";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.2;
+				PRODUCT_BUNDLE_IDENTIFIER = pt.danielrodrigues.Recap.ios;
+				PRODUCT_MODULE_NAME = RecapIOS;
+				PRODUCT_NAME = Recap;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -385,6 +559,15 @@
 			buildConfigurations = (
 				A10000000000000000000C05 /* Debug */,
 				A10000000000000000000C06 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000000000000000001A01 /* Build configuration list for PBXNativeTarget "Recap iOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000000000000000001C01 /* Debug */,
+				A10000000000000000001C02 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
