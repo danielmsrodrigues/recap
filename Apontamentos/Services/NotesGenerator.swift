@@ -52,8 +52,10 @@ struct ResultadoApontamentos: Sendable {
 
 /// Por onde o pedido chega ao Claude.
 enum Motor: Sendable {
-    /// `claude -p` com a subscrição do utilizador (predefinido).
+    #if os(macOS)
+    /// `claude -p` com a subscrição do utilizador (predefinido). Não há processos no iOS.
     case claudeCode(ClaudeCodeClient)
+    #endif
     /// API REST paga à parte.
     case api(AnthropicClient)
 }
@@ -205,6 +207,7 @@ struct NotesGenerator: Sendable {
         case .api(let cliente):
             return try await gerarComAPI(cliente, pedido(sistema: sistema, conteudo: conteudo),
                                          aoRecomecar: aoRecomecar, aoReceber: aoReceber, aoRepetir: aoRepetir)
+        #if os(macOS)
         case .claudeCode(let cc):
             let r = try await cc.gerar(sistema: sistema, conteudo: conteudo, modelo: modelo, esforco: esforco,
                                        aoRecomecar: aoRecomecar, aoReceber: aoReceber)
@@ -224,6 +227,7 @@ struct NotesGenerator: Sendable {
                 usoSubscricao5h: r.uso5h
             )
             return ResultadoApontamentos(markdown: r.resposta.texto, geracao: geracao)
+        #endif
         }
     }
 

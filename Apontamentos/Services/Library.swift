@@ -171,6 +171,7 @@ final class Library {
         return pasta
     }
 
+    #if os(macOS)
     func criarAula(cadeira: String, titulo: String, data: Date, video: URL?) throws -> URL {
         let pastaCadeira = try pastaDaCadeira(cadeira)
         let pasta = Disco.pastaLivre(Disco.nomePastaAula(titulo: titulo, data: data), em: pastaCadeira)
@@ -181,6 +182,7 @@ final class Library {
         recarregar()
         return canonico(pasta)
     }
+    #endif
 
     func atualizarMeta(em pasta: URL, _ alterar: (inout AulaMeta) -> Void) throws {
         var meta = try Disco.lerMeta(pasta)
@@ -236,6 +238,7 @@ final class Library {
         try atualizarMeta(em: pasta) { $0.revista = revista }
     }
 
+    #if os(macOS)
     /// Junta a `segunda` gravação a seguir à `primeira` (ver `JuntarAulas`) e manda a pasta da segunda para o Lixo.
     /// Os apontamentos da primeira ficam como estavam: quem chama gera-os de novo. Devolve a pasta da primeira.
     func juntar(_ segunda: Aula, a primeira: Aula) throws -> URL {
@@ -250,6 +253,7 @@ final class Library {
         try FileManager.default.trashItem(at: pasta, resultingItemURL: nil)
         recarregar()
     }
+    #endif
 }
 
 extension URL {

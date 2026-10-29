@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import PDFKit
 
 /// Slides dentro dos apontamentos. O Claude marca onde entra cada slide com `![Slide 7 — título](slide:2/7)`
@@ -38,9 +42,13 @@ enum SlidesNosApontamentos {
                 guard caixa.width > 0 else { return }
                 let tamanho = CGSize(width: larguraPagina, height: (larguraPagina * caixa.height / caixa.width).rounded())
                 let imagem = pagina.thumbnail(of: tamanho, for: .cropBox)
+                #if os(macOS)
                 guard let tiff = imagem.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
                       let jpeg = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.8])
                 else { return }
+                #else
+                guard let jpeg = imagem.jpegData(compressionQuality: 0.8) else { return }
+                #endif
                 try jpeg.write(to: destino.appending(path: nomePagina(i + 1)), options: .atomic)
             }
         }
