@@ -25,10 +25,12 @@ fi
 
 arquivo=build/RecapIOS.xcarchive
 rm -rf "$arquivo" build/RecapIOS-envio
+registo=build/RecapIOS.log
 xcodebuild -project Apontamentos.xcodeproj -scheme "Recap iOS" -configuration Release \
   -destination 'generic/platform=iOS' -archivePath "$arquivo" -derivedDataPath build/DerivedData-ios \
-  -allowProvisioningUpdates "${autenticacao[@]}" archive "${definicoes[@]}" | grep -E "error|ARCHIVE" || true
-[[ -d "$arquivo" ]] || { echo "A compilação falhou." >&2; exit 1; }
+  -allowProvisioningUpdates "${autenticacao[@]}" archive "${definicoes[@]}" > "$registo" 2>&1 || true
+grep -E "error:|ARCHIVE" "$registo" || true
+[[ -d "$arquivo" ]] || { echo "A compilação falhou (registo em $registo)." >&2; exit 1; }
 
 opcoes=build/RecapIOS-opcoes.plist
 cat > "$opcoes" <<PLIST
@@ -46,5 +48,7 @@ cat > "$opcoes" <<PLIST
 PLIST
 
 xcodebuild -exportArchive -archivePath "$arquivo" -exportOptionsPlist "$opcoes" -exportPath build/RecapIOS-envio \
-  -allowProvisioningUpdates "${autenticacao[@]}" | grep -E "error|EXPORT|Upload" || true
+  -allowProvisioningUpdates "${autenticacao[@]}" > "$registo" 2>&1 || true
+grep -E "error:|EXPORT|Upload (succeeded|failed)" "$registo" || true
+grep -q "EXPORT SUCCEEDED" "$registo" || { echo "O envio falhou (registo em $registo)." >&2; exit 1; }
 echo "Enviado para o App Store Connect. A compilação aparece no TestFlight depois de processada (uns minutos)."
