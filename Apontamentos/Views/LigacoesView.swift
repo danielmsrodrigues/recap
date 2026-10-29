@@ -56,8 +56,9 @@ struct LigacoesView: View {
             } else {
                 vazio
             }
+            AvisoEsperaMac(aula: aula, tipo: .ligacoes)
         }
-        .task(id: estudo.versao) {
+        .task(id: [estudo.versao, library.versao]) {
             dados = estudo.ligacoes(aula)
         }
     }

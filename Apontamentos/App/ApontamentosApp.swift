@@ -10,6 +10,8 @@ struct ApontamentosApp: App {
     @State private var fichas: Fichas
     @State private var navegacao = Navegacao()
     @State private var atualizador = Atualizador()
+    /// Responde às perguntas feitas no iPad e no iPhone (pela pasta das aulas no iCloud Drive).
+    @State private var ponte: PonteMac
 
     init() {
         let definicoes = Definicoes()
@@ -21,6 +23,9 @@ struct ApontamentosApp: App {
         _fichas = State(initialValue: fichas)
         let estudo = Estudo(library: library, definicoes: definicoes)
         _estudo = State(initialValue: estudo)
+        let ponte = PonteMac(library: library, estudo: estudo, definicoes: definicoes)
+        ponte.ligar()
+        _ponte = State(initialValue: ponte)
         _fila = State(initialValue: ProcessingQueue(runner: PipelineRunner(library: library, definicoes: definicoes, fichas: fichas, estudo: estudo)))
         // O painel Estudo abre sempre ao arrancar; fechá-lo só vale até sair da app.
         UserDefaults.standard.set(true, forKey: "mostrarEstudo")

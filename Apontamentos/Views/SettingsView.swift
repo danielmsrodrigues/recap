@@ -150,6 +150,12 @@ private struct ClaudeSettings: View {
                      : "Usa a API da Anthropic, paga por utilização com créditos à parte da subscrição.")
             }
 
+            Section {
+                Toggle("Responder às perguntas feitas no iPad e no iPhone", isOn: $definicoes.responderPedidos)
+            } footer: {
+                Text("Com a pasta das aulas no iCloud Drive, o Recap do iPad e do iPhone pode pedir ao Mac as respostas, os exercícios e as ligações. O Mac responde enquanto o Recap estiver aberto, pelo mesmo motor daqui.")
+            }
+
             if definicoes.motor == .claudeCode {
                 Section {
                     LabeledContent("Claude Code") {
