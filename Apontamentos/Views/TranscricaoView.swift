@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
 
 /// Ir para um momento da transcrição. O `id` deixa repetir o mesmo momento (clicar duas vezes no mesmo `[mm:ss]`).
@@ -32,13 +36,27 @@ struct TranscricaoView: View {
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 320)
                 Spacer()
+                #if os(macOS)
                 Text("\(transcricao.segmentos.count) segmentos · \(transcricao.modelo)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                #else
+                // No iPhone não cabe o modelo do Whisper.
+                Text("\(transcricao.segmentos.count) segmentos")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                #endif
                 Button("Copiar tudo", systemImage: "doc.on.doc") {
+                    #if os(macOS)
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(transcricao.textoComTimestamps, forType: .string)
+                    #else
+                    UIPasteboard.general.string = transcricao.textoComTimestamps
+                    #endif
                 }
+                #if os(iOS)
+                .labelStyle(.iconOnly)
+                #endif
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -66,7 +84,23 @@ enum TextoTranscricao {
         var etiqueta: NSRange?
     }
 
+    #if os(macOS)
     static let recuo: CGFloat = 52
+    private static var corpo: NSFont { .systemFont(ofSize: NSFont.systemFontSize) }
+    private static var fonteTempo: NSFont { .monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular) }
+    private static var fonteEtiqueta: NSFont { .systemFont(ofSize: NSFont.smallSystemFontSize, weight: .medium) }
+    private static let corTempo = NSColor.controlAccentColor
+    private static let corSecundaria = NSColor.secondaryLabelColor
+    private static let corTexto = NSColor.labelColor
+    #else
+    static let recuo: CGFloat = 60
+    private static var corpo: UIFont { .preferredFont(forTextStyle: .body) }
+    private static var fonteTempo: UIFont { .monospacedDigitSystemFont(ofSize: UIFont.preferredFont(forTextStyle: .footnote).pointSize, weight: .regular) }
+    private static var fonteEtiqueta: UIFont { .systemFont(ofSize: UIFont.preferredFont(forTextStyle: .footnote).pointSize, weight: .medium) }
+    private static let corTempo = UIColor.tintColor
+    private static let corSecundaria = UIColor.secondaryLabel
+    private static let corTexto = UIColor.label
+    #endif
 
     static func construir(_ segmentos: [Segmento], indices: [Int]) -> (NSAttributedString, [Faixa]) {
         let paragrafo = NSMutableParagraphStyle()
@@ -74,29 +108,29 @@ enum TextoTranscricao {
         paragrafo.headIndent = recuo
         paragrafo.paragraphSpacing = 7
         paragrafo.lineSpacing = 1
-        let corpo = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        let corpo = Self.corpo
         let resultado = NSMutableAttributedString()
         var faixas: [Faixa] = []
         for i in indices {
             let s = segmentos[i]
             let inicioLinha = resultado.length
             resultado.append(NSAttributedString(string: Timestamp.format(s.inicio) + "\t", attributes: [
-                .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular),
-                .foregroundColor: NSColor.controlAccentColor,
+                .font: fonteTempo,
+                .foregroundColor: corTempo,
             ]))
             var etiqueta: NSRange?
             if s.orador == .aluno {
                 etiqueta = NSRange(location: resultado.length, length: 7)
-                resultado.append(NSAttributedString(string: " Aluno ", attributes: [
-                    .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize, weight: .medium),
-                    .foregroundColor: NSColor.secondaryLabelColor,
-                    .toolTip: "Identificado pela voz como um aluno (pode falhar)",
-                ]))
+                var atributos: [NSAttributedString.Key: Any] = [.font: fonteEtiqueta, .foregroundColor: corSecundaria]
+                #if os(macOS)
+                atributos[.toolTip] = "Identificado pela voz como um aluno (pode falhar)"
+                #endif
+                resultado.append(NSAttributedString(string: " Aluno ", attributes: atributos))
                 resultado.append(NSAttributedString(string: " ", attributes: [.font: corpo]))
             }
             let texto = NSAttributedString(string: s.texto.trimmingCharacters(in: .whitespacesAndNewlines), attributes: [
                 .font: corpo,
-                .foregroundColor: s.orador == .aluno ? NSColor.secondaryLabelColor : NSColor.labelColor,
+                .foregroundColor: s.orador == .aluno ? corSecundaria : corTexto,
             ])
             let inicioTexto = resultado.length
             resultado.append(texto)
@@ -125,7 +159,9 @@ enum TextoTranscricao {
     }
 }
 
+#if os(macOS)
 /// A transcrição num NSTextView só de leitura: deixa selecionar texto de vários segmentos e perguntar sobre ele.
+/// (No iOS é um `UITextView`, em `Apontamentos iOS/TextoTranscricaoView.swift`.)
 struct TextoTranscricaoView: NSViewRepresentable {
     let segmentos: [Segmento]
     let indices: [Int]
@@ -324,3 +360,4 @@ private struct BotaoPerguntar: View {
         .padding(4)
     }
 }
+#endif

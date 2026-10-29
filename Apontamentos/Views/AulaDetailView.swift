@@ -3,7 +3,9 @@ import UniformTypeIdentifiers
 
 struct AulaDetailView: View {
     @Environment(Library.self) private var library
+    #if os(macOS)
     @Environment(ProcessingQueue.self) private var fila
+    #endif
     @Environment(Definicoes.self) private var definicoes
     @Environment(Navegacao.self) private var navegacao
     @Environment(Estudo.self) private var estudo
@@ -21,6 +23,7 @@ struct AulaDetailView: View {
     @State private var apontamentos: String?
     @State private var slides: [Slide]?
     @State private var pdfsProfessor: [PDFProfessor] = []
+    #if os(macOS)
     @State private var escolherPDF = false
     @State private var estadoVideo: VideoResolver.Estado?
     @State private var confirmarRegenerar = false
@@ -28,6 +31,7 @@ struct AulaDetailView: View {
     @State private var pdfsJuntados = 0
     @State private var estimativa: String?
     @State private var localizarVideo = false
+    #endif
     @State private var erro: String?
     @State private var controlador = ControladorNotas()
     /// Markdown no início da edição, para "Descartar alterações".
@@ -43,8 +47,16 @@ struct AulaDetailView: View {
     /// Secção a mostrar nos apontamentos (link de uma resposta).
     @State private var irSeccao: PedidoSeccao?
 
+    #if os(macOS)
     private var job: Job? { fila.job(para: aula.pasta) }
     private var aGerar: Bool { job?.estado == .aCorrer && job?.faseDe(.apontamentos) == .emCurso }
+    /// A aula está na fila (transcrição, slides ou apontamentos).
+    private var ocupada: Bool { job?.ativo == true }
+    #else
+    /// No iOS não se gera nada: a aula nunca está a ser processada aqui.
+    private var aGerar: Bool { false }
+    private var ocupada: Bool { false }
+    #endif
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -65,7 +77,16 @@ struct AulaDetailView: View {
         // não é preciso reler a cada alteração noutra aula.
         .task(id: aula) {
             carregar()
+            #if os(macOS)
             estudo.gerarLigacoesSePreciso(aula)
+            #else
+            // Os slides e os PDFs só vêm do iCloud quando a aula abre (com a API, as ligações pedem-se no painel).
+            Disco.descarregar(aula.pasta)
+            #endif
+        }
+        // O iCloud trouxe mudanças desta aula (outro dispositivo): sem edição a meio, relê.
+        .onChange(of: library.versao) {
+            if !controlador.editando && !aGerar { carregar() }
         }
         // As notas das ligações ("🔗 Aprofundado na Aula 2") foram postas nos apontamentos.
         .onChange(of: estudo.versaoApontamentos) {
@@ -120,6 +141,7 @@ struct AulaDetailView: View {
             if let nome = ProcessInfo.processInfo.environment["APONTAMENTOS_SEPARADOR"], let t = Tab(rawValue: nome) { tab = t }
         }
         #endif
+        #if os(macOS)
         .confirmationDialog("Regenerar os apontamentos?", isPresented: $confirmarRegenerar) {
             Button("Regenerar") { gerar() }
         } message: {
@@ -134,6 +156,7 @@ struct AulaDetailView: View {
         .fileImporter(isPresented: $localizarVideo, allowedContentTypes: ContentView.tiposVideo) { resultado in
             if case .success(let url) = resultado { religarVideo(url) }
         }
+        #endif
         .onDisappear {
             // As alterações já foram gravadas automaticamente; falta só registar que houve edição.
             if controlador.editando, houveEdicao { try? library.atualizarMeta(em: aula.pasta) { $0.editadoEm = .now } }
@@ -150,6 +173,7 @@ struct AulaDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             seletor
 
+            #if os(macOS)
             if case .emFalta(let caminho) = estadoVideo {
                 HStack {
                     Label {
@@ -166,6 +190,7 @@ struct AulaDetailView: View {
             }
 
             if let job { ProgressoJobView(job: job) }
+            #endif
         }
     }
 
@@ -194,10 +219,11 @@ struct AulaDetailView: View {
     }
 
     /// Sem job ativo nem edição em curso: pode-se gerar, extrair e exportar.
-    private var livre: Bool { job?.ativo != true && !controlador.editando }
+    private var livre: Bool { !ocupada && !controlador.editando }
 
     /// As mesmas ações da toolbar, para os menus Aula e Ver.
     private var comandos: ComandosAula {
+        #if os(macOS)
         ComandosAula(
             editar: apontamentos != nil && !controlador.editando && !aGerar ? { comecarEdicao() } : nil,
             gerarApontamentos: transcricao != nil && livre && definicoes.faltaParaGerar == nil
@@ -212,6 +238,16 @@ struct AulaDetailView: View {
             separador: Binding(get: { tab }, set: { if !controlador.editando { tab = $0 } }),
             separadores: tabs
         )
+        #else
+        ComandosAula(
+            editar: apontamentos != nil && !controlador.editando ? { comecarEdicao() } : nil,
+            temApontamentos: apontamentos != nil,
+            revista: aula.meta.revista,
+            marcarRevista: { marcarRevista($0) },
+            separador: Binding(get: { tab }, set: { if !controlador.editando { tab = $0 } }),
+            separadores: tabs
+        )
+        #endif
     }
 
     // MARK: Conteúdo
@@ -222,7 +258,30 @@ struct AulaDetailView: View {
             // Uma só vista web para o texto a chegar e para o guardado: trocar de vista era carregar a página
             // (KaTeX incluído) outra vez ao começar e ao acabar cada geração.
             // O texto a chegar lê-se numa vista à parte: cada pedaço novo redesenhava a aula toda e a toolbar piscava.
-            ComTextoEmCurso(job: aGerar ? job : nil) { emCurso in
+            #if os(macOS)
+            ComTextoEmCurso(job: aGerar ? job : nil) { notas($0) }
+            #else
+            notas(nil)
+            #endif
+        case .slides:
+            #if os(macOS)
+            SlidesView(pasta: aula.pasta, slides: slides, pdfs: pdfsProfessor, podeExtrair: urlVideo != nil && !ocupada,
+                       aoExtrair: extrairSlides, aoJuntarPDF: { escolherPDF = true }, aoRemoverPDF: removerPDFProfessor)
+            #else
+            SlidesView(pasta: aula.pasta, slides: slides, pdfs: pdfsProfessor)
+            #endif
+        case .transcricao:
+            if let transcricao {
+                TranscricaoView(transcricao: transcricao, irPara: salto, aoPerguntar: perguntarSobre)
+            } else {
+                ContentUnavailableView("Ainda sem transcrição", systemImage: "waveform",
+                                       description: Text(ocupada ? "A transcrição está em curso." : "Esta aula ainda não foi transcrita."))
+            }
+        }
+    }
+
+    /// Os apontamentos (ou o texto a chegar), com as barras de edição e de procura.
+    @ViewBuilder private func notas(_ emCurso: String?) -> some View {
                 if let texto = emCurso?.isEmpty == false ? emCurso : apontamentos {
                     VStack(spacing: 0) {
                         if controlador.editando {
@@ -244,20 +303,9 @@ struct AulaDetailView: View {
                 } else {
                     vazioApontamentos
                 }
-            }
-        case .slides:
-            SlidesView(pasta: aula.pasta, slides: slides, pdfs: pdfsProfessor, podeExtrair: urlVideo != nil && job?.ativo != true,
-                       aoExtrair: extrairSlides, aoJuntarPDF: { escolherPDF = true }, aoRemoverPDF: removerPDFProfessor)
-        case .transcricao:
-            if let transcricao {
-                TranscricaoView(transcricao: transcricao, irPara: salto, aoPerguntar: perguntarSobre)
-            } else {
-                ContentUnavailableView("Ainda sem transcrição", systemImage: "waveform",
-                                       description: Text(job?.ativo == true ? "A transcrição está em curso." : "Esta aula ainda não foi transcrita."))
-            }
-        }
     }
 
+    #if os(macOS)
     private var avisoRegenerar: String {
         var t = switch pdfsJuntados {
         case 0: ""
@@ -270,7 +318,10 @@ struct AulaDetailView: View {
         return t
     }
 
+    #endif
+
     @ViewBuilder private var vazioApontamentos: some View {
+        #if os(macOS)
         if aGerar {
             ContentUnavailableView("A gerar apontamentos…", systemImage: "text.badge.plus",
                                    description: Text("O texto aparece aqui à medida que chega."))
@@ -293,12 +344,17 @@ struct AulaDetailView: View {
             }
             .task(id: aula.pasta) { await estimar() }
         }
+        #else
+        ContentUnavailableView("Ainda sem apontamentos", systemImage: "doc.text",
+                               description: Text(transcricao == nil ? "Esta aula ainda não foi transcrita." : "Os apontamentos geram-se no Mac."))
+        #endif
     }
 
     // MARK: Barra
 
     /// Editar · Gerar ▾ · Exportar ▾ | Estudo | Revista. Tudo isto está também no menu Aula.
     @ToolbarContentBuilder private var barra: some ToolbarContent {
+        #if os(macOS)
         ToolbarItemGroup {
             Button("Editar", systemImage: "pencil") { comecarEdicao() }
                 .labelStyle(.titleAndIcon)
@@ -330,6 +386,26 @@ struct AulaDetailView: View {
             .labelStyle(.titleAndIcon)
             .disabled(apontamentos == nil)
         }
+        #else
+        ToolbarItemGroup {
+            Button("Editar", systemImage: "pencil") { comecarEdicao() }
+                .disabled(apontamentos == nil || controlador.editando)
+            Menu("Partilhar", systemImage: "square.and.arrow.up") {
+                // O PDF é feito no Mac (ao lado do Markdown); se estiver desatualizado, partilha-se só o Markdown.
+                if pdfPronto {
+                    ShareLink(item: aula.pasta.appending(path: Disco.apontamentosPDF),
+                              preview: SharePreview(aula.meta.titulo, icon: Image(systemName: "doc.richtext"))) {
+                        Label("Apontamentos em PDF", systemImage: "doc.richtext")
+                    }
+                }
+                ShareLink(item: aula.pasta.appending(path: Disco.apontamentosMD),
+                          preview: SharePreview(aula.meta.titulo, icon: Image(systemName: "doc.plaintext"))) {
+                    Label("Apontamentos em Markdown", systemImage: "doc.plaintext")
+                }
+            }
+            .disabled(apontamentos == nil)
+        }
+        #endif
         ToolbarItem {
             Toggle(isOn: $mostrarEstudo) {
                 Label("Estudo", systemImage: "bubble.left.and.text.bubble.right")
@@ -337,6 +413,7 @@ struct AulaDetailView: View {
             .help("Perguntas, exercícios e ligações desta aula (⌥⌘P)")
         }
         ToolbarItem {
+            #if os(macOS)
             if aula.meta.revista {
                 Button { marcarRevista(false) } label: {
                     Label("Revista", systemImage: "checkmark.circle.fill").labelStyle(.titleAndIcon)
@@ -348,6 +425,14 @@ struct AulaDetailView: View {
                     Label("Marcar como revista", systemImage: "checkmark.circle").labelStyle(.titleAndIcon)
                 }
             }
+            #else
+            // No iPhone a barra é estreita: só o ícone, verde quando revista.
+            Button { marcarRevista(!aula.meta.revista) } label: {
+                Label(aula.meta.revista ? "Revista" : "Marcar como revista",
+                      systemImage: aula.meta.revista ? "checkmark.circle.fill" : "checkmark.circle")
+            }
+            .tint(aula.meta.revista ? .green : nil)
+            #endif
         }
     }
 
@@ -416,6 +501,7 @@ struct AulaDetailView: View {
         slides = Disco.lerSlides(aula.pasta)
         pdfsProfessor = Disco.pdfsProfessor(aula.pasta, nomes: aula.meta.nomesPDFs ?? [:])
         atualizarPDF()
+        #if os(macOS)
         guard let ref = aula.meta.video else { estadoVideo = nil; return }
         let estado = VideoResolver.resolver(ref)
         if case .movido(let url, let novaRef) = estado {
@@ -424,8 +510,10 @@ struct AulaDetailView: View {
         } else {
             estadoVideo = estado
         }
+        #endif
     }
 
+    #if os(macOS)
     private var urlVideo: URL? {
         if case .ok(let url) = estadoVideo { return url }
         return nil
@@ -461,6 +549,9 @@ struct AulaDetailView: View {
         }
     }
 
+    #endif
+
+    #if os(macOS)
     /// O PDF vive ao lado do Markdown (`apontamentos.pdf`) e é refeito quando o Markdown muda,
     /// uns segundos depois de a aula abrir, para não competir com o que está a aparecer no ecrã.
     private func atualizarPDF() {
@@ -496,6 +587,12 @@ struct AulaDetailView: View {
             erro = "Não foi possível exportar: \(error.localizedDescription)"
         }
     }
+    #else
+    /// No iOS o PDF não se refaz: é o que o Mac deixou, se estiver em dia com o Markdown.
+    private func atualizarPDF() {
+        pdfPronto = apontamentos != nil && Disco.pdfAtualizado(em: aula.pasta)
+    }
+    #endif
 
     // MARK: Edição
 
@@ -552,6 +649,7 @@ struct AulaDetailView: View {
         houveEdicao = false
     }
 
+    #if os(macOS)
     private func juntarPDFsProfessor(_ urls: [URL]) {
         let acedeu = urls.map { $0.startAccessingSecurityScopedResource() }
         defer { for (url, sim) in zip(urls, acedeu) where sim { url.stopAccessingSecurityScopedResource() } }
@@ -570,7 +668,7 @@ struct AulaDetailView: View {
             let pasta = aula.pasta
             Task { await SlidesNosApontamentos.garantirPaginasEmFundo(em: pasta) }
             // Com apontamentos já feitos sem estes PDFs, propõe refazê-los para os slides entrarem nos tópicos.
-            if apontamentos != nil, job?.ativo != true, definicoes.faltaParaGerar == nil, !controlador.editando {
+            if apontamentos != nil, !ocupada, definicoes.faltaParaGerar == nil, !controlador.editando {
                 pdfsJuntados = juntados.count
                 confirmarRegenerar = true
             } else {
@@ -592,10 +690,13 @@ struct AulaDetailView: View {
         }
     }
 
+    #endif
+
     private func marcarRevista(_ revista: Bool) {
         do { try library.definirRevista(revista, em: aula.pasta) } catch { erro = error.localizedDescription }
     }
 
+    #if os(macOS)
     private func religarVideo(_ url: URL) {
         let acedeu = url.startAccessingSecurityScopedResource()
         defer { if acedeu { url.stopAccessingSecurityScopedResource() } }
@@ -605,8 +706,10 @@ struct AulaDetailView: View {
             erro = "Não foi possível guardar o novo caminho do vídeo: \(error.localizedDescription)"
         }
     }
+    #endif
 }
 
+#if os(macOS)
 /// Lê o texto dos apontamentos a chegar (nil sem geração em curso) só no seu próprio `body`.
 private struct ComTextoEmCurso<Conteudo: View>: View {
     let job: Job?
@@ -614,3 +717,4 @@ private struct ComTextoEmCurso<Conteudo: View>: View {
 
     var body: some View { conteudo(job?.textoEmCurso) }
 }
+#endif

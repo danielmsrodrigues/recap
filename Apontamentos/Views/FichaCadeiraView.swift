@@ -1,3 +1,4 @@
+import QuickLook
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -19,6 +20,8 @@ struct FichaCadeiraView: View {
     @State private var pedidosProcura = 0
     /// Texto a realçar (resultado da pesquisa em todas as aulas).
     @State private var realce: [String] = []
+    /// A guía de estudio aberta no Quick Look (no iOS; no Mac abre na Pré-visualização).
+    @State private var guiaAberta: URL?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -42,15 +45,20 @@ struct FichaCadeiraView: View {
                 } description: {
                     Text("A apresentação, a avaliação, as datas e os avisos que o professor der nas aulas juntam-se aqui, numa só ficha que vai crescendo de aula para aula. Para começar já com o essencial, junta a guía de estudio da cadeira.")
                 } actions: {
+                    #if os(macOS)
                     Button("Juntar a guía de estudio (PDF)…") { escolherPrograma = true }
                         .disabled(fichas.aAtualizar(cadeira) != nil)
+                    #endif
                 }
             }
         }
+        .quickLookPreview($guiaAberta)
         .navigationTitle(FichaCadeira.tituloSeccao)
         .navigationSubtitle(cadeira.nome)
         .toolbar {
             ToolbarItemGroup {
+                // Juntar, trocar e remover a guía passa por gerar a ficha com o Claude: faz-se no Mac.
+                #if os(macOS)
                 Menu("Guía de estudio", systemImage: "doc.text") {
                     if temPrograma {
                         Button("Abrir a guía") { NSWorkspace.shared.open(FichaCadeira.urlPrograma(cadeira.pasta)) }
@@ -63,6 +71,12 @@ struct FichaCadeiraView: View {
                 }
                 .labelStyle(.titleAndIcon)
                 .disabled(controlador.editando || fichas.aAtualizar(cadeira) != nil)
+                #else
+                if temPrograma {
+                    Button("Guía de estudio", systemImage: "doc.text") { guiaAberta = FichaCadeira.urlPrograma(cadeira.pasta) }
+                        .disabled(controlador.editando)
+                }
+                #endif
                 Button("Editar", systemImage: "pencil") { comecarEdicao() }
                     .labelStyle(.titleAndIcon)
                     .disabled(ficha == nil || controlador.editando || fichas.aAtualizar(cadeira) != nil)

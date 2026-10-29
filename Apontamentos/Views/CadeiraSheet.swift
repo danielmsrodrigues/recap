@@ -39,9 +39,12 @@ struct CadeiraSheet: View {
                     Divider()
                     ForEach(IdiomaAula.allCases) { Text($0.nome).tag(Optional($0)) }
                 }
+                // Só serve para extrair slides, o que se faz no Mac.
+                #if os(macOS)
                 Picker("Câmara do professor", selection: $regiao) {
                     ForEach(RegiaoIgnorar.allCases) { Text($0.nome).tag($0) }
                 }
+                #endif
             }
             .formStyle(.grouped)
             .scrollDisabled(true)
@@ -55,9 +58,11 @@ struct CadeiraSheet: View {
                 .font(.body.monospaced())
                 .frame(minHeight: 200)
                 .border(.separator)
+            #if os(macOS)
             Text("A câmara do professor é a zona do ecrã que se ignora ao procurar slides nos vídeos desta cadeira.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            #endif
             if let erro { Text(erro).foregroundStyle(.red).font(.callout) }
             HStack {
                 Spacer()

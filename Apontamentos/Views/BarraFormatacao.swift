@@ -16,7 +16,29 @@ struct BarraFormatacao: View {
     }
 
     var body: some View {
+        #if os(macOS)
         HStack(spacing: 8) {
+            ferramentas
+            Spacer(minLength: 8)
+            acoes
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(.bar)
+        #else
+        // No iPhone não cabe tudo numa linha: as ferramentas deslizam e as ações ficam por baixo.
+        VStack(spacing: 6) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) { ferramentas }.padding(.horizontal, 14)
+            }
+            HStack(spacing: 8) { acoes }.padding(.horizontal, 14)
+        }
+        .padding(.vertical, 8)
+        .background(.bar)
+        #endif
+    }
+
+    @ViewBuilder private var ferramentas: some View {
             Picker("Estilo", selection: estilo) {
                 Text("Texto normal").tag("p")
                 Text("Título 1").tag("h1")
@@ -46,9 +68,13 @@ struct BarraFormatacao: View {
             Divider().frame(height: 18)
             botao("arrow.uturn.backward", ajuda: "Desfazer (⌘Z)") { controlador.comando("undo") }
             botao("arrow.uturn.forward", ajuda: "Refazer (⇧⌘Z)") { controlador.comando("redo") }
+    }
 
-            Spacer(minLength: 8)
+    @ViewBuilder private var acoes: some View {
             Text(estado).font(.caption).foregroundStyle(.secondary).lineLimit(1).layoutPriority(-1)
+            #if os(iOS)
+            Spacer(minLength: 8)
+            #endif
             Button("Descartar", action: aoDescartar)
                 .fixedSize()
                 .help("Descartar as alterações feitas nesta edição")
@@ -56,10 +82,6 @@ struct BarraFormatacao: View {
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.return, modifiers: .command)
                 .fixedSize()
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .background(.bar)
     }
 
     private func botao(_ simbolo: String, ativo: Bool = false, ajuda: String, acao: @escaping () -> Void) -> some View {

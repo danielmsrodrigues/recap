@@ -4,15 +4,16 @@ import SwiftUI
 /// está disponível (sem apontamentos, a gerar, a editar…), e o item do menu fica desativado.
 struct ComandosAula {
     var editar: (() -> Void)?
-    var gerarApontamentos: (() -> Void)?
+    var gerarApontamentos: (() -> Void)? = nil
     /// Já há apontamentos: o item pede confirmação.
     var temApontamentos: Bool
-    var extrairSlides: (() -> Void)?
-    var guardarPDF: (() -> Void)?
-    var guardarMarkdown: (() -> Void)?
+    var extrairSlides: (() -> Void)? = nil
+    var guardarPDF: (() -> Void)? = nil
+    var guardarMarkdown: (() -> Void)? = nil
     var revista: Bool
     var marcarRevista: (Bool) -> Void
-    var mostrarNoFinder: () -> Void
+    /// nil no iOS.
+    var mostrarNoFinder: (() -> Void)? = nil
     var separador: Binding<SeparadorAula>
     /// Os separadores que esta aula tem (uma aula em direto sem slides não tem o de Slides).
     var separadores: [SeparadorAula]
@@ -49,8 +50,10 @@ private struct ItensMenuAula: View {
         Toggle("Revista", isOn: Binding(get: { c?.revista ?? false }, set: { c?.marcarRevista($0) }))
             .keyboardShortcut("r", modifiers: [.command, .shift])
             .disabled(c == nil)
-        Button("Mostrar no Finder") { c?.mostrarNoFinder() }
-            .disabled(c == nil)
+        #if os(macOS)
+        Button("Mostrar no Finder") { c?.mostrarNoFinder?() }
+            .disabled(c?.mostrarNoFinder == nil)
+        #endif
     }
 }
 

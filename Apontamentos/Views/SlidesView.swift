@@ -9,11 +9,12 @@ struct SlidesView: View {
     let slides: [Slide]?
     /// PDFs dos slides publicados pelo professor juntados à aula.
     let pdfs: [PDFProfessor]
-    let podeExtrair: Bool
-    let aoExtrair: () -> Void
+    // Extrair e gerir os PDFs faz-se no Mac; no iOS os slides só se veem.
+    var podeExtrair = false
+    var aoExtrair: () -> Void = {}
     /// Juntar os slides em PDF publicados pelo professor, e tirar um já junto (vai para o Lixo).
-    let aoJuntarPDF: () -> Void
-    let aoRemoverPDF: (PDFProfessor) -> Void
+    var aoJuntarPDF: () -> Void = {}
+    var aoRemoverPDF: (PDFProfessor) -> Void = { _ in }
     @State private var aberto: Slide?
     /// O que se escolheu ver; começa no primeiro PDF.
     @State private var escolha: Origem?
@@ -56,7 +57,9 @@ struct SlidesView: View {
                         Text("PDF do professor").font(.callout).foregroundStyle(.secondary)
                     }
                     Spacer()
+                    #if os(macOS)
                     menuPDFs
+                    #endif
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
@@ -90,7 +93,9 @@ struct SlidesView: View {
                 HStack {
                     Text("\(slides.count) slides").font(.callout).foregroundStyle(.secondary)
                     Spacer()
+                    #if os(macOS)
                     if pdfs.isEmpty { menuPDFs }
+                    #endif
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
@@ -112,12 +117,18 @@ struct SlidesView: View {
             ContentUnavailableView {
                 Label(slides == nil ? "Slides ainda não extraídos" : "Nenhum slide encontrado", systemImage: "rectangle.on.rectangle")
             } description: {
+                #if os(macOS)
                 Text(slides == nil
                      ? "Os slides são extraídos do vídeo depois da transcrição. Se o professor publicou os slides em PDF, junta-os aqui."
                      : "Parece não haver partilha de ecrã, ou a deteção falhou. Experimenta outra câmara do professor na cadeira, ou outra sensibilidade em Definições → Slides. Se o professor publicou os slides em PDF, junta-os aqui.")
+                #else
+                Text("Os slides extraem-se no Mac, e os PDFs do professor juntam-se lá.")
+                #endif
             } actions: {
+                #if os(macOS)
                 Button("Juntar PDF do professor…", action: aoJuntarPDF).buttonStyle(.borderedProminent)
                 Button(slides == nil ? "Extrair slides do vídeo" : "Extrair de novo", action: aoExtrair).disabled(!podeExtrair)
+                #endif
             }
         }
     }
@@ -178,26 +189,33 @@ private struct SlideAmpliado: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            if let imagem = NSImage(contentsOf: url) {
-                Image(nsImage: imagem).resizable().aspectRatio(contentMode: .fit)
+            if let fonte = CGImageSourceCreateWithURL(url as CFURL, nil), let imagem = CGImageSourceCreateImageAtIndex(fonte, 0, nil) {
+                Image(decorative: imagem, scale: 1).resizable().aspectRatio(contentMode: .fit)
             }
             HStack {
                 Text(legenda).font(.callout.monospacedDigit()).foregroundStyle(.secondary)
                 Spacer()
+                #if os(macOS)
                 Button("Mostrar no Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                #else
+                ShareLink(item: url)
+                #endif
                 Button("Fechar") { dismiss() }.keyboardShortcut(.cancelAction)
             }
         }
         .padding(16)
+        #if os(macOS)
         .frame(minWidth: 800, minHeight: 500)
+        #endif
     }
 }
 
 /// O PDF do professor, com scroll contínuo.
-private struct VistaPDF: NSViewRepresentable {
+@MainActor
+private struct VistaPDF {
     let url: URL
 
-    func makeNSView(context: Context) -> PDFView {
+    func criar() -> PDFView {
         let v = PDFView()
         v.autoScales = true
         v.displayMode = .singlePageContinuous
@@ -206,7 +224,19 @@ private struct VistaPDF: NSViewRepresentable {
         return v
     }
 
-    func updateNSView(_ v: PDFView, context: Context) {
+    func atualizar(_ v: PDFView) {
         if v.document?.documentURL != url { v.document = PDFDocument(url: url) }
     }
 }
+
+#if os(macOS)
+extension VistaPDF: NSViewRepresentable {
+    func makeNSView(context: Context) -> PDFView { criar() }
+    func updateNSView(_ v: PDFView, context: Context) { atualizar(v) }
+}
+#else
+extension VistaPDF: UIViewRepresentable {
+    func makeUIView(context: Context) -> PDFView { criar() }
+    func updateUIView(_ v: PDFView, context: Context) { atualizar(v) }
+}
+#endif
