@@ -109,7 +109,7 @@ struct LigacoesView: View {
             }
         } actions: {
             if definicoes.faltaParaGerar != nil {
-                SettingsLink { Text("Abrir Definições…") }
+                LigacaoDefinicoes()
             } else {
                 Button("Gerar ligações") { estudo.gerarLigacoes(aula) }
                     .buttonStyle(.borderedProminent)
@@ -168,7 +168,11 @@ struct LigacoesView: View {
                 Button { aoClicarTimestamp(t) } label: {
                     Label("Nesta aula aos \(m)", systemImage: "play.circle").font(.caption)
                 }
+                #if os(macOS)
                 .buttonStyle(.link)
+                #else
+                .buttonStyle(.borderless)
+                #endif
             }
         }
         .padding(14)

@@ -74,7 +74,9 @@ final class ControladorNotas {
 }
 
 /// Mostra Markdown com KaTeX num WKWebView. Os assets vêm da pasta `Web` do bundle (sem CDN).
-struct NotesWebView: NSViewRepresentable {
+/// O mesmo no Mac e no iOS; só a forma de entrar no SwiftUI muda (ver as extensões no fim).
+@MainActor
+struct NotesWebView {
     var markdown: String
     var emStreaming = false
     /// Para editar: sem controlador, a vista é só de leitura.
@@ -101,10 +103,10 @@ struct NotesWebView: NSViewRepresentable {
 
     func makeCoordinator() -> Coordenador { Coordenador() }
 
-    func makeNSView(context: Context) -> WKWebView {
+    fileprivate func criar(_ coordenador: Coordenador) -> WKWebView {
         let config = WKWebViewConfiguration()
         for nome in Self.mensagens {
-            config.userContentController.add(context.coordinator, name: nome)
+            config.userContentController.add(coordenador, name: nome)
         }
         if aoPerguntar != nil {
             config.userContentController.addUserScript(WKUserScript(
@@ -120,11 +122,17 @@ struct NotesWebView: NSViewRepresentable {
             config.userContentController.addUserScript(WKUserScript(source: js, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
         #endif
-        config.setURLSchemeHandler(context.coordinator.esquema, forURLScheme: EsquemaAula.nome)
+        config.setURLSchemeHandler(coordenador.esquema, forURLScheme: EsquemaAula.nome)
         let web = WebNotas(frame: .zero, configuration: config)
-        web.navigationDelegate = context.coordinator
+        web.navigationDelegate = coordenador
+        #if os(macOS)
         web.setValue(false, forKey: "drawsBackground")
-        context.coordinator.web = web
+        #else
+        web.isOpaque = false
+        web.backgroundColor = .clear
+        web.scrollView.backgroundColor = .clear
+        #endif
+        coordenador.web = web
         controlador?.web = web
         if let pasta = Bundle.main.url(forResource: "Web", withExtension: nil) {
             web.loadFileURL(pasta.appending(path: "notes.html"), allowingReadAccessTo: pasta)
@@ -132,22 +140,22 @@ struct NotesWebView: NSViewRepresentable {
         return web
     }
 
-    func updateNSView(_ web: WKWebView, context: Context) {
-        context.coordinator.aoClicarTimestamp = aoClicarTimestamp
-        context.coordinator.aoPerguntar = aoPerguntar
-        context.coordinator.aoClicarSeccao = aoClicarSeccao
-        context.coordinator.aoGuardarPDF = aoGuardarPDF
-        context.coordinator.controlador = controlador
-        context.coordinator.realcar(realcar)
-        context.coordinator.pastaAula = pastaAula
+    fileprivate func atualizar(_ coordenador: Coordenador) {
+        coordenador.aoClicarTimestamp = aoClicarTimestamp
+        coordenador.aoPerguntar = aoPerguntar
+        coordenador.aoClicarSeccao = aoClicarSeccao
+        coordenador.aoGuardarPDF = aoGuardarPDF
+        coordenador.controlador = controlador
+        coordenador.realcar(realcar)
+        coordenador.pastaAula = pastaAula
         // Durante a edição o documento é o que está no ecrã; não o substituir.
         if controlador?.editando != true {
-            context.coordinator.mostrar(markdown, emStreaming: emStreaming)
+            coordenador.mostrar(markdown, emStreaming: emStreaming)
         }
-        context.coordinator.irPara(irParaSeccao)
+        coordenador.irPara(irParaSeccao)
     }
 
-    static func dismantleNSView(_ web: WKWebView, coordinator: Coordenador) {
+    fileprivate static func desmontar(_ web: WKWebView) {
         for nome in mensagens {
             web.configuration.userContentController.removeScriptMessageHandler(forName: nome)
         }
@@ -257,7 +265,11 @@ struct NotesWebView: NSViewRepresentable {
         /// Links externos abrem no browser; a página não navega.
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
             guard action.navigationType == .linkActivated, let url = action.request.url else { return .allow }
+            #if os(macOS)
             if url.scheme == "http" || url.scheme == "https" { NSWorkspace.shared.open(url) }
+            #else
+            if url.scheme == "http" || url.scheme == "https" { await UIApplication.shared.open(url) }
+            #endif
             return .cancel
         }
 
@@ -293,11 +305,27 @@ struct NotesWebView: NSViewRepresentable {
     }
 }
 
-/// O WKWebView das notas, com "Perguntar sobre a seleção" no menu de contexto quando há texto selecionado.
+#if os(macOS)
+extension NotesWebView: NSViewRepresentable {
+    func makeNSView(context: Context) -> WKWebView { criar(context.coordinator) }
+    func updateNSView(_ web: WKWebView, context: Context) { atualizar(context.coordinator) }
+    static func dismantleNSView(_ web: WKWebView, coordinator: Coordenador) { desmontar(web) }
+}
+#else
+extension NotesWebView: UIViewRepresentable {
+    func makeUIView(context: Context) -> WKWebView { criar(context.coordinator) }
+    func updateUIView(_ web: WKWebView, context: Context) { atualizar(context.coordinator) }
+    static func dismantleUIView(_ web: WKWebView, coordinator: Coordenador) { desmontar(web) }
+}
+#endif
+
+/// O WKWebView das notas, com "Perguntar sobre a seleção" no menu de contexto (no iOS, no menu da seleção)
+/// quando há texto selecionado.
 final class WebNotas: WKWebView {
     /// A página diz quando há texto selecionado sobre o qual se pode perguntar (mensagem "selecao").
     var haSelecao = false
 
+    #if os(macOS)
     override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
         super.willOpenMenu(menu, with: event)
         guard haSelecao else { return }
@@ -307,6 +335,14 @@ final class WebNotas: WKWebView {
         menu.insertItem(item, at: 0)
         menu.insertItem(.separator(), at: 1)
     }
+    #else
+    override func buildMenu(with builder: any UIMenuBuilder) {
+        super.buildMenu(with: builder)
+        guard haSelecao else { return }
+        let perguntar = UIAction(title: "Perguntar", image: UIImage(systemName: "sparkles")) { [weak self] _ in self?.perguntarSelecao() }
+        builder.insertSibling(UIMenu(options: .displayInline, children: [perguntar]), beforeMenu: .standardEdit)
+    }
+    #endif
 
     @objc private func perguntarSelecao() {
         evaluateJavaScript("perguntarSelecao()")

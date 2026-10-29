@@ -2,7 +2,9 @@ import SwiftUI
 
 struct SidebarView: View {
     @Environment(Library.self) private var library
+    #if os(macOS)
     @Environment(ProcessingQueue.self) private var fila
+    #endif
     @Environment(Fichas.self) private var fichas
     @Binding var selecao: URL?
     @Binding var aEditarCadeira: Cadeira?
@@ -23,13 +25,25 @@ struct SidebarView: View {
         return library.semestres.first
     }
 
+    #if os(macOS)
     /// As aulas concluídas saem da fila; ficam as que esperam, correm ou falharam.
     private var jobsPorAcabar: [Job] {
         fila.jobs.filter { $0.estado != .concluido && $0.estado != .cancelado }
     }
 
+    private var filaVazia: Bool { jobsPorAcabar.isEmpty }
+
+    private func ativa(_ aula: Aula) -> Bool { fila.job(para: aula.pasta)?.ativo == true }
+    #else
+    /// No iOS não se gera nada: a fila é do Mac.
+    private var filaVazia: Bool { true }
+
+    private func ativa(_ aula: Aula) -> Bool { false }
+    #endif
+
     var body: some View {
         List(selection: $selecao) {
+            #if os(macOS)
             if !jobsPorAcabar.isEmpty {
                 Section("Fila") {
                     ForEach(jobsPorAcabar) { job in
@@ -37,12 +51,13 @@ struct SidebarView: View {
                     }
                 }
             }
+            #endif
 
             ForEach(library.cadeiras.filter { $0.semestre == semestre }) { cadeira in
                 Section(isExpanded: expandida(cadeira)) {
                     // Como num caderno: a Aula 1 em cima e a mais recente no fim (a `Library` guarda-as ao contrário).
                     ForEach(cadeira.aulas.reversed()) { aula in
-                        LinhaAula(aula: aula, job: fila.job(para: aula.pasta))
+                        LinhaAula(aula: aula, aCorrer: aCorrer(aula))
                             .tag(aula.pasta)
                             .contextMenu { menu(aula) }
                     }
@@ -69,7 +84,7 @@ struct SidebarView: View {
             if !nova.mesmoCaminho(FichaCadeira.url(cadeira.pasta)) { expandida(cadeira).wrappedValue = true }
         }
         .overlay {
-            if library.cadeiras.isEmpty && jobsPorAcabar.isEmpty {
+            if library.cadeiras.isEmpty && filaVazia {
                 Text("Ainda não há aulas.\nAs cadeiras ficam em \((library.raiz.path as NSString).abbreviatingWithTildeInPath).")
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
@@ -78,6 +93,7 @@ struct SidebarView: View {
         .sheet(item: $aEditarAula) { aula in
             EditarAulaSheet(aula: aula) { nova in if selecao == aula.pasta { selecao = nova } }
         }
+        #if os(macOS)
         .confirmationDialog("Mover a aula para o Lixo?", isPresented: Binding(get: { paraLixo != nil }, set: { if !$0 { paraLixo = nil } }), presenting: paraLixo) { aula in
             Button("Mover para o Lixo", role: .destructive) {
                 tentar { try library.moverParaLixo(aula.pasta) }
@@ -102,6 +118,7 @@ struct SidebarView: View {
         } message: { cadeira in
             Text("\"\(cadeira.nome)\" e as suas \(cadeira.aulas.count) aula(s) vão para o Lixo, de onde as podes recuperar. Os vídeos originais não são tocados.")
         }
+        #endif
         .alert("Erro", isPresented: Binding(get: { erro != nil }, set: { if !$0 { erro = nil } }), presenting: erro) { _ in
             Button("OK") {}
         } message: { Text($0) }
@@ -160,12 +177,22 @@ struct SidebarView: View {
 
     // MARK: Menus
 
+    private func aCorrer(_ aula: Aula) -> Bool {
+        #if os(macOS)
+        fila.job(para: aula.pasta)?.estado == .aCorrer
+        #else
+        false
+        #endif
+    }
+
     @ViewBuilder private func menu(_ aula: Aula) -> some View {
-        let ativa = fila.job(para: aula.pasta)?.ativo == true
+        let ativa = ativa(aula)
         Button(aula.meta.revista ? "Marcar como por rever" : "Marcar como revista") {
             tentar { try library.definirRevista(!aula.meta.revista, em: aula.pasta) }
         }
         Button("Editar aula…") { aEditarAula = aula }.disabled(ativa)
+        // Gerar, juntar e apagar aulas faz-se no Mac.
+        #if os(macOS)
         Button("Mostrar no Finder") { NSWorkspace.shared.activateFileViewerSelecting([aula.pasta]) }
         if !aula.temTranscricao, !ativa, let ref = aula.meta.video, case .ok(let url) = VideoResolver.resolver(ref) {
             Button("Gerar de novo") {
@@ -186,18 +213,22 @@ struct SidebarView: View {
         .help("Para uma aula gravada em duas partes: a aula escolhida entra a seguir a esta")
         Divider()
         Button("Mover para o Lixo…", role: .destructive) { paraLixo = aula }.disabled(ativa)
+        #endif
     }
 
     @ViewBuilder private func menu(_ cadeira: Cadeira) -> some View {
-        let ativa = fila.jobs.contains { $0.ativo && $0.pastaAula.path.hasPrefix(cadeira.pasta.path + "/") }
+        let ativa = cadeira.aulas.contains(where: ativa)
         Button("Editar cadeira…") { aEditarCadeira = cadeira }.disabled(ativa)
+        #if os(macOS)
         Button("Mostrar no Finder") { NSWorkspace.shared.activateFileViewerSelecting([cadeira.pasta]) }
         Divider()
         Button("Mover para o Lixo…", role: .destructive) { cadeiraParaLixo = cadeira }.disabled(ativa)
+        #endif
     }
 
     // MARK: Ações
 
+    #if os(macOS)
     private func juntar(_ segunda: Aula, a primeira: Aula) {
         tentar {
             let pasta = try library.juntar(segunda, a: primeira)
@@ -208,6 +239,7 @@ struct SidebarView: View {
             selecao = pasta
         }
     }
+    #endif
 
     private func tentar(_ acao: () throws -> Void) {
         do { try acao() } catch { erro = error.localizedDescription }
@@ -233,7 +265,8 @@ private struct CabecalhoCadeira<Acoes: View>: View {
                     // O cabeçalho de secção do macOS é pequeno e cinzento; o nome da cadeira tem de se ler bem.
                     Text(cadeira.nome)
                         .font(.title3.weight(.semibold))
-                        .foregroundStyle(selecionada ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+                        // `Color.primary` e não `.primary`: no iOS o cabeçalho já é secundário e `.primary` seguia-o.
+                        .foregroundStyle(selecionada ? AnyShapeStyle(.tint) : AnyShapeStyle(Color.primary))
                         .lineLimit(2)
                     if aAtualizar {
                         Girador(tamanho: .mini)
@@ -256,7 +289,9 @@ private struct CabecalhoCadeira<Acoes: View>: View {
             }
             Menu("Cadeira", systemImage: "ellipsis.circle", content: acoes)
                 .labelStyle(.iconOnly)
+                #if os(macOS)
                 .menuStyle(.borderlessButton)
+                #endif
                 .menuIndicator(.hidden)
                 .fixedSize()
         }
@@ -267,7 +302,8 @@ private struct CabecalhoCadeira<Acoes: View>: View {
 
 private struct LinhaAula: View {
     let aula: Aula
-    let job: Job?
+    /// Os apontamentos desta aula estão a ser gerados (só no Mac).
+    let aCorrer: Bool
     /// Linha selecionada (fundo azul): os ícones azuis passam a brancos para não desaparecerem.
     @Environment(\.backgroundProminence) private var proeminencia
     private var cor: Color { proeminencia == .increased ? .white : .accentColor }
@@ -298,7 +334,7 @@ private struct LinhaAula: View {
     }
 
     @ViewBuilder private var estado: some View {
-        if job?.estado == .aCorrer {
+        if aCorrer {
             Girador(tamanho: .mini)
         } else if aula.meta.revista {
             Image(systemName: "checkmark.circle.fill").foregroundStyle(proeminencia == .increased ? Color.white : Color.green)
@@ -312,6 +348,7 @@ private struct LinhaAula: View {
     }
 }
 
+#if os(macOS)
 private struct LinhaJob: View {
     let job: Job
 
@@ -349,3 +386,4 @@ private struct LinhaJob: View {
         }
     }
 }
+#endif

@@ -79,7 +79,7 @@ struct PerguntasView: View {
                 cabecalho
                 Divider()
                 NotesWebView(markdown: conversa, emStreaming: emCurso != nil, aoClicarTimestamp: aoClicarTimestamp, modo: "conversa",
-                             aoClicarSeccao: aoClicarSeccao, aoGuardarPDF: guardarPDF)
+                             aoClicarSeccao: aoClicarSeccao, aoGuardarPDF: aoGuardarPDF)
             }
             if let erro = erroPDF ?? estudo.erro(aula, .pergunta) {
                 Label(erro, systemImage: "exclamationmark.triangle")
@@ -222,7 +222,7 @@ struct PerguntasView: View {
     private var conversa: String {
         var md = perguntas.enumerated().map { i, p in
             Self.bloco(p.pergunta, p.citacao) + p.resposta
-                + (p.documentoPDF == nil ? "" : "\n\n<div class=\"guardar-pdf\"><button data-resposta=\"\(i)\">Guardar PDF…</button></div>")
+                + (p.documentoPDF == nil || !Self.podeGuardarPDF ? "" : "\n\n<div class=\"guardar-pdf\"><button data-resposta=\"\(i)\">Guardar PDF…</button></div>")
         }.joined(separator: "\n\n")
         if let emCurso, let pergunta = emCurso.pergunta {
             md += (md.isEmpty ? "" : "\n\n") + Self.bloco(pergunta, emCurso.citacao)
@@ -244,6 +244,11 @@ struct PerguntasView: View {
             .replacingOccurrences(of: "\n", with: "<br>")
     }
 
+    #if os(macOS)
+    /// As respostas pedidas em PDF guardam-se com o `ExportadorPDF`, que só existe no Mac.
+    private static let podeGuardarPDF = true
+    private var aoGuardarPDF: ((Int) -> Void)? { guardarPDF }
+
     /// Guarda em PDF uma resposta pedida assim, com o nome do seu título, e abre-o.
     private func guardarPDF(_ indice: Int) {
         guard perguntas.indices.contains(indice), let documento = perguntas[indice].documentoPDF else { return }
@@ -261,6 +266,10 @@ struct PerguntasView: View {
             }
         }
     }
+    #else
+    private static let podeGuardarPDF = false
+    private var aoGuardarPDF: ((Int) -> Void)? { nil }
+    #endif
 
     private func enviar(_ texto: String) { enviar(texto, citacao: citacao) }
 
@@ -329,7 +338,7 @@ struct ExerciciosView: View {
             Text(estudo.erro(aula, .exercicios) ?? "Exercícios parecidos com os da aula, do mais fácil ao mais difícil, com a resolução escondida até a abrires. Só usam matéria desta aula.")
         } actions: {
             if definicoes.faltaParaGerar != nil {
-                SettingsLink { Text("Abrir Definições…") }
+                LigacaoDefinicoes()
             } else {
                 Button("Gerar exercícios") { estudo.gerarExercicios(aula) }
                     .buttonStyle(.borderedProminent)

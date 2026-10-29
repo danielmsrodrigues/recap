@@ -13,6 +13,13 @@ final class PastaAulas {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        #if DEBUG
+        // `APONTAMENTOS_RAIZ`, como no Mac: no simulador, uma pasta do Mac com aulas de teste, sem a escolher.
+        if let p = ProcessInfo.processInfo.environment["APONTAMENTOS_RAIZ"] {
+            url = URL(fileURLWithPath: p, isDirectory: true)
+            return
+        }
+        #endif
         guard let dados = defaults.data(forKey: Self.chave) else { return }
         do {
             var desatualizado = false
