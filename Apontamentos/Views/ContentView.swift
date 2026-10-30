@@ -55,8 +55,8 @@ struct ContentView: View {
         } detail: {
             if let selecao, selecao.lastPathComponent == FichaCadeira.fichaMD,
                let cadeira = library.cadeiras.first(where: { $0.pasta.mesmoCaminho(selecao.deletingLastPathComponent()) }) {
-                FichaCadeiraView(cadeira: cadeira).id(cadeira.pasta)
-                    .navigationSplitViewColumnWidth(min: 520, ideal: 900)
+                FichaComPerguntas(cadeira: cadeira).id(cadeira.pasta)
+                    .navigationSplitViewColumnWidth(min: 600, ideal: 1000)
             } else if let selecao, let aula = library.aula(em: selecao) {
                 AulaComPainel(aula: aula)
                     .navigationSplitViewColumnWidth(min: 600, ideal: 1000)
@@ -508,4 +508,31 @@ private struct AvisosAtualizacao: ViewModifier {
 private struct PartilhaDefinicoes: Equatable {
     var definicoes: DefinicoesPartilhadas
     var raiz: URL
+}
+
+/// "Sobre a cadeira" com o painel Perguntar à cadeira ao lado (escondido e mostrado pelo botão da barra).
+private struct FichaComPerguntas: View {
+    let cadeira: Cadeira
+    @AppStorage("perguntarCadeira") private var mostrar = true
+
+    var body: some View {
+        HStack(spacing: 0) {
+            FichaCadeiraView(cadeira: cadeira)
+                .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
+            if mostrar {
+                Divider()
+                PerguntasCadeiraView(cadeira: cadeira)
+                    .frame(width: 360)
+                    .frame(maxHeight: .infinity)
+            }
+        }
+        .toolbar {
+            ToolbarItem {
+                Toggle(isOn: $mostrar) {
+                    Label("Perguntar à cadeira", systemImage: "bubble.left.and.text.bubble.right")
+                }
+                .help("Perguntas sobre a cadeira inteira: todas as aulas e a ficha")
+            }
+        }
+    }
 }
