@@ -206,8 +206,9 @@ struct AulaCompletaIOS: View {
     }
 }
 
-/// O painel Estudo (perguntas, exercícios, ligações) ao lado da aula: no iPad, uma coluna à direita; no iPhone,
-/// onde não cabe, uma folha que se puxa. Um link para outra aula ou para a transcrição fecha a folha do iPhone.
+/// O painel Estudo (perguntas, exercícios, ligações) ao lado da aula: no iPad, um cartão à direita; no iPhone,
+/// onde não cabe, uma folha a meio do ecrã com a aula por cima, que continua a ler-se e a mexer-se. Um link para
+/// outra aula ou para a transcrição fecha a folha do iPhone.
 struct ComEstudo: ViewModifier {
     let aula: Aula
     @Binding var mostrar: Bool
@@ -216,16 +217,46 @@ struct ComEstudo: ViewModifier {
     @Environment(\.horizontalSizeClass) private var largura
 
     func body(content: Content) -> some View {
-        content.inspector(isPresented: $mostrar) {
-            PainelEstudo(aula: aula) { segundos in
-                ir(DestinoAula(pasta: aula.pasta, separador: .transcricao, tempo: segundos))
-            } aoClicarSeccao: { ligacao in
-                ir(estudo.destino(ligacao, aPartirDe: aula))
-            } aoAbrirAula: { outra in
-                ir(DestinoAula(pasta: outra, separador: .apontamentos))
+        if largura == .compact {
+            // Uma folha e não o inspector: dentro do inspector, o iPhone punha-lhe o vidro translúcido (cinzento
+            // e baço) e ignorava o fundo pedido.
+            content.sheet(isPresented: $mostrar) {
+                painel
+                    .padding(.top, 14)
+                    // Numa folha, `.background` é o vidro da folha, também dentro do painel: a cor do fundo da app,
+                    // à letra.
+                    .backgroundStyle(Color(uiColor: .systemBackground))
+                    .presentationDetents([.medium, .large])
+                    .presentationBackground(Color(uiColor: .systemBackground))
+                    .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+                    .presentationContentInteraction(.scrolls)
             }
-            .inspectorColumnWidth(min: 320, ideal: 380, max: 560)
-            .presentationDetents([.medium, .large])
+        } else {
+            // No iPad, um cartão solto ao lado da aula, com os quatro cantos arredondados e a cor da barra lateral
+            // das cadeiras. O inspector dava uma coluna do sistema com toda a altura, de vidro e de lado direito.
+            HStack(spacing: 0) {
+                content
+                if mostrar {
+                    painel
+                        .backgroundStyle(Color(uiColor: .secondarySystemBackground))
+                        .background(Color(uiColor: .secondarySystemBackground))
+                        .clipShape(.rect(cornerRadius: 26))
+                        .frame(width: 380)
+                        .padding([.trailing, .bottom], 10)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
+            }
+            .animation(.snappy, value: mostrar)
+        }
+    }
+
+    private var painel: some View {
+        PainelEstudo(aula: aula) { segundos in
+            ir(DestinoAula(pasta: aula.pasta, separador: .transcricao, tempo: segundos))
+        } aoClicarSeccao: { ligacao in
+            ir(estudo.destino(ligacao, aPartirDe: aula))
+        } aoAbrirAula: { outra in
+            ir(DestinoAula(pasta: outra, separador: .apontamentos))
         }
     }
 
