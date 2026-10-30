@@ -378,8 +378,10 @@
       replacement: (_, no) => "![" + (no.getAttribute("alt") || "") + "](" + (no.dataset.src || no.getAttribute("src") || "") + ")",
     });
     // O editor de fórmulas e as legendas dos slides (vêm do texto alternativo) não fazem parte do documento.
+    // Nem o "Ver resolução" das resoluções escondidas (antes, cada gravação acrescentava uma linha com ele).
     turndown.remove((no) => no.id === "editor-formula" ||
-      (no.nodeName === "SPAN" && no.classList.contains("legenda")));
+      (no.nodeName === "SPAN" && no.classList.contains("legenda")) ||
+      (no.nodeName === "SUMMARY" && no.parentNode && no.parentNode.classList.contains("resolucao")));
     turndown.addRule("esquema", {
       filter: (no) => no.nodeName === "DIV" && no.classList.contains("esquema"),
       replacement: (_, no) => "\n\n```mermaid\n" + no.dataset.fonte + "\n```\n\n",

@@ -210,6 +210,30 @@ extension Disco {
         try gravar(encoder.encode(perguntas), em: url)
     }
 
+    /// As perguntas da aula, ou nil se o ficheiro existe mas não se lê (ainda a chegar do iCloud, estragado).
+    /// Sem ficheiro, não há perguntas: [].
+    static func lerPerguntasSePossivel(_ pasta: URL) -> [PerguntaAula]? {
+        lerListaPerguntas(pasta.appending(path: perguntasJSON))
+    }
+
+    /// Junta uma resposta às anteriores. Se o ficheiro existe mas não se lê, lança um erro em vez de o substituir
+    /// só pela resposta nova (e o iCloud levar isso para os outros dispositivos).
+    static func juntarPergunta(_ nova: PerguntaAula, em pasta: URL) throws {
+        guard let anteriores = lerPerguntasSePossivel(pasta) else { throw ErroPerguntas.porLer }
+        try escreverPerguntas(anteriores + [nova], em: pasta)
+    }
+
+    static func lerListaPerguntas(_ url: URL) -> [PerguntaAula]? {
+        guard FileManager.default.fileExists(atPath: url.path) || porDescarregar(url) else { return [] }
+        guard let dados = try? lerDados(url) else { return nil }
+        return try? decoder.decode([PerguntaAula].self, from: dados)
+    }
+
+    enum ErroPerguntas: LocalizedError {
+        case porLer
+        var errorDescription: String? { "As perguntas anteriores ainda não se conseguem ler (talvez a chegar do iCloud). Tenta outra vez daqui a pouco." }
+    }
+
     static func lerTexto(_ nome: String, em pasta: URL) -> String? {
         try? Disco.lerTexto(pasta.appending(path: nome))
     }
@@ -505,7 +529,7 @@ final class Estudo {
             return blocos
         } concluir: { texto in
             let nova = PerguntaAula(pergunta: pergunta, resposta: texto, citacao: citacao, anexos: anexos.isEmpty ? nil : anexos)
-            try Disco.escreverPerguntas(Disco.lerPerguntas(aula.pasta) + [nova], em: aula.pasta)
+            try Disco.juntarPergunta(nova, em: aula.pasta)
         }
     }
 
@@ -1206,11 +1230,7 @@ extension Disco {
     /// Junta uma resposta às anteriores. Se o ficheiro existe mas não se lê (ainda no iCloud, estragado),
     /// lança um erro em vez de o substituir só pela resposta nova.
     static func juntarPerguntaCadeira(_ nova: PerguntaAula, em pasta: URL) throws {
-        let url = pasta.appending(path: perguntasCadeiraJSON)
-        var anteriores: [PerguntaAula] = []
-        if FileManager.default.fileExists(atPath: url.path) {
-            anteriores = try decoder.decode([PerguntaAula].self, from: lerDados(url))
-        }
+        guard let anteriores = lerListaPerguntas(pasta.appending(path: perguntasCadeiraJSON)) else { throw ErroPerguntas.porLer }
         try escreverPerguntasCadeira(anteriores + [nova], em: pasta)
     }
 }

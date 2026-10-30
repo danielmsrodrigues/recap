@@ -38,6 +38,17 @@ final class ControladorNotas {
         }
     }
 
+    /// Ao sair da aula (ou da ficha) com alterações ainda dentro dos 1,5 s: grava já. Segura a página até ler o
+    /// Markdown, porque a vista e o controlador podem desaparecer antes de a gravação automática chegar.
+    func gravarJa(_ escrever: @escaping @MainActor (String) throws -> Void) {
+        guard editando, alterado, let web else { return }
+        gravacao?.cancel()
+        alterado = false
+        Task { @MainActor in
+            if let md = try? await web.evaluateJavaScript("obterMarkdown()") as? String { try? escrever(md) }
+        }
+    }
+
     func comando(_ nome: String, _ valor: String? = nil) {
         let v = valor.map { "'\($0)'" } ?? "null"
         web?.evaluateJavaScript("comando('\(nome)', \(v))")

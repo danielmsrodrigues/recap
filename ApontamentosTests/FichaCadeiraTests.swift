@@ -131,4 +131,15 @@ struct PesquisaFichaTests {
         // O título da ficha não conta como resultado.
         #expect(await Pesquisa.procurar("Sobre a cadeira", em: [], fichas: [ficha]).isEmpty)
     }
+
+    /// Um `sobre.json` que não se lê não é um registo vazio: senão gravava-se por cima e todas as aulas voltavam a
+    /// ser juntadas à ficha (um pedido ao Claude por aula).
+    @Test func registoQueNaoSeLeNaoEsubstituido() throws {
+        let pasta = FileManager.default.temporaryDirectory.appending(path: "registo-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: pasta, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: pasta) }
+        #expect(try FichaCadeira.registoParaAlterar(pasta).aulas.isEmpty)
+        try Data("a meio".utf8).write(to: pasta.appending(path: FichaCadeira.registoJSON))
+        #expect(throws: (any Error).self) { try FichaCadeira.registoParaAlterar(pasta) }
+    }
 }
