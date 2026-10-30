@@ -4,7 +4,7 @@ import Testing
 
 /// "Sai no exame": o que o professor disse que entra no exame, com o minuto da aula.
 struct PistasExameTests {
-    @Test func leAsPistasDaResposta() {
+    @Test func leAsPistasDaResposta() throws {
         let resposta = """
         Aqui está:
         ```json
@@ -12,7 +12,7 @@ struct PistasExameTests {
          {"tempo": "62:05", "citacao": "Lo pregunto siempre", "descricao": "Propriedade distributiva"}]
         ```
         """
-        let pistas = PistasExame.daResposta(resposta)
+        let pistas = try #require(PistasExame.daResposta(resposta))
         #expect(pistas.map(\.tempo) == [754, 3725])
         #expect(pistas[0].citacao == "Esto entra seguro en el examen")
         #expect(pistas[1].descricao == "Propriedade distributiva")
@@ -24,9 +24,19 @@ struct PistasExameTests {
         #expect(pistas == [PistasExame.Pista(tempo: 300, citacao: "Ojo, esto cae", descricao: "Intervalos")])
     }
 
-    @Test func semPistasOuRespostaEstranhaDaListaVazia() {
-        #expect(PistasExame.daResposta("[]").isEmpty)
-        #expect(PistasExame.daResposta("Não encontrei nada.").isEmpty)
+    @Test func semPistasDaListaVazia() {
+        #expect(PistasExame.daResposta("[]") == [])
+    }
+
+    /// Uma resposta que não se lê não é "nada sai no exame": senão a aula ficava marcada como vista para sempre.
+    @Test func respostaQueNaoSeLeDaNil() {
+        #expect(PistasExame.daResposta("Não encontrei nada.") == nil)
+        #expect(PistasExame.daResposta(#"[{"tempo": "01:00", "citacao": "cortad"#) == nil)
+    }
+
+    @Test func umParentesesRetoAntesDaListaNaoAEstraga() {
+        let resposta = #"Encontrei [2] momentos: [{"tempo":"01:00","citacao":"Esto cae","descricao":"x"}]"#
+        #expect(PistasExame.daResposta(resposta)?.map(\.tempo) == [60])
     }
 
     @Test func oPedidoLevaATranscricaoComOsMinutosEALingua() {

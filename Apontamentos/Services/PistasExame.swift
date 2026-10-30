@@ -43,15 +43,26 @@ enum PistasExame {
         g.maxTokens = 8_000
         let r = try await g.gerar(sistema: sistema, conteudo: [.texto(pedido(t, lingua: lingua))],
                                   aoRecomecar: {}, aoReceber: { _ in }, aoRepetir: aoRepetir)
-        return (daResposta(r.markdown), r.geracao)
+        // Cortada ou sem JSON: é um erro e não "nada sai no exame", senão a aula nunca mais era procurada.
+        guard !r.geracao.truncada, let pistas = daResposta(r.markdown) else { throw ErroPistas.resposta }
+        return (pistas, r.geracao)
+    }
+
+    enum ErroPistas: LocalizedError {
+        case resposta
+        var errorDescription: String? { "A resposta do Claude veio cortada ou num formato que não se lê." }
     }
 
     /// Lê a resposta (tolera ``` à volta e as chaves traduzidas: tiempo/time, cita/quote, descripción/description).
-    /// As que não têm um minuto que se leia ficam de fora.
-    static func daResposta(_ texto: String) -> [Pista] {
-        guard let a = texto.firstIndex(of: "["), let b = texto.lastIndex(of: "]"), a < b,
-              let lista = try? JSONSerialization.jsonObject(with: Data(texto[a...b].utf8)) as? [[String: Any]]
-        else { return [] }
+    /// As que não têm um minuto que se leia ficam de fora. nil se não houver uma lista JSON que se leia
+    /// (um "[" no texto antes da lista não a estraga: tenta-se a partir de cada um).
+    static func daResposta(_ texto: String) -> [Pista]? {
+        guard let b = texto.lastIndex(of: "]") else { return nil }
+        let lista = texto[..<b].indices.lazy
+            .filter { texto[$0] == "[" }
+            .compactMap { a in try? JSONSerialization.jsonObject(with: Data(texto[a...b].utf8)) as? [[String: Any]] }
+            .first
+        guard let lista else { return nil }
         func valor(_ objeto: [String: Any], _ nomes: [String]) -> String? {
             objeto.first { nomes.contains($0.key.lowercased().folding(options: .diacriticInsensitive, locale: nil)) }?.value as? String
         }
