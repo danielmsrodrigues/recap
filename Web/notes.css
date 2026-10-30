@@ -64,9 +64,9 @@ main {
 }
 
 /* Os apontamentos como uma folha sobre a mesa, como no Freeform ou no Pages (não no painel das perguntas nem no PDF). */
-html:not(.conversa):not(.impressao),
-html:not(.conversa):not(.impressao) body { background: var(--mesa); }
-html:not(.conversa):not(.impressao) main {
+html:not(.conversa):not(.impressao):not(.embutida),
+html:not(.conversa):not(.impressao):not(.embutida) body { background: var(--mesa); }
+html:not(.conversa):not(.impressao):not(.embutida) main {
   /* Sempre com mesa à volta: com max-width a folha encostava aos lados quando a área tinha pouco mais de 860 px. */
   max-width: none;
   width: min(860px, calc(100% - 56px));
@@ -77,12 +77,12 @@ html:not(.conversa):not(.impressao) main {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 10px 32px rgba(0, 0, 0, 0.12);
 }
 @media (prefers-color-scheme: dark) {
-  html:not(.conversa):not(.impressao) main {
+  html:not(.conversa):not(.impressao):not(.embutida) main {
     box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 36px rgba(0, 0, 0, 0.6);
   }
 }
 @media (max-width: 760px) {
-  html:not(.conversa):not(.impressao) main { width: calc(100% - 36px); margin: 20px auto 36px; padding: 32px 28px 44px; }
+  html:not(.conversa):not(.impressao):not(.embutida) main { width: calc(100% - 36px); margin: 20px auto 36px; padding: 32px 28px 44px; }
 }
 
 h1, h2, h3, h4 { line-height: 1.25; margin: 1.6em 0 0.5em; }
@@ -263,6 +263,13 @@ details.resolucao > summary {
   user-select: none;
 }
 details.resolucao > blockquote { margin-top: 0.6em; }
+
+/* Uma secção dos apontamentos dentro de uma vista nativa (iPhone, iPad): sem folha nem margens, à letra do sistema. */
+/* -apple-system-body: o tamanho de letra do sistema (Dynamic Type), como os títulos nativos à volta. */
+html.embutida, html.embutida body { background: transparent; font: -apple-system-body; line-height: 1.55; }
+html.embutida main { max-width: none; padding: 0; }
+html.embutida main > :first-child { margin-top: 0; }
+html.embutida main > :last-child { margin-bottom: 0; }
 
 /* Painel das perguntas: letra mais pequena, pergunta numa bolha à direita, resposta como texto. */
 html.conversa body { font-size: 13.5px; line-height: 1.55; }
