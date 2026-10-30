@@ -299,6 +299,10 @@ final class Estudo {
     @ObservationIgnored private var focoPendente = false
     /// Muda quando um ficheiro de estudo é gravado (as vistas voltam a ler do disco).
     private(set) var versao = 0
+    /// A procura do que sai no exame nas aulas anteriores (ver `procurarPistasExame`): quantas já foram vistas, de quantas.
+    private(set) var procuraExame: (feitas: Int, total: Int)?
+    private(set) var erroExame: String?
+    @ObservationIgnored private var tarefaExame: Task<Void, Never>?
 
     private let library: Library
     private let definicoes: Definicoes
@@ -340,6 +344,51 @@ final class Estudo {
         defer { focoPendente = false }
         return focoPendente
     }
+
+    // MARK: Sai no exame
+
+    /// As aulas transcritas onde ainda não se procurou o que sai no exame (as novas já vêm com isso).
+    func aulasSemPistasExame(_ aulas: [Aula]) -> [Aula] {
+        aulas.filter { $0.temTranscricao && Disco.lerPistasExame($0.pasta) == nil }
+    }
+
+    /// Procura, aula a aula, o que sai no exame nas aulas anteriores. Continua quando se muda de vista; uma aula que
+    /// falhe fica por procurar e as outras seguem.
+    func procurarPistasExame(_ aulas: [Aula]) {
+        guard tarefaExame == nil else { return }
+        let porVer = aulasSemPistasExame(aulas)
+        guard !porVer.isEmpty else { return }
+        erroExame = nil
+        procuraExame = (0, porVer.count)
+        tarefaExame = Task { [weak self] in
+            guard let self else { return }
+            defer { procuraExame = nil; tarefaExame = nil }
+            let gerador: NotesGenerator
+            do { gerador = try definicoes.gerador(esforco: .medium) } catch {
+                erroExame = error.localizedDescription
+                return
+            }
+            var falhas = 0
+            for (i, aula) in porVer.enumerated() {
+                if Task.isCancelled { return }
+                if let t = Disco.lerTranscricao(aula.pasta) {
+                    do {
+                        let r = try await PistasExame.procurar(t, lingua: definicoes.linguaApontamentos, gerador: gerador)
+                        try Disco.escreverPistasExame(r.pistas, em: aula.pasta)
+                        versao += 1
+                    } catch is CancellationError {
+                        return
+                    } catch {
+                        falhas += 1
+                    }
+                }
+                procuraExame = (i + 1, porVer.count)
+            }
+            if falhas > 0 { erroExame = "\(falhas) \(falhas == 1 ? "aula ficou" : "aulas ficaram") por ver: tenta outra vez mais tarde." }
+        }
+    }
+
+    func cancelarPistasExame() { tarefaExame?.cancel() }
 
     // MARK: Pedidos
 
