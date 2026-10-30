@@ -260,6 +260,31 @@ struct DiretoView: View {
         if let aviso = sessao.aviso {
             Text(aviso).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
         }
+        // Marca o bocado que não se está a perceber, até "Já percebi": os apontamentos voltam a explicá-lo, com mais calma.
+        if sessao.aNaoPerceber, let desde = sessao.naoPercebi.last?.inicio {
+            Button {
+                sessao.alternarNaoPercebi()
+            } label: {
+                Label("Já percebi · há \(Timestamp.format(max(0, sessao.segundosDeAula - desde)))", systemImage: "checkmark.circle")
+                    .monospacedDigit()
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.orange)
+            .controlSize(.large)
+            .help("Fecha o bocado que não percebeste: os apontamentos explicam-no outra vez")
+        } else {
+            Button {
+                sessao.alternarNaoPercebi()
+            } label: {
+                Label(sessao.naoPercebi.isEmpty ? "Não estou a perceber" : "Não estou a perceber (\(sessao.naoPercebi.count))",
+                      systemImage: "questionmark.circle")
+                    .frame(maxWidth: .infinity)
+            }
+            .controlSize(.large)
+            .disabled(sessao.estado != .aOuvir)
+            .help("Marca a partir daqui até carregares em \"Já percebi\": nos apontamentos, esse tema vem explicado outra vez, mais devagar e com um exemplo")
+        }
         HStack {
             Button(sessao.estado == .emPausa ? "Retomar" : "Pausar") { sessao.pausar(sessao.estado != .emPausa) }
             Button("Descartar", role: .destructive) { confirmarDescarte = true }
@@ -429,6 +454,11 @@ struct DiretoMenu: View {
     // se mostrasse o tempo (que já está na barra de menus) ou o nível do som.
     var body: some View {
         Text(sessao.estado == .emPausa ? "\(sessao.titulo) · em pausa" : sessao.titulo)
+        Divider()
+        // Daqui chega-se com o browser da aula à frente.
+        Button(sessao.aNaoPerceber ? "Já percebi" : "Não estou a perceber",
+               systemImage: sessao.aNaoPerceber ? "checkmark.circle" : "questionmark.circle") { sessao.alternarNaoPercebi() }
+            .disabled(sessao.estado != .aOuvir && !sessao.aNaoPerceber)
         Divider()
         Button(sessao.estado == .emPausa ? "Retomar" : "Pausar") { sessao.pausar(sessao.estado != .emPausa) }
         Button("Terminar") { Task { await sessao.terminar() } }

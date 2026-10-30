@@ -49,6 +49,13 @@ struct Geracao: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+/// Um bocado da aula marcado com "Não estou a perceber": de quando se carregou até "Já percebi".
+struct IntervaloNaoPercebi: Codable, Hashable, Sendable {
+    var inicio: Double
+    /// nil enquanto o aluno ainda não carregou em "Já percebi" (a captação fecha-o ao terminar).
+    var fim: Double?
+}
+
 /// Conteúdo de `aula.json`.
 struct AulaMeta: Codable, Hashable, Sendable {
     var titulo: String
@@ -68,6 +75,8 @@ struct AulaMeta: Codable, Hashable, Sendable {
     var tituloManual: Bool?
     /// Nome original de cada PDF do professor juntado, pelo ficheiro na pasta da aula (`slides-professor-2.pdf` → `Tema 3.pdf`).
     var nomesPDFs: [String: String]?
+    /// Os bocados da aula (em segundos de aula) que o aluno marcou com "Não estou a perceber" durante a captação.
+    var naoPercebi: [IntervaloNaoPercebi]?
 
     init(titulo: String, data: Date, video: VideoRef?) {
         self.titulo = titulo
@@ -105,6 +114,7 @@ struct AulaMeta: Codable, Hashable, Sendable {
         origem = try c.decodeIfPresent(String.self, forKey: .origem)
         tituloManual = try c.decodeIfPresent(Bool.self, forKey: .tituloManual)
         nomesPDFs = try c.decodeIfPresent([String: String].self, forKey: .nomesPDFs)
+        naoPercebi = try c.decodeIfPresent([IntervaloNaoPercebi].self, forKey: .naoPercebi)
     }
 }
 
