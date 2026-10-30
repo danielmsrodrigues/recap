@@ -96,6 +96,14 @@ enum FichaCadeira {
         (try? Disco.ler(Registo.self, de: cadeira.appending(path: registoJSON))) ?? Registo()
     }
 
+    /// O registo para alterar e gravar: vazio só se não houver ficheiro. Um que existe mas não se lê (a chegar do
+    /// iCloud, estragado) lança um erro, para não se gravar um vazio por cima.
+    static func registoParaAlterar(_ cadeira: URL) throws -> Registo {
+        let url = cadeira.appending(path: registoJSON)
+        guard FileManager.default.fileExists(atPath: url.path) || Disco.porDescarregar(url) else { return Registo() }
+        return try Disco.ler(Registo.self, de: url)
+    }
+
     static func escreverRegisto(_ r: Registo, em cadeira: URL) throws {
         try Disco.escrever(r, em: cadeira.appending(path: registoJSON))
     }
@@ -138,7 +146,7 @@ enum FichaCadeira {
     /// O programa vai para o Lixo; o que já entrou na ficha fica.
     static func removerPrograma(em cadeira: URL) throws {
         try FileManager.default.trashItem(at: urlPrograma(cadeira), resultingItemURL: nil)
-        var registo = lerRegisto(cadeira)
+        var registo = try registoParaAlterar(cadeira)
         registo.aulas[chavePrograma] = nil
         try escreverRegisto(registo, em: cadeira)
     }
@@ -155,12 +163,13 @@ enum FichaCadeira {
         guard let valores = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
               let tamanho = valores.fileSize, let modificado = valores.contentModificationDate
         else { return nil }
-        var registo = lerRegisto(cadeira)
-        if let visto = registo.programa, visto.tamanho == tamanho, visto.modificado == modificado { return visto.hash }
+        if let visto = lerRegisto(cadeira).programa, visto.tamanho == tamanho, visto.modificado == modificado { return visto.hash }
         guard let dados = try? Disco.lerDados(url) else { return nil }
         let h = hash(dados)
-        registo.programa = Registo.ProgramaVisto(tamanho: tamanho, modificado: modificado, hash: h)
-        try? escreverRegisto(registo, em: cadeira)
+        if var registo = try? registoParaAlterar(cadeira) {
+            registo.programa = Registo.ProgramaVisto(tamanho: tamanho, modificado: modificado, hash: h)
+            try? escreverRegisto(registo, em: cadeira)
+        }
         return h
     }
 
@@ -292,8 +301,9 @@ final class Fichas {
         guard let cadeira = library.cadeira(nome: nomeCadeira) else { return }
         let chave = Self.chave(cadeira.pasta)
         guard emCurso[chave] == nil else { repetir.insert(chave); return }
+        // Com o registo por ler, nada: todas as aulas pareceriam por juntar (um pedido ao Claude por aula).
+        guard var registo = try? FichaCadeira.registoParaAlterar(cadeira.pasta) else { return }
         // A migração dos apontamentos antigos (com a secção "Sobre a cadeira") só se tenta uma vez por aula.
-        var registo = FichaCadeira.lerRegisto(cadeira.pasta)
         let porVer = cadeira.aulas.filter { !registo.migradas.contains($0.pasta.lastPathComponent) }
         if !porVer.isEmpty {
             let migradas = porVer.filter { (try? FichaCadeira.migrar($0.pasta)) == true }
@@ -357,7 +367,7 @@ final class Fichas {
             guard FichaCadeira.lerFicha(cadeira.pasta) == base else { continue }
             let titulo = RotulosApontamentos.rotulo(FichaCadeira.tituloSeccao, definicoes.linguaApontamentos)
             try FichaCadeira.escreverFicha(FichaCadeira.limpar(r.markdown, titulo: titulo), em: cadeira.pasta)
-            var registo = FichaCadeira.lerRegisto(cadeira.pasta)
+            var registo = try FichaCadeira.registoParaAlterar(cadeira.pasta)
             registo.aulas[chave] = hash
             try FichaCadeira.escreverRegisto(registo, em: cadeira.pasta)
             versao += 1

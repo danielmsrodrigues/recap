@@ -189,6 +189,9 @@ struct AulaDetailView: View {
         }
         #endif
         .onDisappear {
+            // O que se escreveu há menos de 1,5 s ainda não foi gravado automaticamente.
+            let pasta = aula.pasta
+            controlador.gravarJa { try Disco.escreverApontamentos($0, em: pasta) }
             // As alterações já foram gravadas automaticamente; falta só registar que houve edição.
             if controlador.editando, houveEdicao { try? library.atualizarMeta(em: aula.pasta) { $0.editadoEm = .now } }
             if controlador.editando { largarEdicaoNasLigacoes() }
