@@ -11,6 +11,16 @@ enum Novidades {
     }
 
     static let todas: [Versao] = [
+        Versao(numero: "1.14", data: "30 de outubro de 2026", itens: [
+            "\"Não estou a perceber\" durante a transcrição em direto (tecla N): marca o bocado até carregares em \"Já percebi\", e os apontamentos explicam essa parte com mais calma.",
+            "\"Sai no exame\": o que o professor disse que entra no exame, por cadeira, com a frase e o minuto da aula.",
+            "Perguntar à cadeira inteira, em \"Sobre a cadeira\" (no Mac): as respostas levam à aula e ao minuto.",
+            "Progresso do programa em \"Sobre a cadeira\", quando há guia de estudo: os temas vistos, a meio e por ver.",
+            "Livro da cadeira em PDF (no Mac): os apontamentos de todas as aulas, com índice e glossário.",
+            "Ouvir a aula no iPhone e no iPad, com o ecrã bloqueado, sem ler asteriscos nem outros sinais.",
+            "\"Sobre o Recap\" com as novidades de cada versão.",
+            "Mac mais perto do design: barra lateral em cartão, apontamentos sem folha à volta e um botão de painel para mostrar ou esconder o Estudo.",
+        ]),
         Versao(numero: "1.13", data: "30 de outubro de 2026", itens: [
             "Calendário das aulas: o mês inteiro no Mac e no iPad, e no iPhone um ponto por aula em cada dia com as aulas do dia escolhido por baixo.",
             "A interface diz \"Guia de estudo\" em português.",
