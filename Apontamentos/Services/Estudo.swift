@@ -251,6 +251,7 @@ extension ContextoAula {
         contexto.anexos = Anexos.blocos(anexos, em: aula.pasta)
         contexto.anexosAnteriores = Anexos.blocos(anexosAnteriores, em: aula.pasta)
         contexto.materiaisProfessor = Materiais.blocos(em: aula.pasta)
+        contexto.naoPercebi = aula.meta.naoPercebi ?? []
         return contexto
     }
 
