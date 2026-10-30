@@ -22,6 +22,10 @@ struct AulaDetailView: View {
     @State private var transcricao: Transcricao?
     @State private var apontamentos: String?
     @State private var slides: [Slide]?
+    /// Para a barra de capítulos: as secções dos apontamentos com momento (ver `Capitulos`).
+    @State private var capitulos: [Capitulos.Capitulo] = []
+    /// O aviso "Revista · Abrir próxima · Desfazer" (no Mac e no iPhone).
+    @Environment(AvisoRevista.self) private var aviso: AvisoRevista?
     @State private var pdfsProfessor: [PDFProfessor] = []
     #if os(macOS)
     @State private var escolherPDF = false
@@ -97,6 +101,11 @@ struct AulaDetailView: View {
             if !controlador.editando && !aGerar { apontamentos = Disco.lerApontamentos(aula.pasta) }
         }
         .task(id: navegacao.destino) { aplicarDestino() }
+        .task(id: "\(apontamentos?.hashValue ?? 0)#\(slides?.count ?? -1)#\(transcricao?.duracao ?? 0)") {
+            let seccoes = SeccoesApontamentos.partir(apontamentos ?? "").seccoes
+            capitulos = Capitulos.calcular(seccoes, duracao: transcricao?.duracao ?? aula.meta.duracao ?? 0,
+                                           slides: (slides ?? []).map(\.inicio))
+        }
         .focusedSceneValue(\.procurarNosApontamentos, apontamentos == nil || aGerar ? nil : AcaoProcurar { abrirProcura() })
         .focusedSceneValue(\.comandosAula, comandos)
         .onChange(of: tab) { if tab != .apontamentos { fecharProcura() } }
@@ -190,6 +199,9 @@ struct AulaDetailView: View {
     private var cabecalho: some View {
         VStack(alignment: .leading, spacing: 10) {
             seletor
+            if !capitulos.isEmpty {
+                LinhaCapitulos(capitulos: capitulos) { irParaTranscricao($0.inicio) }
+            }
 
             #if os(macOS)
             if case .emFalta(let caminho) = estadoVideo {
@@ -735,8 +747,17 @@ struct AulaDetailView: View {
 
     #endif
 
+    /// Com o aviso "Abrir próxima" e "Desfazer" quando há quem o mostre (a janela do Mac, o iPhone).
     private func marcarRevista(_ revista: Bool) {
-        do { try library.definirRevista(revista, em: aula.pasta) } catch { erro = error.localizedDescription }
+        do {
+            if let aviso {
+                try aviso.marcar(aula, revista: revista, library: library, mostrar: true)
+            } else {
+                try library.definirRevista(revista, em: aula.pasta)
+            }
+        } catch {
+            erro = error.localizedDescription
+        }
     }
 
     #if os(macOS)

@@ -84,6 +84,28 @@ struct RevisaoTests {
         #expect(a.seccoes[1].corpo == "Abiertos y cerrados: $[a, b]$.")
     }
 
+    @Test func cadaSeccaoSabeOMinutoEmQueComeca() {
+        // Os apontamentos escrevem [mm:ss] mesmo depois da primeira hora: [122:20].
+        let a = SeccoesApontamentos.partir("# T\n\n## Avisos [00:33]\nx\n\n## Intervalos [1:38:05]\ny\n\n## Rich [122:20]\nw\n\n## Dúvidas\nz")
+        #expect(a.seccoes.map(\.inicio) == [33, 5885, 7340, nil])
+        #expect(a.seccoes.map(\.titulo) == ["Avisos", "Intervalos", "Rich", "Dúvidas"])
+    }
+
+    /// A barra de capítulos do Mac: as secções com minuto, cada uma até à seguinte, com os slides que mostrou.
+    @Test func capitulosAteAoSeguinteComOsSlides() {
+        let s = [SeccoesApontamentos.Seccao(titulo: "Avisos", corpo: "", inicio: 0),
+                 SeccoesApontamentos.Seccao(titulo: "Números", corpo: "", inicio: 600),
+                 SeccoesApontamentos.Seccao(titulo: "Dúvidas", corpo: "", inicio: nil),
+                 SeccoesApontamentos.Seccao(titulo: "Intervalos", corpo: "", inicio: 3000)]
+        let c = Capitulos.calcular(s, duracao: 3600, slides: [10, 620, 700, 3100, 3700])
+        #expect(c.map(\.titulo) == ["Avisos", "Números", "Intervalos"])
+        #expect(c.map(\.inicio) == [0, 600, 3000])
+        #expect(c.map(\.fim) == [600, 3000, 3600])
+        #expect(c.map(\.slides) == [1, 2, 1])
+        // Menos de dois capítulos não dá barra.
+        #expect(Capitulos.calcular(Array(s.prefix(1)), duracao: 3600, slides: []).isEmpty)
+    }
+
     @Test func quebrasDeLinhaDoWindows() {
         let a = SeccoesApontamentos.partir("# Tema\r\n\r\n## Resumo\r\nCurto.\r\n\r\n## Parte 1\r\nTexto.")
         #expect(a.titulo == "Tema")

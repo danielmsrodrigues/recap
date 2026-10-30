@@ -1,99 +1,254 @@
+#if os(macOS)
 import SwiftUI
 
-struct SidebarView: View {
+/// O que a lista do meio mostra (a barra lateral do Mac, como no Notas ou no Mail).
+enum FiltroAulas: Hashable {
+    /// Sem lista escolhida: a coluna da direita mostra o início.
+    case inicio, todas, porRever, semana
+    case cadeira(URL)
+}
+
+/// A barra lateral: as listas (Início, Todas as aulas, Por rever, Esta semana), as cadeiras do semestre com a sua
+/// cor e a fila de processamento. Em baixo, o semestre e o "+".
+struct BarraLateral: View {
     @Environment(Library.self) private var library
-    #if os(macOS)
     @Environment(ProcessingQueue.self) private var fila
-    #endif
     @Environment(Fichas.self) private var fichas
-    @Binding var selecao: URL?
+    @Binding var filtro: FiltroAulas
+    @Binding var semestre: Semestre?
     @Binding var aEditarCadeira: Cadeira?
+    /// Uma aula da fila, para ver o progresso.
+    var aoAbrirAula: (URL) -> Void = { _ in }
+    var aoAdicionar: (Adicionar) -> Void
 
-    @State private var paraLixo: Aula?
+    enum Adicionar { case direto, video, cadeira }
+
     @State private var cadeiraParaLixo: Cadeira?
-    @State private var aEditarAula: Aula?
-    /// A segunda gravação de uma aula a juntar a seguir à primeira (ver `Library.juntar`).
-    @State private var aJuntar: (primeira: Aula, segunda: Aula)?
     @State private var erro: String?
-    /// nil = o semestre mais recente. Não fica guardado: ao abrir, a app mostra sempre o semestre em curso.
-    @State private var semestreEscolhido: Semestre?
-    /// Nomes das cadeiras recolhidas, um por linha.
-    @AppStorage("cadeirasRecolhidas") private var recolhidas = ""
 
-    private var semestre: Semestre? {
-        if let semestreEscolhido, library.semestres.contains(semestreEscolhido) { return semestreEscolhido }
-        return library.semestres.first
-    }
+    private var cadeiras: [Cadeira] { library.cadeiras(no: semestre) }
 
-    #if os(macOS)
     /// As aulas concluídas saem da fila; ficam as que esperam, correm ou falharam.
     private var jobsPorAcabar: [Job] {
         fila.jobs.filter { $0.estado != .concluido && $0.estado != .cancelado }
     }
 
-    private var filaVazia: Bool { jobsPorAcabar.isEmpty }
-
-    private func ativa(_ aula: Aula) -> Bool { fila.job(para: aula.pasta)?.ativo == true }
-    #else
-    /// No iOS não se gera nada: a fila é do Mac.
-    private var filaVazia: Bool { true }
-
-    private func ativa(_ aula: Aula) -> Bool { false }
-    #endif
-
     var body: some View {
-        List(selection: $selecao) {
-            #if os(macOS)
+        List(selection: Binding<FiltroAulas?>(get: { filtro }, set: { if let f = $0 { filtro = f } })) {
+            Section {
+                Label("Início", systemImage: "house").tag(FiltroAulas.inicio)
+                Label("Todas as aulas", systemImage: "list.bullet")
+                    .badge(cadeiras.reduce(0) { $0 + $1.aulas.count })
+                    .tag(FiltroAulas.todas)
+                Label("Por rever", systemImage: "circle.inset.filled")
+                    .badge(Revisao.porRever(cadeiras).count)
+                    .tag(FiltroAulas.porRever)
+                Label("Esta semana", systemImage: "calendar")
+                    .badge(ListaAulas.daSemana(cadeiras).count)
+                    .tag(FiltroAulas.semana)
+            }
+            Section("Cadeiras") {
+                ForEach(cadeiras) { cadeira in
+                    Label {
+                        HStack(spacing: 4) {
+                            Text(cadeira.nome).lineLimit(2)
+                            if fichas.aAtualizar(cadeira) != nil {
+                                Girador(tamanho: .mini)
+                            } else if fichas.erro(cadeira) != nil {
+                                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.caption)
+                            }
+                        }
+                    } icon: {
+                        SiglaCadeira(nome: cadeira.nome, lado: 18)
+                    }
+                    .badge(cadeira.aulas.count)
+                    .tag(FiltroAulas.cadeira(cadeira.pasta))
+                    .contextMenu { menu(cadeira) }
+                }
+            }
             if !jobsPorAcabar.isEmpty {
                 Section("Fila") {
                     ForEach(jobsPorAcabar) { job in
-                        LinhaJob(job: job).tag(job.pastaAula)
+                        Button { aoAbrirAula(job.pastaAula) } label: { LinhaJob(job: job).contentShape(.rect) }
+                            .buttonStyle(.plain)
                     }
                 }
             }
-            #endif
-
-            ForEach(library.cadeiras.filter { $0.semestre == semestre }) { cadeira in
-                Section(isExpanded: expandida(cadeira)) {
-                    // Como num caderno: a Aula 1 em cima e a mais recente no fim (a `Library` guarda-as ao contrário).
-                    ForEach(cadeira.aulas.reversed()) { aula in
-                        LinhaAula(aula: aula, aCorrer: aCorrer(aula))
-                            .tag(aula.pasta)
-                            .contextMenu { menu(aula) }
-                    }
-                } header: {
-                    CabecalhoCadeira(cadeira: cadeira, porRever: Self.porRever(cadeira.aulas),
-                                     aAtualizar: fichas.aAtualizar(cadeira) != nil, comErro: fichas.erro(cadeira) != nil,
-                                     selecionada: selecao?.mesmoCaminho(FichaCadeira.url(cadeira.pasta)) == true,
-                                     aoAbrir: { selecao = FichaCadeira.url(cadeira.pasta) }) { menu(cadeira) }
-                        .contextMenu { menu(cadeira) }
-                }
-            }
-
             if let erro = library.erro {
                 Text(erro).foregroundStyle(.red).font(.caption)
             }
         }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if let semestre, library.organizacao != .nenhuma { seletorSemestre(semestre) }
+        .safeAreaInset(edge: .bottom, spacing: 0) { rodape }
+        .confirmationDialog("Mover a cadeira para o Lixo?", isPresented: Binding(get: { cadeiraParaLixo != nil }, set: { if !$0 { cadeiraParaLixo = nil } }), presenting: cadeiraParaLixo) { cadeira in
+            Button("Mover para o Lixo", role: .destructive) {
+                tentar { try library.moverParaLixo(cadeira.pasta) }
+                if filtro == .cadeira(cadeira.pasta) { filtro = .todas }
+            }
+            Button("Cancelar", role: .cancel) {}
+        } message: { cadeira in
+            Text("\"\(cadeira.nome)\" e as suas \(cadeira.aulas.count) aula(s) vão para o Lixo, de onde as podes recuperar. Os vídeos originais não são tocados.")
         }
-        // Uma aula de outro semestre aberta pela pesquisa ou por um link: a lista muda para lá e abre a cadeira.
-        .onChange(of: selecao) { _, nova in
-            guard let nova, let cadeira = library.cadeiras.first(where: { nova.path.hasPrefix($0.pasta.path + "/") }) else { return }
-            if cadeira.semestre != semestre { semestreEscolhido = cadeira.semestre }
-            if !nova.mesmoCaminho(FichaCadeira.url(cadeira.pasta)) { expandida(cadeira).wrappedValue = true }
+        .alert("Erro", isPresented: Binding(get: { erro != nil }, set: { if !$0 { erro = nil } }), presenting: erro) { _ in
+            Button("OK") {}
+        } message: { Text($0) }
+    }
+
+    /// O semestre (a procura é em todos) e o "+".
+    private var rodape: some View {
+        HStack {
+            if library.organizacao != .nenhuma, let atual = semestre ?? library.semestres.first {
+                Menu {
+                    ForEach(library.semestres, id: \.self) { s in
+                        let porRever = Revisao.porRever(library.cadeiras.filter { $0.semestre == s }).count
+                        Toggle(isOn: Binding(get: { s == atual }, set: { if $0 { semestre = s } })) {
+                            Text(library.nome(s))
+                            if porRever > 0 { Text("\(porRever) por rever") }
+                        }
+                    }
+                } label: {
+                    Text(library.nome(atual))
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("Mudar de \(library.organizacao == .ano ? "ano" : library.nomePeriodo) (a procura é em todos)")
+            }
+            Spacer()
+            Menu {
+                Button("Transcrever em direto…") { aoAdicionar(.direto) }
+                Button("Importar vídeo…") { aoAdicionar(.video) }
+                Button("Nova cadeira…") { aoAdicionar(.cadeira) }
+            } label: {
+                Image(systemName: "plus")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Transcrever, importar um vídeo ou criar uma cadeira")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .overlay(alignment: .top) { Divider() }
+    }
+
+    @ViewBuilder private func menu(_ cadeira: Cadeira) -> some View {
+        let ativa = cadeira.aulas.contains { fila.job(para: $0.pasta)?.ativo == true }
+        Button("Editar cadeira…") { aEditarCadeira = cadeira }.disabled(ativa)
+        Button("Mostrar no Finder") { NSWorkspace.shared.activateFileViewerSelecting([cadeira.pasta]) }
+        Divider()
+        Button("Mover para o Lixo…", role: .destructive) { cadeiraParaLixo = cadeira }.disabled(ativa)
+    }
+
+    private func tentar(_ acao: () throws -> Void) {
+        do { try acao() } catch { erro = error.localizedDescription }
+    }
+}
+
+/// A lista do meio: as aulas do filtro escolhido, das mais recentes para as mais antigas, com "Sobre a cadeira"
+/// em cima quando o filtro é uma cadeira. O menu de contexto de cada aula tem tudo o que se faz com ela.
+struct ListaAulas: View {
+    @Environment(Library.self) private var library
+    @Environment(ProcessingQueue.self) private var fila
+    @Environment(SessaoDireto.self) private var direto
+    @Environment(\.openWindow) private var openWindow
+    let filtro: FiltroAulas
+    let semestre: Semestre?
+    @Binding var selecao: URL?
+    var aoTranscrever: () -> Void
+
+    @State private var paraLixo: Aula?
+    @State private var aEditarAula: Aula?
+    /// A segunda gravação de uma aula a juntar a seguir à primeira (ver `Library.juntar`).
+    @State private var aJuntar: (primeira: Aula, segunda: Aula)?
+    @State private var erro: String?
+
+    /// Aulas dos últimos 7 dias.
+    static func daSemana(_ cadeiras: [Cadeira]) -> [Aula] {
+        let desde = Calendar.current.date(byAdding: .day, value: -7, to: .now) ?? .distantPast
+        return cadeiras.flatMap(\.aulas).filter { $0.meta.data >= desde }
+    }
+
+    private var cadeiraEscolhida: Cadeira? {
+        guard case .cadeira(let pasta) = filtro else { return nil }
+        return library.cadeiras.first { $0.pasta.mesmoCaminho(pasta) }
+    }
+
+    private var aulas: [Aula] {
+        let cadeiras = library.cadeiras(no: semestre)
+        let lista: [Aula] = switch filtro {
+        case .inicio, .todas: cadeiras.flatMap(\.aulas)
+        case .porRever: Revisao.porRever(cadeiras)
+        case .semana: Self.daSemana(cadeiras)
+        case .cadeira: cadeiraEscolhida?.aulas ?? []
+        }
+        return lista.sorted { $0.meta.data > $1.meta.data }
+    }
+
+    private var titulo: String {
+        switch filtro {
+        case .inicio, .todas: "Todas as aulas"
+        case .porRever: "Por rever"
+        case .semana: "Esta semana"
+        case .cadeira: cadeiraEscolhida?.nome ?? "Cadeira"
+        }
+    }
+
+    var body: some View {
+        let aulas = aulas
+        let porRever = aulas.filter { $0.temApontamentos && !$0.meta.revista }.count
+        List(selection: $selecao) {
+            if let cadeira = cadeiraEscolhida {
+                Label {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Sobre a cadeira").fontWeight(.semibold)
+                        Text("Avaliação, datas, programa e avisos").font(.caption).foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    SiglaCadeira(nome: cadeira.nome, lado: 26)
+                }
+                .padding(.vertical, 3)
+                .tag(FichaCadeira.url(cadeira.pasta))
+            }
+            ForEach(aulas) { aula in
+                LinhaAula(aula: aula, numero: library.numeroDaAula(aula), cor: library.cor(aula.cadeira),
+                          aCorrer: fila.job(para: aula.pasta)?.estado == .aCorrer)
+                    .tag(aula.pasta)
+                    .contextMenu { menu(aula) }
+            }
         }
         .overlay {
-            if library.cadeiras.isEmpty && filaVazia {
-                Text("Ainda não há aulas.\nAs cadeiras ficam em \((library.raiz.path as NSString).abbreviatingWithTildeInPath).")
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.secondary)
+            if aulas.isEmpty {
+                ContentUnavailableView(filtro == .porRever ? "Está tudo revisto" : "Nenhuma aula",
+                                       systemImage: filtro == .porRever ? "checkmark.circle" : "tray")
+            }
+        }
+        .navigationTitle(titulo)
+        .navigationSubtitle(porRever > 0 ? "\(aulas.count) aulas · \(porRever) por rever" : "\(aulas.count) aulas")
+        .toolbar {
+            ToolbarItem {
+                if direto.ativa {
+                    Button {
+                        openWindow(id: "direto")
+                        NSApp.activate()
+                    } label: {
+                        Label(Timestamp.format(direto.segundosDeAula), systemImage: "stop.circle.fill")
+                            .monospacedDigit()
+                    }
+                    .labelStyle(.titleAndIcon)
+                    .tint(.red)
+                    .help("A captar em direto: mostrar a janela da captação")
+                } else {
+                    Button(action: aoTranscrever) {
+                        Label("Transcrever", systemImage: "record.circle")
+                    }
+                    .labelStyle(.titleAndIcon)
+                    .buttonStyle(.borderedProminent)
+                    .help("Transcrever em direto (⇧⌘L)")
+                }
             }
         }
         .sheet(item: $aEditarAula) { aula in
             EditarAulaSheet(aula: aula) { nova in if selecao == aula.pasta { selecao = nova } }
         }
-        #if os(macOS)
         .confirmationDialog("Mover a aula para o Lixo?", isPresented: Binding(get: { paraLixo != nil }, set: { if !$0 { paraLixo = nil } }), presenting: paraLixo) { aula in
             Button("Mover para o Lixo", role: .destructive) {
                 tentar { try library.moverParaLixo(aula.pasta) }
@@ -109,90 +264,17 @@ struct SidebarView: View {
         } message: { par in
             Text("A transcrição, os slides e os PDFs de \"\(par.segunda.meta.titulo)\" passam para \"\(par.primeira.meta.titulo)\", a seguir ao que lá está, e os apontamentos são gerados de novo. A pasta de \"\(par.segunda.meta.titulo)\" vai para o Lixo, de onde a podes recuperar.")
         }
-        .confirmationDialog("Mover a cadeira para o Lixo?", isPresented: Binding(get: { cadeiraParaLixo != nil }, set: { if !$0 { cadeiraParaLixo = nil } }), presenting: cadeiraParaLixo) { cadeira in
-            Button("Mover para o Lixo", role: .destructive) {
-                tentar { try library.moverParaLixo(cadeira.pasta) }
-                if let s = selecao, s.path.hasPrefix(cadeira.pasta.path + "/") { selecao = nil }
-            }
-            Button("Cancelar", role: .cancel) {}
-        } message: { cadeira in
-            Text("\"\(cadeira.nome)\" e as suas \(cadeira.aulas.count) aula(s) vão para o Lixo, de onde as podes recuperar. Os vídeos originais não são tocados.")
-        }
-        #endif
         .alert("Erro", isPresented: Binding(get: { erro != nil }, set: { if !$0 { erro = nil } }), presenting: erro) { _ in
             Button("OK") {}
         } message: { Text($0) }
     }
 
-    // MARK: Semestre
-
-    private func seletorSemestre(_ atual: Semestre) -> some View {
-        HStack {
-            Menu {
-                ForEach(library.semestres, id: \.self) { s in
-                    let porRever = Self.porRever(library.cadeiras.filter { $0.semestre == s }.flatMap(\.aulas))
-                    Toggle(isOn: Binding(get: { s == atual }, set: { if $0 { semestreEscolhido = s } })) {
-                        Text(library.nome(s))
-                        if porRever > 0 { Text("\(porRever) por rever") }
-                    }
-                }
-            } label: {
-                // Uma cápsula, para se ler como seletor e não como mais um título acima das cadeiras.
-                HStack(spacing: 5) {
-                    Image(systemName: "calendar").foregroundStyle(.secondary)
-                    Text(library.nome(atual)).fontWeight(.medium)
-                    Image(systemName: "chevron.up.chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-                }
-                .font(.subheadline)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(.quaternary, in: .capsule)
-                .contentShape(.capsule)
-            }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("Mudar de \(library.organizacao == .ano ? "ano" : library.nomePeriodo) (a procura é em todos)")
-            Spacer()
-        }
-        .padding(.horizontal, 12)
-        .padding(.top, 4)
-        .padding(.bottom, 8)
-    }
-
-    private func expandida(_ cadeira: Cadeira) -> Binding<Bool> {
-        Binding {
-            !recolhidas.split(separator: "\n").contains { $0 == cadeira.nome }
-        } set: { aberta in
-            var nomes = Set(recolhidas.split(separator: "\n").map(String.init))
-            if aberta { nomes.remove(cadeira.nome) } else { nomes.insert(cadeira.nome) }
-            recolhidas = nomes.sorted().joined(separator: "\n")
-        }
-    }
-
-    private static func porRever(_ aulas: [Aula]) -> Int {
-        aulas.filter { !$0.meta.revista && $0.temApontamentos }.count
-    }
-
-    // MARK: Menus
-
-    private func aCorrer(_ aula: Aula) -> Bool {
-        #if os(macOS)
-        fila.job(para: aula.pasta)?.estado == .aCorrer
-        #else
-        false
-        #endif
-    }
-
     @ViewBuilder private func menu(_ aula: Aula) -> some View {
-        let ativa = ativa(aula)
+        let ativa = fila.job(para: aula.pasta)?.ativo == true
         Button(aula.meta.revista ? "Marcar como por rever" : "Marcar como revista") {
             tentar { try library.definirRevista(!aula.meta.revista, em: aula.pasta) }
         }
         Button("Editar aula…") { aEditarAula = aula }.disabled(ativa)
-        // Gerar, juntar e apagar aulas faz-se no Mac.
-        #if os(macOS)
         Button("Mostrar no Finder") { NSWorkspace.shared.activateFileViewerSelecting([aula.pasta]) }
         if !aula.temTranscricao, !ativa, let ref = aula.meta.video, case .ok(let url) = VideoResolver.resolver(ref) {
             Button("Gerar de novo") {
@@ -213,22 +295,8 @@ struct SidebarView: View {
         .help("Para uma aula gravada em duas partes: a aula escolhida entra a seguir a esta")
         Divider()
         Button("Mover para o Lixo…", role: .destructive) { paraLixo = aula }.disabled(ativa)
-        #endif
     }
 
-    @ViewBuilder private func menu(_ cadeira: Cadeira) -> some View {
-        let ativa = cadeira.aulas.contains(where: ativa)
-        Button("Editar cadeira…") { aEditarCadeira = cadeira }.disabled(ativa)
-        #if os(macOS)
-        Button("Mostrar no Finder") { NSWorkspace.shared.activateFileViewerSelecting([cadeira.pasta]) }
-        Divider()
-        Button("Mover para o Lixo…", role: .destructive) { cadeiraParaLixo = cadeira }.disabled(ativa)
-        #endif
-    }
-
-    // MARK: Ações
-
-    #if os(macOS)
     private func juntar(_ segunda: Aula, a primeira: Aula) {
         tentar {
             let pasta = try library.juntar(segunda, a: primeira)
@@ -239,116 +307,56 @@ struct SidebarView: View {
             selecao = pasta
         }
     }
-    #endif
 
     private func tentar(_ acao: () throws -> Void) {
         do { try acao() } catch { erro = error.localizedDescription }
     }
 }
 
-/// O nome da cadeira é o cabeçalho do grupo e abre a ficha da cadeira ("Sobre a cadeira"): avaliação, datas,
-/// programa e avisos juntados de todas as aulas. As opções da cadeira ficam no "…" e no menu de contexto.
-private struct CabecalhoCadeira<Acoes: View>: View {
-    let cadeira: Cadeira
-    let porRever: Int
-    let aAtualizar: Bool
-    let comErro: Bool
-    let selecionada: Bool
-    let aoAbrir: () -> Void
-    @ViewBuilder let acoes: () -> Acoes
-    @State private var sobreposto = false
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Button(action: aoAbrir) {
-                HStack(spacing: 6) {
-                    // O cabeçalho de secção do macOS é pequeno e cinzento; o nome da cadeira tem de se ler bem.
-                    Text(cadeira.nome)
-                        .font(.title3.weight(.semibold))
-                        // `Color.primary` e não `.primary`: no iOS o cabeçalho já é secundário e `.primary` seguia-o.
-                        .foregroundStyle(selecionada ? AnyShapeStyle(.tint) : AnyShapeStyle(Color.primary))
-                        .lineLimit(2)
-                    if aAtualizar {
-                        Girador(tamanho: .mini)
-                    } else if comErro {
-                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.caption)
-                    } else {
-                        Image(systemName: "chevron.right")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(selecionada ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
-                            .opacity(sobreposto || selecionada ? 1 : 0)
-                    }
-                }
-                .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .help("Sobre a cadeira: avaliação, datas, programa e avisos, juntados de todas as aulas")
-            Spacer()
-            if porRever > 0 {
-                Text("\(porRever) por rever").font(.caption2).foregroundStyle(.tint)
-            }
-            Menu("Cadeira", systemImage: "ellipsis.circle", content: acoes)
-                .labelStyle(.iconOnly)
-                #if os(macOS)
-                .menuStyle(.borderlessButton)
-                #endif
-                .menuIndicator(.hidden)
-                .fixedSize()
-        }
-        .padding(.top, 4)
-        .onHover { sobreposto = $0 }
-    }
-}
-
+/// Uma aula na lista do meio: o tema, e por baixo a cor e a sigla da cadeira, o número e a data. Como no Mail,
+/// o ponto azul quer dizer por rever.
 private struct LinhaAula: View {
     let aula: Aula
-    /// Os apontamentos desta aula estão a ser gerados (só no Mac).
+    let numero: Int
+    let cor: Color
+    /// Os apontamentos desta aula estão a ser gerados.
     let aCorrer: Bool
-    /// Linha selecionada (fundo azul): os ícones azuis passam a brancos para não desaparecerem.
+    /// Linha selecionada (fundo azul): o ponto azul passa a branco para não desaparecer.
     @Environment(\.backgroundProminence) private var proeminencia
-    private var cor: Color { proeminencia == .increased ? .white : .accentColor }
 
-    /// "Aula 3 · Tema" → o tema em cima e "Aula 3" ao lado da data, para o tema caber; outros títulos ficam inteiros.
-    /// O título segue a língua dos apontamentos ("Clase 3", "Lecture 3"), mas a barra lateral diz sempre "Aula 3".
-    private var partes: (numero: String?, tema: String) {
-        guard let (numero, tema) = TituloAula.separar(aula.meta.titulo) else { return (nil, aula.meta.titulo) }
-        return ("Aula \(numero)", tema)
+    /// "Aula 3 · Tema" → só o tema; o número vai para a linha de baixo. Outros títulos ficam inteiros.
+    private var tema: String { TituloAula.separar(aula.meta.titulo)?.tema ?? aula.meta.titulo }
+
+    private var estado: String? {
+        if aCorrer { return "A gerar…" }
+        if !aula.temApontamentos { return aula.temTranscricao ? "Sem apontamentos" : "Por transcrever" }
+        return nil
     }
 
     var body: some View {
-        HStack(spacing: 8) {
-            estado.frame(width: 16)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(partes.tema).lineLimit(2)
-                Text([partes.numero, aula.meta.data.formatted(.dateTime.day().month(.wide).locale(Locale(identifier: "pt_PT")))]
-                        .compactMap { $0 }.joined(separator: " · "))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(tema).fontWeight(.semibold).lineLimit(2)
+                HStack(spacing: 5) {
+                    RoundedRectangle(cornerRadius: 2).fill(cor).frame(width: 7, height: 7)
+                    Text(([Revisao.sigla(aula.cadeira), "Aula \(numero)", DataAula.curta(aula.meta.data)] + [estado].compactMap { $0 })
+                            .joined(separator: " · "))
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
-            // Como no Mail: ponto azul = por rever. As ações estão no menu de contexto.
-            if aula.temApontamentos && !aula.meta.revista {
-                Circle().fill(cor).frame(width: 7, height: 7).help("Por rever")
+            if aCorrer {
+                Girador(tamanho: .mini)
+            } else if aula.temApontamentos && !aula.meta.revista {
+                Circle().fill(proeminencia == .increased ? Color.white : Color.accentColor)
+                    .frame(width: 8, height: 8).help("Por rever")
             }
         }
-    }
-
-    @ViewBuilder private var estado: some View {
-        if aCorrer {
-            Girador(tamanho: .mini)
-        } else if aula.meta.revista {
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(proeminencia == .increased ? Color.white : Color.green)
-        } else if aula.temApontamentos {
-            Image(systemName: "doc.text.fill").foregroundStyle(cor)
-        } else if aula.temTranscricao {
-            Image(systemName: "waveform").foregroundStyle(.secondary)
-        } else {
-            Image(systemName: "clock").foregroundStyle(.tertiary)
-        }
+        .padding(.vertical, 3)
     }
 }
 
-#if os(macOS)
 private struct LinhaJob: View {
     let job: Job
 

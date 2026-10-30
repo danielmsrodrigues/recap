@@ -20,20 +20,35 @@ struct ContentView: View {
     @State private var erro: String?
     @State private var configurarDireto = false
     @State private var criarCadeira = false
+    /// A lista do meio (escolhida na barra lateral).
+    @State private var filtro: FiltroAulas = .inicio
+    /// nil = o semestre mais recente. Não fica guardado: ao abrir, a app mostra sempre o semestre em curso.
+    @State private var semestre: Semestre?
+    @State private var aviso = AvisoRevista()
 
     static let extensoes: Set<String> = ["mp4", "mov", "m4v", "mkv"]
     static let tiposVideo: [UTType] = [.mpeg4Movie, .quickTimeMovie, .movie] + [UTType(filenameExtension: "mkv")].compactMap { $0 }
 
     var body: some View {
+        // Três colunas, como no Notas e no Mail: as listas e as cadeiras, as aulas, a aula.
         NavigationSplitView {
-            Group {
-                if pesquisa.trimmingCharacters(in: .whitespaces).isEmpty {
-                    SidebarView(selecao: $selecao, aEditarCadeira: $aEditarCadeira)
-                } else {
-                    ResultadosPesquisaView(termo: pesquisa)
+            BarraLateral(filtro: $filtro, semestre: $semestre, aEditarCadeira: $aEditarCadeira, aoAbrirAula: { selecao = $0 }) { acao in
+                switch acao {
+                case .direto: configurarDireto = true
+                case .video: importar = true
+                case .cadeira: criarCadeira = true
                 }
             }
-            .navigationSplitViewColumnWidth(min: 220, ideal: 280)
+            .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 320)
+        } content: {
+            Group {
+                if pesquisa.trimmingCharacters(in: .whitespaces).isEmpty {
+                    ListaAulas(filtro: filtro, semestre: semestre, selecao: $selecao) { configurarDireto = true }
+                } else {
+                    ResultadosPesquisaView(termo: pesquisa).navigationTitle("Procurar")
+                }
+            }
+            .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 440)
             .searchable(text: $pesquisa, placement: .sidebar, prompt: "Procurar em todas as aulas")
         } detail: {
             if let selecao, selecao.lastPathComponent == FichaCadeira.fichaMD,
@@ -42,10 +57,43 @@ struct ContentView: View {
             } else if let selecao, let aula = library.aula(em: selecao) {
                 AulaComPainel(aula: aula)
             } else {
-                EcraInicial(aCaptar: direto.ativa, aoTranscrever: { configurarDireto = true }, aoEscolherVideo: { importar = true })
+                Inicio(semestre: semestre, aCaptar: direto.ativa,
+                       aoTranscrever: { configurarDireto = true }, aoEscolherVideo: { importar = true },
+                       aoAbrir: { selecao = $0 }, aoVerPorRever: { filtro = .porRever })
             }
         }
-        .frame(minWidth: 860, minHeight: 560)
+        .frame(minWidth: 1000, minHeight: 600)
+        // "Início" fecha a aula; uma cadeira abre "Sobre a cadeira", como no design.
+        .onChange(of: filtro) { _, novo in
+            switch novo {
+            case .inicio: selecao = nil
+            case .cadeira(let pasta): selecao = FichaCadeira.url(pasta)
+            default: break
+            }
+        }
+        // Uma aula aberta pela pesquisa ou por um link: sai do Início, e o semestre passa a ser o dela.
+        .onChange(of: selecao) { _, nova in
+            guard let nova else { return }
+            if filtro == .inicio { filtro = .todas }
+            if let cadeira = library.cadeiras.first(where: { nova.path.hasPrefix($0.pasta.path + "/") }),
+               cadeira.semestre != (semestre ?? library.semestres.first) {
+                semestre = cadeira.semestre
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if let atual = aviso.atual {
+                VistaAvisoRevista(aviso: atual) { proxima in
+                    aviso.fechar()
+                    selecao = proxima.pasta
+                } aoDesfazer: {
+                    do { try aviso.desfazer(library) } catch { erro = error.localizedDescription }
+                }
+                .frame(maxWidth: 560)
+                .padding(.bottom, 18)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .environment(aviso)
         .imagemEmGrande(navegacao)
         // Num Mac novo (ou se faltar o Claude Code ou o modelo), o assistente abre sozinho.
         .sheet(isPresented: $preparar) { PreparacaoView() }
@@ -79,14 +127,10 @@ struct ContentView: View {
             // O URL canónico da aula: o do link pode vir noutra normalização Unicode e a lista não o reconhecia.
             if let destino, !(selecao?.mesmoCaminho(destino.pasta) ?? false) { selecao = library.aula(em: destino.pasta)?.pasta ?? destino.pasta }
         }
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Menu("Adicionar", systemImage: "plus") {
-                    Button("Transcrever em direto…") { configurarDireto = true }.keyboardShortcut("l", modifiers: [.command, .shift])
-                    Button("Importar vídeo…") { importar = true }.keyboardShortcut("o")
-                    Button("Nova cadeira…") { criarCadeira = true }
-                }
-            }
+        // Os atalhos do "+" da barra lateral e do botão "Transcrever" (sem botão à vista).
+        .background {
+            Button("Transcrever em direto…") { configurarDireto = true }.keyboardShortcut("l", modifiers: [.command, .shift]).hidden()
+            Button("Importar vídeo…") { importar = true }.keyboardShortcut("o").hidden()
         }
         .dropDestination(for: URL.self) { urls, _ in
             receber(urls)
@@ -198,46 +242,95 @@ private struct VideoPendente: Identifiable {
     var id: URL { url }
 }
 
-/// Sem aula aberta: transcrever em direto é a ação principal; importar um vídeo fica em segundo plano
-/// (largar um vídeo em qualquer sítio da janela continua a funcionar).
-private struct EcraInicial: View {
+/// Sem aula aberta: o dia, o que falta rever, e as duas maneiras de juntar uma aula (em direto, ou largando o vídeo
+/// em qualquer sítio da janela).
+private struct Inicio: View {
+    @Environment(Library.self) private var library
+    let semestre: Semestre?
     let aCaptar: Bool
     let aoTranscrever: () -> Void
     let aoEscolherVideo: () -> Void
+    let aoAbrir: (URL) -> Void
+    let aoVerPorRever: () -> Void
 
     var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "waveform.badge.mic")
-                .font(.system(size: 52, weight: .light))
-                .foregroundStyle(.tint)
-            Text("Transcrever uma aula").font(.title.bold())
-            Text("O Recap ouve a aula enquanto dá, ao vivo ou numa gravação no browser, e escreve os apontamentos no fim.")
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 440)
-            Button(action: aoTranscrever) {
-                Label(aCaptar ? "Já há uma aula em direto" : "Transcrever em direto…", systemImage: "record.circle")
-                    .font(.title3.weight(.semibold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
+        let porRever = Revisao.porRever(library.cadeiras(no: semestre))
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                VStack(alignment: .leading, spacing: 4) {
+                    let dia = Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide).locale(Locale(identifier: "pt_PT")))
+                    Text(dia.prefix(1).uppercased() + dia.dropFirst())
+                        .font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                    Text(porRever.isEmpty ? "Está tudo revisto" : porRever.count == 1 ? "Tens 1 aula por rever" : "Tens \(porRever.count) aulas por rever")
+                        .font(.largeTitle.bold())
+                }
+                HStack(alignment: .top, spacing: 12) {
+                    Button(action: aoTranscrever) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label(aCaptar ? "Já há uma aula em direto" : "Transcrever em direto…", systemImage: "record.circle")
+                                .font(.title3.bold())
+                            Text("Ouve a aula ao vivo ou uma gravação no browser e escreve os apontamentos no fim.")
+                                .font(.callout).opacity(0.85)
+                            Text("⇧⌘L").font(.caption).opacity(0.7)
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+                        .padding(18)
+                        .background(Color.accentColor, in: .rect(cornerRadius: 16))
+                        .contentShape(.rect(cornerRadius: 16))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(aCaptar)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Tens o vídeo da aula?").font(.title3.bold())
+                        HStack(spacing: 4) {
+                            Text("Larga-o aqui ou").foregroundStyle(.secondary)
+                            Button("escolhe o ficheiro…", action: aoEscolherVideo).buttonStyle(.link)
+                        }
+                        .font(.callout)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+                    .padding(18)
+                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.quaternary, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])))
+                }
+                if !porRever.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text("Por rever").font(.title3.bold())
+                            Spacer()
+                            Button("Ver todas", action: aoVerPorRever).buttonStyle(.link)
+                        }
+                        VStack(spacing: 0) {
+                            ForEach(Array(porRever.prefix(5).enumerated()), id: \.element.id) { i, aula in
+                                if i > 0 { Divider().padding(.leading, 31) }
+                                Button { aoAbrir(aula.pasta) } label: {
+                                    HStack(spacing: 10) {
+                                        RoundedRectangle(cornerRadius: 2).fill(library.cor(aula.cadeira)).frame(width: 7, height: 7)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(aula.meta.titulo).lineLimit(1)
+                                            Text("\(aula.cadeira) · Aula \(library.numeroDaAula(aula)) · \(DataAula.curta(aula.meta.data))")
+                                                .font(.caption).foregroundStyle(.secondary)
+                                        }
+                                        Spacer(minLength: 0)
+                                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                                    }
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 10)
+                                    .contentShape(.rect)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 12))
+                    }
+                }
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.extraLarge)
-            .disabled(aCaptar)
-            .padding(.top, 6)
-
-            HStack(spacing: 4) {
-                Text("Tens o vídeo da aula? Larga-o aqui ou")
-                Button("escolhe o ficheiro…", action: aoEscolherVideo).buttonStyle(.link)
-            }
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .padding(.top, 22)
+            .padding(.horizontal, 40)
+            .padding(.vertical, 48)
+            .frame(maxWidth: 780)
+            .frame(maxWidth: .infinity)
         }
-        .padding(40)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // Sem aula aberta, a janela não se chama como a app: diz onde se está.
-        .navigationTitle("Aulas")
+        .navigationTitle("Início")
     }
 }
 
