@@ -19,6 +19,13 @@
     if (h) h.postMessage(valor);
   };
   const raiz = () => document.getElementById("conteudo");
+
+  // Uma secção dentro de uma vista nativa (iPhone, iPad): a vista ajusta-se à altura do texto, que muda ao
+  // desenhar as fórmulas, os esquemas e as imagens.
+  document.addEventListener("DOMContentLoaded", () => {
+    if (!document.documentElement.classList.contains("embutida")) return;
+    new ResizeObserver(() => enviar("altura", Math.ceil(raiz().getBoundingClientRect().height))).observe(raiz());
+  });
   const escaparAtributo = (s) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
   // MARK: Markdown → HTML
