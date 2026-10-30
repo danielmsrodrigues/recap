@@ -203,21 +203,21 @@ final class PipelineRunner {
         var geracaoSelecao: Geracao?
         if let pasta = cadeira?.pasta, FichaCadeira.temPrograma(pasta) {
             if let (indice, paginas) = await Task.detached(operation: { GuiaEstudo.carregar(cadeira: pasta) }).value {
-                job.atualizar(.apontamentos, progresso: nil, detalhe: "A escolher as secções da guía…")
+                job.atualizar(.apontamentos, progresso: nil, detalhe: "A escolher as secções da guia…")
                 do {
                     let r = try await SeccoesDaAula.escolher(indice, transcricao: transcricao, gerador: gerador)
                     geracaoSelecao = r.geracao
                     contexto.guia = GuiaDaAula.montar(indice, paginas: paginas, selecao: r.selecao)
                     if let semEspaco = contexto.guia?.semEspaco, !semEspaco.isEmpty {
-                        avisos.append("Secções da guía que não couberam no pedido (só com a referência): \(semEspaco.map(\.id).joined(separator: ", ")).")
+                        avisos.append("Secções da guia que não couberam no pedido (só com a referência): \(semEspaco.map(\.id).joined(separator: ", ")).")
                     }
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
-                    avisos.append("Não foi possível escolher as secções da guía (\(error.localizedDescription)); os apontamentos saíram sem ela.")
+                    avisos.append("Não foi possível escolher as secções da guia (\(error.localizedDescription)); os apontamentos saíram sem ela.")
                 }
             } else {
-                avisos.append("Não consegui ler o índice da guía; os apontamentos saíram sem ela.")
+                avisos.append("Não consegui ler o índice da guia; os apontamentos saíram sem ela.")
             }
         }
         var detalheBase = "A gerar com \(definicoes.modeloClaude) via \(definicoes.motor.nome)"
@@ -270,12 +270,12 @@ final class PipelineRunner {
             avisos.append("Não foi possível acrescentar as explicações 💡: \(error.localizedDescription)")
         }
 
-        // As páginas da guía citadas têm de vir das secções enviadas; as outras ficam "por confirmar".
+        // As páginas da guia citadas têm de vir das secções enviadas; as outras ficam "por confirmar".
         if let guia = contexto.guia {
             let v = CitacoesGuia.verificar(semSobre, paginas: guia.paginasPermitidas, seccoes: guia.idsPermitidos)
             semSobre = v.markdown
             if v.invalidas > 0 {
-                avisos.append("\(v.invalidas) páginas da guía citadas não foram enviadas ao Claude: estão marcadas «página por confirmar».")
+                avisos.append("\(v.invalidas) páginas da guia citadas não foram enviadas ao Claude: estão marcadas «página por confirmar».")
             }
         }
         if resultado.geracao.truncada {

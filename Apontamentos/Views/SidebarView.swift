@@ -3,8 +3,8 @@ import SwiftUI
 
 /// O que a lista do meio mostra (a barra lateral do Mac, como no Notas ou no Mail).
 enum FiltroAulas: Hashable {
-    /// Sem lista escolhida: a coluna da direita mostra o início.
-    case inicio, todas, porRever, semana
+    /// Sem lista escolhida: a coluna da direita mostra o início. No calendário, o mês ocupa a lista e a aula.
+    case inicio, calendario, todas, porRever, semana
     case cadeira(URL)
 }
 
@@ -35,13 +35,14 @@ struct BarraLateral: View {
         List(selection: Binding<FiltroAulas?>(get: { filtro }, set: { if let f = $0 { filtro = f } })) {
             Section {
                 Label("Início", systemImage: "house").tag(FiltroAulas.inicio)
+                Label("Calendário", systemImage: "calendar").tag(FiltroAulas.calendario)
                 Label("Todas as aulas", systemImage: "list.bullet")
                     .badge(cadeiras.reduce(0) { $0 + $1.aulas.count })
                     .tag(FiltroAulas.todas)
                 Label("Por rever", systemImage: "circle.inset.filled")
                     .badge(Revisao.porRever(cadeiras).count)
                     .tag(FiltroAulas.porRever)
-                // Um relógio e não um calendário: são as aulas dos últimos 7 dias, não um calendário.
+                // Um relógio e não um calendário: são as aulas dos últimos 7 dias (o calendário é o de cima).
                 Label("Esta semana", systemImage: "clock")
                     .badge(ListaAulas.daSemana(cadeiras).count)
                     .tag(FiltroAulas.semana)
@@ -141,8 +142,6 @@ struct BarraLateral: View {
 struct ListaAulas: View {
     @Environment(Library.self) private var library
     @Environment(ProcessingQueue.self) private var fila
-    @Environment(SessaoDireto.self) private var direto
-    @Environment(\.openWindow) private var openWindow
     let filtro: FiltroAulas
     let semestre: Semestre?
     @Binding var selecao: URL?
@@ -170,7 +169,7 @@ struct ListaAulas: View {
     private var aulas: [Aula] {
         let cadeiras = library.cadeiras(no: semestre)
         let lista: [Aula] = switch filtro {
-        case .inicio, .todas: cadeiras.flatMap(\.aulas)
+        case .inicio, .calendario, .todas: cadeiras.flatMap(\.aulas)
         case .porRever: Revisao.porRever(cadeiras)
         case .semana: Self.daSemana(cadeiras)
         case .cadeira: cadeiraEscolhida?.aulas ?? []
@@ -200,7 +199,7 @@ struct ListaAulas: View {
 
     private var titulo: String {
         switch filtro {
-        case .inicio, .todas: "Todas as aulas"
+        case .inicio, .calendario, .todas: "Todas as aulas"
         case .porRever: "Por rever"
         case .semana: "Esta semana"
         case .cadeira: cadeiraEscolhida?.nome ?? "Cadeira"
@@ -230,9 +229,7 @@ struct ListaAulas: View {
         .navigationSubtitle(porRever > 0 ? "\(aulas.count) aulas · \(porRever) por rever" : "\(aulas.count) aulas")
         .toolbar {
             ToolbarItem {
-                botaoTranscrever
-                    .labelStyle(.titleAndIcon)
-                    .buttonBorderShape(.capsule)
+                BotaoTranscrever(aoTranscrever: aoTranscrever)
             }
         }
         .sheet(item: $aEditarAula) { aula in
@@ -287,26 +284,6 @@ struct ListaAulas: View {
                 ContentUnavailableView(filtro == .porRever ? "Está tudo revisto" : "Nenhuma aula",
                                        systemImage: filtro == .porRever ? "checkmark.circle" : "tray")
             }
-        }
-    }
-
-    @ViewBuilder private var botaoTranscrever: some View {
-        if direto.ativa {
-            Button {
-                openWindow(id: "direto")
-                NSApp.activate()
-            } label: {
-                Label(Timestamp.format(direto.segundosDeAula), systemImage: "stop.circle.fill").monospacedDigit()
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.red)
-            .help("A captar em direto: mostrar a janela da captação")
-        } else {
-            Button(action: aoTranscrever) {
-                Label("Transcrever", systemImage: "record.circle").fontWeight(.semibold)
-            }
-            .buttonStyle(.borderedProminent)
-            .help("Transcrever em direto (⇧⌘L)")
         }
     }
 
@@ -521,6 +498,37 @@ struct CampoPesquisa: NSViewRepresentable {
         @objc func mudou(_ campo: NSSearchField) {
             if texto.wrappedValue != campo.stringValue { texto.wrappedValue = campo.stringValue }
         }
+    }
+}
+
+/// "Transcrever", em cápsula azul; durante uma captação, o tempo a vermelho, que abre a janela do direto.
+struct BotaoTranscrever: View {
+    @Environment(SessaoDireto.self) private var direto
+    @Environment(\.openWindow) private var openWindow
+    var aoTranscrever: () -> Void
+
+    var body: some View {
+        Group {
+            if direto.ativa {
+                Button {
+                    openWindow(id: "direto")
+                    NSApp.activate()
+                } label: {
+                    Label(Timestamp.format(direto.segundosDeAula), systemImage: "stop.circle.fill").monospacedDigit()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .help("A captar em direto: mostrar a janela da captação")
+            } else {
+                Button(action: aoTranscrever) {
+                    Label("Transcrever", systemImage: "record.circle").fontWeight(.semibold)
+                }
+                .buttonStyle(.borderedProminent)
+                .help("Transcrever em direto (⇧⌘L)")
+            }
+        }
+        .labelStyle(.titleAndIcon)
+        .buttonBorderShape(.capsule)
     }
 }
 #endif

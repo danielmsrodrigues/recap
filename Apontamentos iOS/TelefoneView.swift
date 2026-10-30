@@ -6,7 +6,7 @@ struct TelefoneView: View {
     @Environment(Navegacao.self) private var navegacao
     var inicial: URL?
 
-    enum Separador: Hashable { case hoje, cadeiras, porRever, procurar }
+    enum Separador: Hashable { case hoje, cadeiras, porRever, calendario, procurar }
 
     @State private var separador: Separador = .hoje
     @State private var caminhos: [Separador: [DestinoIOS]] = [:]
@@ -17,7 +17,7 @@ struct TelefoneView: View {
 
     var body: some View {
         TabView(selection: $separador) {
-            Tab("Hoje", systemImage: "calendar", value: .hoje) {
+            Tab("Hoje", systemImage: "house", value: .hoje) {
                 pilha(.hoje) { HojeView(semestre: $semestre) { separador = .porRever } }
             }
             Tab("Cadeiras", systemImage: "square.grid.2x2", value: .cadeiras) {
@@ -27,6 +27,9 @@ struct TelefoneView: View {
                 pilha(.porRever) { PorReverView() }
             }
             .badge(Revisao.porRever(library.cadeiras).count)
+            Tab("Calendário", systemImage: "calendar", value: .calendario) {
+                pilha(.calendario) { CalendarioIOS() }
+            }
             Tab(value: .procurar, role: .search) {
                 pilha(.procurar) { ProcurarView(termo: termo) }
                     // Só no separador Procurar: o campo fica na barra de separadores.
