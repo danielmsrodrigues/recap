@@ -86,7 +86,8 @@ enum SeccoesApontamentos {
             }
         }
 
-        for linha in markdown.components(separatedBy: "\n") {
+        // Um ficheiro com quebras de linha do Windows deixava "\r" no fim dos títulos ("Resumo\r" não era o resumo).
+        for linha in markdown.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n") {
             let aparada = linha.trimmingCharacters(in: .whitespaces)
             if aparada.hasPrefix("```") || aparada.hasPrefix("~~~") { emCodigo.toggle() }
             if !emCodigo, linha.hasPrefix("## ") {

@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// A janela do iPad e do iPhone: só leitura dos apontamentos, com o painel Estudo à mão. No iPhone, separadores
-/// (`TelefoneView`); no iPad (e com largura de iPad), as três colunas do Mac (`TabletView`).
+/// A janela do iPad e do iPhone: só leitura dos apontamentos, com o painel Estudo ao lado. No iPhone, separadores
+/// (`TelefoneView`); no iPad, as três colunas do Mac (`TabletView`).
 struct ContentViewIOS: View {
     @State private var library: Library
     @State private var definicoes: Definicoes
@@ -12,7 +12,6 @@ struct ContentViewIOS: View {
     /// `APONTAMENTOS_SELECIONAR="<título>"` (só em DEBUG): abre essa aula, para capturas e testes.
     @State private var inicial: URL?
     @Environment(\.scenePhase) private var fase
-    @Environment(\.horizontalSizeClass) private var largura
 
     init(raiz: URL) {
         let definicoes = Definicoes()
@@ -32,7 +31,9 @@ struct ContentViewIOS: View {
 
     var body: some View {
         Group {
-            if largura == .compact {
+            // Pelo aparelho e não pela largura: um iPhone grande deitado, ou o iPad em Split View, mudavam de
+            // vista a meio e perdia-se onde se estava. O NavigationSplitView do iPad já se recolhe quando é estreito.
+            if UIDevice.current.userInterfaceIdiom == .phone {
                 TelefoneView(inicial: inicial)
             } else {
                 TabletView(inicial: inicial)
@@ -45,7 +46,6 @@ struct ContentViewIOS: View {
         .environment(fichas)
         .environment(navegacao)
         .task { library.vigiar() }
-        .refreshable { atualizar() }
         .onChange(of: fase) { if fase == .active { atualizar() } }
         .onReceive(NotificationCenter.default.publisher(for: .abrirDefinicoes)) { _ in verDefinicoes = true }
         .sheet(isPresented: $verDefinicoes) {

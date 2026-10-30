@@ -12,10 +12,12 @@ enum DestinoIOS: Hashable {
 }
 
 extension Library {
-    /// A cor de uma cadeira, diferente da das outras (ver `Revisao.matizes`). Clara no modo escuro e mais
-    /// carregada no modo claro, para o texto nessa cor se ler nos dois.
+    /// A cor de uma cadeira, diferente da das outras do mesmo semestre (ver `Revisao.matizes`): um semestre a
+    /// mais não muda as cores deste. Clara no modo escuro e mais carregada no modo claro, para o texto nessa cor
+    /// se ler nos dois.
     func cor(_ cadeira: String) -> Color {
-        let h = Revisao.matizes(cadeiras.map(\.nome))[cadeira] ?? 0.6
+        let semestre = cadeiras.first { $0.nome == cadeira }?.semestre
+        let h = Revisao.matizes(cadeiras.filter { $0.semestre == semestre }.map(\.nome))[cadeira] ?? 0.6
         return Color(UIColor { t in
             t.userInterfaceStyle == .dark ? UIColor(hue: h, saturation: 0.5, brightness: 0.9, alpha: 1)
                 : UIColor(hue: h, saturation: 0.75, brightness: 0.72, alpha: 1)
@@ -133,10 +135,12 @@ final class AvisoRevista {
 
     private(set) var atual: Aviso?
     private var fecho: Task<Void, Never>?
+    /// O último erro ao gravar (o iPhone mostra-o num alerta): o iCloud pode recusar a escrita.
+    var erro: String?
 
-    /// `mostrar`: com o aviso (marcar dentro da aula). Nas listas não aparece.
-    func marcar(_ aula: Aula, revista: Bool, library: Library, mostrar: Bool) {
-        try? library.definirRevista(revista, em: aula.pasta)
+    /// `mostrar`: com o aviso (por exemplo, não ao desmarcar). Se não se conseguir gravar, lança e não há aviso.
+    func marcar(_ aula: Aula, revista: Bool, library: Library, mostrar: Bool) throws {
+        try library.definirRevista(revista, em: aula.pasta)
         fecho?.cancel()
         guard revista, mostrar else {
             atual = nil
@@ -150,10 +154,10 @@ final class AvisoRevista {
         }
     }
 
-    func desfazer(_ library: Library) {
+    func desfazer(_ library: Library) throws {
         guard let atual else { return }
-        try? library.definirRevista(false, em: atual.aula.pasta)
         fechar()
+        try library.definirRevista(false, em: atual.aula.pasta)
     }
 
     func fechar() {
@@ -193,10 +197,15 @@ struct VistaAvisoRevista: View {
 struct TextoApontamentos: View {
     let markdown: String
     let pastaAula: URL
-    @State private var altura: CGFloat = 24
+    /// Guardada por quem a mostra: ao voltar a abrir uma secção, a vista já nasce com a altura certa.
+    @Binding var altura: CGFloat
+    var aoClicarTimestamp: ((Double) -> Void)?
+    var aoClicarSeccao: ((LigacaoSeccao) -> Void)?
+    var aoPerguntar: ((String) -> Void)?
 
     var body: some View {
-        NotesWebView(markdown: markdown, modo: "embutida", pastaAula: pastaAula, aoMudarAltura: { altura = $0 })
+        NotesWebView(markdown: markdown, aoClicarTimestamp: aoClicarTimestamp, modo: "embutida", pastaAula: pastaAula,
+                     aoPerguntar: aoPerguntar, aoClicarSeccao: aoClicarSeccao, aoMudarAltura: { altura = $0 })
             .frame(height: max(altura, 24))
     }
 }

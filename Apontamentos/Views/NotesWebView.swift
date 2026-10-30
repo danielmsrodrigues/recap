@@ -267,6 +267,15 @@ struct NotesWebView {
             renderPendente()
         }
 
+        /// O sistema matou o processo da página (pouca memória, muitas secções abertas no iPhone): sem isto, ficava
+        /// em branco. Volta a carregá-la e a desenhar o que lá estava.
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            carregado = false
+            if let mostrado { pendente = (mostrado, false) }
+            mostrado = nil
+            webView.reload()
+        }
+
         /// Links externos abrem no browser; a página não navega.
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
             guard action.navigationType == .linkActivated, let url = action.request.url else { return .allow }

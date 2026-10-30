@@ -1,27 +1,35 @@
 import SwiftUI
 
 /// Uma aula para ler, no iPhone e no iPad: o resumo e as secções dos apontamentos, que abrem e fecham, e
-/// "Marcar como revista". A transcrição, os slides e as perguntas ficam no menu, fora do caminho.
+/// "Marcar como revista". O painel Estudo abre ao lado (no iPhone, onde não cabe, por baixo); a transcrição,
+/// os slides e os materiais ficam no menu.
 struct AulaLeitura: View {
     let pasta: URL
     @Environment(Library.self) private var library
     @Environment(Navegacao.self) private var navegacao
     @Environment(Estudo.self) private var estudo
+    @Environment(\.horizontalSizeClass) private var largura
     /// Só no iPhone: marcar dentro da aula mostra o aviso com a próxima.
     @Environment(AvisoRevista.self) private var aviso: AvisoRevista?
     @AppStorage("ultimaAulaLida") private var ultimaLida = ""
+    /// No iPad o painel Estudo fica aberto de uma aula para a outra; no iPhone abre só quando se pede.
+    @AppStorage("mostrarEstudo") private var estudoGuardado = true
+    @State private var estudoAqui = false
 
     @State private var partes: SeccoesApontamentos.Partidos?
     @State private var abertas: Set<Int> = [0]
-    @State private var perguntar = false
+    /// A altura de cada secção já desenhada: ao abrir de novo, não começa pequena e salta.
+    @State private var alturas: [Int: CGFloat] = [:]
     @State private var verCompleta = false
+    @State private var erro: String?
 
     private var aula: Aula? { library.aula(em: pasta) }
+    private var mostrarEstudo: Binding<Bool> { largura == .compact ? $estudoAqui : $estudoGuardado }
 
     var body: some View {
         if let aula {
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     cabecalho(aula)
                     if let partes {
                         conteudo(partes, aula: aula)
@@ -39,8 +47,13 @@ struct AulaLeitura: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { barra(aula) }
-            .navigationDestination(isPresented: $verCompleta) { AulaDetailView(aula: aula) }
-            .sheet(isPresented: $perguntar) { painelEstudo(aula) }
+            .navigationDestination(isPresented: $verCompleta) { AulaCompletaIOS(aula: aula) }
+            .modifier(ComEstudo(aula: aula, mostrar: mostrarEstudo))
+            .alert("Não foi possível marcar a aula", isPresented: Binding(get: { erro != nil }, set: { if !$0 { erro = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(erro ?? "")
+            }
             .task(id: "\(pasta.path)#\(library.versao)") { await carregar() }
             .onAppear { ultimaLida = pasta.path }
         } else {
@@ -65,7 +78,7 @@ struct AulaLeitura: View {
         if let resumo = partes.resumo, !resumo.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Resumo").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
-                TextoApontamentos(markdown: resumo, pastaAula: aula.pasta)
+                texto(resumo, aula: aula, altura: -1)
             }
             .padding(16)
             .background(.background.secondary, in: .rect(cornerRadius: 22))
@@ -86,8 +99,7 @@ struct AulaLeitura: View {
                     if i > 0 { Divider() }
                     DisclosureGroup(isExpanded: Binding(get: { abertas.contains(i) },
                                                         set: { if $0 { abertas.insert(i) } else { abertas.remove(i) } })) {
-                        TextoApontamentos(markdown: seccao.corpo, pastaAula: aula.pasta)
-                            .padding(.top, 8)
+                        texto(seccao.corpo, aula: aula, altura: i).padding(.top, 8)
                     } label: {
                         HStack(alignment: .firstTextBaseline, spacing: 12) {
                             Text("\(i + 1)").font(.footnote.weight(.semibold).monospacedDigit()).foregroundStyle(.tertiary)
@@ -104,6 +116,20 @@ struct AulaLeitura: View {
             .background(.background.secondary, in: .rect(cornerRadius: 22))
         }
         botaoRevista(aula).padding(.top, 24)
+    }
+
+    /// O texto de uma secção, com os `[mm:ss]` (vão para a transcrição), os links para outras secções e
+    /// "Perguntar" sobre o que se seleciona. `altura`: a chave da altura guardada (-1 = o resumo).
+    private func texto(_ markdown: String, aula: Aula, altura: Int) -> some View {
+        TextoApontamentos(markdown: markdown, pastaAula: aula.pasta,
+                          altura: Binding(get: { alturas[altura] ?? 24 }, set: { alturas[altura] = $0 }),
+                          aoClicarTimestamp: { navegacao.destino = DestinoAula(pasta: aula.pasta, separador: .transcricao, tempo: $0) },
+                          aoClicarSeccao: { navegacao.destino = estudo.destino($0, aPartirDe: aula) },
+                          aoPerguntar: { texto in
+                              estudo.citar(CitacaoPergunta(texto: texto, origem: .apontamentos), em: aula)
+                              UserDefaults.standard.set(SeccaoEstudo.perguntas.rawValue, forKey: "seccaoEstudo")
+                              mostrarEstudo.wrappedValue = true
+                          })
     }
 
     @ViewBuilder private func botaoRevista(_ aula: Aula) -> some View {
@@ -130,39 +156,26 @@ struct AulaLeitura: View {
                 .tint(aula.meta.revista ? .green : nil)
         }
         ToolbarItem(placement: .primaryAction) {
-            Menu("Mais", systemImage: "ellipsis") {
-                Button("Perguntar à aula", systemImage: "bubble.left.and.text.bubble.right") { perguntar = true }
-                Button("Transcrição, slides e materiais", systemImage: "doc.text.magnifyingglass") { verCompleta = true }
-            }
+            Button("Estudo", systemImage: "bubble.left.and.text.bubble.right") { mostrarEstudo.wrappedValue.toggle() }
+                .help("Perguntas, exercícios e ligações sobre esta aula")
         }
-    }
-
-    private func painelEstudo(_ aula: Aula) -> some View {
-        NavigationStack {
-            PainelEstudo(aula: aula) { segundos in
-                perguntar = false
-                navegacao.destino = DestinoAula(pasta: aula.pasta, separador: .transcricao, tempo: segundos)
-            } aoClicarSeccao: { ligacao in
-                perguntar = false
-                navegacao.destino = estudo.destino(ligacao, aPartirDe: aula)
-            } aoAbrirAula: { outra in
-                perguntar = false
-                navegacao.destino = DestinoAula(pasta: outra, separador: .apontamentos)
-            }
-            .navigationTitle("Estudo")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Fechar") { perguntar = false } }
+        ToolbarItem(placement: .primaryAction) {
+            Menu("Mais", systemImage: "ellipsis") {
+                Button("Transcrição, slides e materiais", systemImage: "doc.text.magnifyingglass") { verCompleta = true }
             }
         }
     }
 
     private func marcar(_ aula: Aula) {
         let revista = !aula.meta.revista
-        if let aviso {
-            aviso.marcar(aula, revista: revista, library: library, mostrar: true)
-        } else {
-            try? library.definirRevista(revista, em: aula.pasta)
+        do {
+            if let aviso {
+                try aviso.marcar(aula, revista: revista, library: library, mostrar: true)
+            } else {
+                try library.definirRevista(revista, em: aula.pasta)
+            }
+        } catch {
+            erro = error.localizedDescription
         }
     }
 
@@ -172,6 +185,52 @@ struct AulaLeitura: View {
         let md = await Task.detached { Disco.lerApontamentos(pasta) }.value
         guard let md else { partes = nil; return }
         let novas = SeccoesApontamentos.partir(md)
-        if novas != partes { partes = novas }
+        guard novas != partes else { return }
+        // Os apontamentos mudaram (gerados de novo no Mac): as secções podem já não ser as mesmas.
+        if let antigas = partes, antigas.seccoes.count != novas.seccoes.count {
+            abertas = abertas.filter { novas.seccoes.indices.contains($0) }
+            alturas = [:]
+        }
+        partes = novas
+    }
+}
+
+/// A aula completa (apontamentos, transcrição, slides e materiais), com o painel Estudo ao lado.
+struct AulaCompletaIOS: View {
+    let aula: Aula
+    /// O mesmo interruptor da barra da `AulaDetailView`.
+    @AppStorage("mostrarEstudo") private var mostrarEstudo = true
+
+    var body: some View {
+        AulaDetailView(aula: aula).modifier(ComEstudo(aula: aula, mostrar: $mostrarEstudo))
+    }
+}
+
+/// O painel Estudo (perguntas, exercícios, ligações) ao lado da aula: no iPad, uma coluna à direita; no iPhone,
+/// onde não cabe, uma folha que se puxa. Um link para outra aula ou para a transcrição fecha a folha do iPhone.
+struct ComEstudo: ViewModifier {
+    let aula: Aula
+    @Binding var mostrar: Bool
+    @Environment(Navegacao.self) private var navegacao
+    @Environment(Estudo.self) private var estudo
+    @Environment(\.horizontalSizeClass) private var largura
+
+    func body(content: Content) -> some View {
+        content.inspector(isPresented: $mostrar) {
+            PainelEstudo(aula: aula) { segundos in
+                ir(DestinoAula(pasta: aula.pasta, separador: .transcricao, tempo: segundos))
+            } aoClicarSeccao: { ligacao in
+                ir(estudo.destino(ligacao, aPartirDe: aula))
+            } aoAbrirAula: { outra in
+                ir(DestinoAula(pasta: outra, separador: .apontamentos))
+            }
+            .inspectorColumnWidth(min: 320, ideal: 380, max: 560)
+            .presentationDetents([.medium, .large])
+        }
+    }
+
+    private func ir(_ destino: DestinoAula?) {
+        if largura == .compact { mostrar = false }
+        navegacao.destino = destino
     }
 }

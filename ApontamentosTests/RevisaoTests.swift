@@ -84,6 +84,13 @@ struct RevisaoTests {
         #expect(a.seccoes[1].corpo == "Abiertos y cerrados: $[a, b]$.")
     }
 
+    @Test func quebrasDeLinhaDoWindows() {
+        let a = SeccoesApontamentos.partir("# Tema\r\n\r\n## Resumo\r\nCurto.\r\n\r\n## Parte 1\r\nTexto.")
+        #expect(a.titulo == "Tema")
+        #expect(a.resumo == "Curto.")
+        #expect(a.seccoes.map(\.titulo) == ["Parte 1"])
+    }
+
     @Test func semTitulosFicaTudoNumaSeccao() {
         let a = SeccoesApontamentos.partir("Só texto, sem títulos.")
         #expect(a.titulo == nil && a.resumo == nil)

@@ -36,11 +36,17 @@ struct TabletView: View {
         } detail: {
             NavigationStack { detalhe }
         }
+        // Resultados da pesquisa e links do painel Estudo (ver o mesmo no `TelefoneView`).
         .onChange(of: navegacao.destino) { _, destino in
             guard let destino else { return }
             termo = ""
+            if destino.pasta.lastPathComponent == FichaCadeira.fichaMD {
+                selecao = .sobre(destino.pasta.deletingLastPathComponent())
+                return
+            }
             let simples = destino.tempo == nil && destino.termos.isEmpty && destino.seccao == nil && destino.separador == .apontamentos
             selecao = simples ? .aula(destino.pasta) : .completa(destino.pasta)
+            if simples { navegacao.destino = nil }
         }
         .task {
             if let inicial {
@@ -72,6 +78,7 @@ struct TabletView: View {
                 }
             }
         }
+        .refreshable { library.recarregar(forcar: true) }
         .navigationTitle("Recap")
         .searchable(text: $termo, placement: .sidebar, prompt: "Procurar")
         .toolbar {
@@ -108,6 +115,7 @@ struct TabletView: View {
                     .tag(Selecao.aula(aula.pasta))
                 }
             }
+            .refreshable { library.recarregar(forcar: true) }
             .navigationTitle(titulo)
             .navigationSubtitle(aulas.count == 1 ? "1 aula" : "\(aulas.count) aulas")
             .overlay {
@@ -130,7 +138,7 @@ struct TabletView: View {
         switch selecao {
         case .aula(let pasta): AulaLeitura(pasta: pasta).id(pasta)
         case .completa(let pasta):
-            if let aula = library.aula(em: pasta) { AulaDetailView(aula: aula).id(pasta) }
+            if let aula = library.aula(em: pasta) { AulaCompletaIOS(aula: aula).id(pasta) }
         case .sobre(let pasta):
             if let cadeira = library.cadeiras.first(where: { $0.pasta.mesmoCaminho(pasta) }) {
                 FichaCadeiraView(cadeira: cadeira).id(pasta).navigationBarTitleDisplayMode(.inline)

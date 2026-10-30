@@ -265,7 +265,8 @@ details.resolucao > summary {
 details.resolucao > blockquote { margin-top: 0.6em; }
 
 /* Uma secção dos apontamentos dentro de uma vista nativa (iPhone, iPad): sem folha nem margens, à letra do sistema. */
-html.embutida, html.embutida body { background: transparent; font-size: 17px; line-height: 1.55; }
+/* -apple-system-body: o tamanho de letra do sistema (Dynamic Type), como os títulos nativos à volta. */
+html.embutida, html.embutida body { background: transparent; font: -apple-system-body; line-height: 1.55; }
 html.embutida main { max-width: none; padding: 0; }
 html.embutida main > :first-child { margin-top: 0; }
 html.embutida main > :last-child { margin-bottom: 0; }

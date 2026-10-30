@@ -38,19 +38,31 @@ struct TelefoneView: View {
                     aviso.fechar()
                     abrir(.aula(proxima.pasta), substituindo: true)
                 } aoDesfazer: {
-                    aviso.desfazer(library)
+                    do { try aviso.desfazer(library) } catch { aviso.erro = error.localizedDescription }
                 }
                 .padding(.bottom, 70)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .environment(aviso)
+        .alert("Não foi possível gravar", isPresented: Binding(get: { aviso.erro != nil }, set: { if !$0 { aviso.erro = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(aviso.erro ?? "")
+        }
         .onChange(of: separador) { aviso.fechar() }
-        // Resultados da pesquisa e links do painel Estudo: com um momento ou um texto a realçar, abre a aula completa.
+        // Resultados da pesquisa e links do painel Estudo: com um momento ou um texto a realçar, abre a aula completa
+        // (que o aplica e o apaga); uma ficha de cadeira abre "Sobre a cadeira" (idem).
         .onChange(of: navegacao.destino) { _, destino in
             guard let destino else { return }
+            if destino.pasta.lastPathComponent == FichaCadeira.fichaMD {
+                abrir(.sobre(destino.pasta.deletingLastPathComponent()), substituindo: false)
+                return
+            }
             let simples = destino.tempo == nil && destino.termos.isEmpty && destino.seccao == nil && destino.separador == .apontamentos
             abrir(simples ? .aula(destino.pasta) : .completa(destino.pasta), substituindo: false)
+            // A leitura não usa o pedido: se ficasse, a aula completa aplicava-o mais tarde.
+            if simples { navegacao.destino = nil }
         }
         .task {
             if let inicial { abrir(.aula(inicial), substituindo: false) }
@@ -61,9 +73,10 @@ struct TelefoneView: View {
         NavigationStack(path: Binding(get: { caminhos[s] ?? [] }, set: { caminhos[s] = $0 })) {
             raiz().navigationDestination(for: DestinoIOS.self) { destino in
                 switch destino {
-                case .aula(let pasta): AulaLeitura(pasta: pasta)
+                // Pela pasta: a "Próxima" troca a aula no mesmo sítio da pilha, e as secções abertas são de outra.
+                case .aula(let pasta): AulaLeitura(pasta: pasta).id(pasta)
                 case .completa(let pasta):
-                    if let aula = library.aula(em: pasta) { AulaDetailView(aula: aula) }
+                    if let aula = library.aula(em: pasta) { AulaCompletaIOS(aula: aula).id(pasta) }
                 case .cadeira(let pasta): CadeiraView(pasta: pasta)
                 case .sobre(let pasta):
                     if let cadeira = library.cadeiras.first(where: { $0.pasta.mesmoCaminho(pasta) }) {
@@ -149,6 +162,7 @@ private struct HojeView: View {
             }
             .padding(.bottom, 24)
         }
+        .refreshable { library.recarregar(forcar: true) }
         .navigationTitle("Hoje")
         .navigationSubtitle(Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide).locale(Locale(identifier: "pt_PT"))))
         .toolbar {
@@ -214,6 +228,7 @@ private struct CadeirasView: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 24)
         }
+        .refreshable { library.recarregar(forcar: true) }
         .navigationTitle("Cadeiras")
         .toolbar { ToolbarItem(placement: .topBarTrailing) { SeletorSemestre(semestre: $semestre) } }
         .overlay {
@@ -294,11 +309,16 @@ struct CadeiraView: View {
         }
     }
 
+    /// Com o aviso ao marcar, para se poder desfazer um toque por engano.
     private func marcar(_ aula: Aula) {
-        if let aviso {
-            aviso.marcar(aula, revista: !aula.meta.revista, library: library, mostrar: false)
-        } else {
-            try? library.definirRevista(!aula.meta.revista, em: aula.pasta)
+        do {
+            if let aviso {
+                try aviso.marcar(aula, revista: !aula.meta.revista, library: library, mostrar: true)
+            } else {
+                try library.definirRevista(!aula.meta.revista, em: aula.pasta)
+            }
+        } catch {
+            aviso?.erro = error.localizedDescription
         }
     }
 }
@@ -317,7 +337,11 @@ private struct PorReverView: View {
                     Section {
                         ForEach(aulas) { aula in
                             HStack(spacing: 12) {
-                                BotaoRevista(aula: aula) { aviso.marcar(aula, revista: true, library: library, mostrar: false) }
+                                // Com o aviso: a aula sai da lista, e um toque por engano desfaz-se.
+                                BotaoRevista(aula: aula) {
+                                    do { try aviso.marcar(aula, revista: true, library: library, mostrar: true) }
+                                    catch { aviso.erro = error.localizedDescription }
+                                }
                                 NavigationLink(value: DestinoIOS.aula(aula.pasta)) {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(aula.meta.titulo)
@@ -337,6 +361,7 @@ private struct PorReverView: View {
                 }
             }
         }
+        .refreshable { library.recarregar(forcar: true) }
         .navigationTitle("Por rever")
         .navigationSubtitle(porRever.isEmpty ? "" : "\(porRever.count) \(porRever.count == 1 ? "aula" : "aulas") · toca no círculo para marcar")
         .overlay {
