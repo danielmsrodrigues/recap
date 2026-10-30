@@ -29,13 +29,17 @@ struct ContentView: View {
     static let extensoes: Set<String> = ["mp4", "mov", "m4v", "mkv"]
     static let tiposVideo: [UTType] = [.mpeg4Movie, .quickTimeMovie, .movie] + [UTType(filenameExtension: "mkv")].compactMap { $0 }
 
-    var body: some View {
-        // Três colunas, como no Notas e no Mail: as listas e as cadeiras, as aulas, a aula.
+    private var barraLateral: some View {
+        BarraLateral(filtro: $filtro, semestre: $semestre, aEditarCadeira: $aEditarCadeira, aoAbrirAula: { selecao = $0 }) {
+            criarCadeira = true
+        }
+        .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 320)
+    }
+
+    /// Três colunas, como no Notas e no Mail: as listas e as cadeiras, as aulas, a aula.
+    private var tresColunas: some View {
         NavigationSplitView {
-            BarraLateral(filtro: $filtro, semestre: $semestre, aEditarCadeira: $aEditarCadeira, aoAbrirAula: { selecao = $0 }) {
-                criarCadeira = true
-            }
-            .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 320)
+            barraLateral
         } content: {
             ListaAulas(filtro: filtro, semestre: semestre, selecao: $selecao, pesquisa: $pesquisa) { configurarDireto = true }
                 .navigationSplitViewColumnWidth(min: 300, ideal: 330, max: 440)
@@ -54,6 +58,25 @@ struct ContentView: View {
                     .navigationSplitViewColumnWidth(min: 520, ideal: 900)
             }
         }
+    }
+
+    var body: some View {
+        Group {
+            if filtro == .calendario {
+                // Duas colunas: o mês ocupa o lugar da lista e da aula, como no design. Clicar numa aula abre-a.
+                NavigationSplitView {
+                    barraLateral
+                } detail: {
+                    CalendarioView(aoTranscrever: { configurarDireto = true }) { pasta in
+                        // A aula que já estava escolhida não muda a seleção: sai-se do calendário à mão.
+                        if selecao.map({ $0.mesmoCaminho(pasta) }) == true { filtro = .todas } else { selecao = pasta }
+                    }
+                        .navigationSplitViewColumnWidth(min: 700, ideal: 1100)
+                }
+            } else {
+                tresColunas
+            }
+        }
         // Sem mínimo, a lista do meio podia ficar com a janela toda e o Início, espremido, com uma letra por linha.
         .frame(minWidth: 1000, minHeight: 600)
         // "Início" fecha a aula; uma cadeira abre "Sobre a cadeira", como no design.
@@ -66,10 +89,11 @@ struct ContentView: View {
             default: break
             }
         }
-        // Uma aula aberta pela pesquisa ou por um link: sai do Início, e o semestre passa a ser o dela.
+        // Uma aula aberta pela pesquisa, por um link ou pelo calendário: sai do Início ou do calendário, e o semestre
+        // passa a ser o dela.
         .onChange(of: selecao) { _, nova in
             guard let nova else { return }
-            if filtro == .inicio { filtro = .todas }
+            if filtro == .inicio || filtro == .calendario { filtro = .todas }
             if let cadeira = library.cadeiras.first(where: { nova.path.hasPrefix($0.pasta.path + "/") }),
                cadeira.semestre != (semestre ?? library.semestres.first) {
                 semestre = cadeira.semestre
@@ -181,6 +205,8 @@ struct ContentView: View {
                 fila.adicionar(Job(pastaAula: aula.pasta, titulo: aula.meta.titulo, video: nil,
                                    gerarApontamentos: true, soApontamentos: true))
             }
+            // `APONTAMENTOS_CALENDARIO=1`: abre o calendário.
+            if ProcessInfo.processInfo.environment["APONTAMENTOS_CALENDARIO"] == "1" { filtro = .calendario }
             // `APONTAMENTOS_PREPARAR=1`: abre o assistente "Preparar o Recap".
             if ProcessInfo.processInfo.environment["APONTAMENTOS_PREPARAR"] == "1" { preparar = true }
             // `APONTAMENTOS_PESQUISA="<texto>"`: pesquisa em todas as aulas.

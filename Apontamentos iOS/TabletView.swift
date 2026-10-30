@@ -7,7 +7,7 @@ struct TabletView: View {
     @Environment(Navegacao.self) private var navegacao
     var inicial: URL?
 
-    enum Filtro: Hashable { case porRever, todas, cadeira(URL) }
+    enum Filtro: Hashable { case porRever, calendario, todas, cadeira(URL) }
     enum Selecao: Hashable { case aula(URL), completa(URL), sobre(URL) }
 
     @State private var filtro: Filtro? = .porRever
@@ -23,18 +23,34 @@ struct TabletView: View {
     private var aulas: [Aula] {
         switch filtro {
         case .porRever, nil: Revisao.porRever(library.cadeiras)
-        case .todas: library.cadeiras.flatMap(\.aulas).sorted { $0.meta.data > $1.meta.data }
+        case .calendario, .todas: library.cadeiras.flatMap(\.aulas).sorted { $0.meta.data > $1.meta.data }
         case .cadeira: cadeiraEscolhida?.aulas.sorted { $0.meta.data > $1.meta.data } ?? []
         }
     }
 
     var body: some View {
-        NavigationSplitView {
-            barraLateral
-        } content: {
-            lista
-        } detail: {
-            NavigationStack { detalhe }
+        Group {
+            if filtro == .calendario {
+                // Duas colunas: o mês ocupa o lugar da lista e da aula, como no Mac. Tocar numa aula abre-a.
+                NavigationSplitView {
+                    barraLateral
+                } detail: {
+                    NavigationStack {
+                        CalendarioIOS { pasta in
+                            selecao = .aula(pasta)
+                            filtro = .todas
+                        }
+                    }
+                }
+            } else {
+                NavigationSplitView {
+                    barraLateral
+                } content: {
+                    lista
+                } detail: {
+                    NavigationStack { detalhe }
+                }
+            }
         }
         // Resultados da pesquisa e links do painel Estudo (ver o mesmo no `TelefoneView`).
         .onChange(of: navegacao.destino) { _, destino in
@@ -62,6 +78,7 @@ struct TabletView: View {
                 Label("Por rever", systemImage: "circle.inset.filled")
                     .badge(Revisao.porRever(library.cadeiras).count)
                     .tag(Filtro.porRever)
+                Label("Calendário", systemImage: "calendar").tag(Filtro.calendario)
                 Label("Todas as aulas", systemImage: "list.bullet")
                     .badge(library.cadeiras.reduce(0) { $0 + $1.aulas.count })
                     .tag(Filtro.todas)
@@ -129,7 +146,7 @@ struct TabletView: View {
     private var titulo: String {
         switch filtro {
         case .porRever, nil: "Por rever"
-        case .todas: "Todas as aulas"
+        case .calendario, .todas: "Todas as aulas"
         case .cadeira: cadeiraEscolhida?.nome ?? ""
         }
     }

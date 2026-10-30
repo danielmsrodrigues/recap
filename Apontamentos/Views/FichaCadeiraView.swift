@@ -43,10 +43,10 @@ struct FichaCadeiraView: View {
                 ContentUnavailableView {
                     Label("Ainda sem informação sobre a cadeira", systemImage: "info.circle")
                 } description: {
-                    Text("A apresentação, a avaliação, as datas e os avisos que o professor der nas aulas juntam-se aqui, numa só ficha que vai crescendo de aula para aula. Para começar já com o essencial, junta a guía de estudio da cadeira.")
+                    Text("A apresentação, a avaliação, as datas e os avisos que o professor der nas aulas juntam-se aqui, numa só ficha que vai crescendo de aula para aula. Para começar já com o essencial, junta a guia de estudo da cadeira.")
                 } actions: {
                     #if os(macOS)
-                    Button("Juntar a guía de estudio (PDF)…") { escolherPrograma = true }
+                    Button("Juntar a guia de estudo (PDF)…") { escolherPrograma = true }
                         .disabled(fichas.aAtualizar(cadeira) != nil)
                     #endif
                 }
@@ -59,21 +59,21 @@ struct FichaCadeiraView: View {
             ToolbarItemGroup {
                 // Juntar, trocar e remover a guía passa por gerar a ficha com o Claude: faz-se no Mac.
                 #if os(macOS)
-                Menu("Guía de estudio", systemImage: "doc.text") {
+                Menu("Guia de estudo", systemImage: "doc.text") {
                     if temPrograma {
-                        Button("Abrir a guía") { NSWorkspace.shared.open(FichaCadeira.urlPrograma(cadeira.pasta)) }
-                        Button("Trocar a guía…") { escolherPrograma = true }
+                        Button("Abrir a guia") { NSWorkspace.shared.open(FichaCadeira.urlPrograma(cadeira.pasta)) }
+                        Button("Trocar a guia…") { escolherPrograma = true }
                         Divider()
-                        Button("Remover a guía", role: .destructive) { removerPrograma() }
+                        Button("Remover a guia", role: .destructive) { removerPrograma() }
                     } else {
-                        Button("Juntar a guía de estudio (PDF)…") { escolherPrograma = true }
+                        Button("Juntar a guia de estudo (PDF)…") { escolherPrograma = true }
                     }
                 }
                 .labelStyle(.titleAndIcon)
                 .disabled(controlador.editando || fichas.aAtualizar(cadeira) != nil)
                 #else
                 if temPrograma {
-                    Button("Guía de estudio", systemImage: "doc.text") { guiaAberta = FichaCadeira.urlPrograma(cadeira.pasta) }
+                    Button("Guia de estudo", systemImage: "doc.text") { guiaAberta = FichaCadeira.urlPrograma(cadeira.pasta) }
                         .disabled(controlador.editando)
                 }
                 #endif
@@ -108,7 +108,7 @@ struct FichaCadeiraView: View {
                 temPrograma = true
                 fichas.atualizar(nomeCadeira: cadeira.nome)
             } catch {
-                erro = "Não foi possível juntar a guía: \(error.localizedDescription)"
+                erro = "Não foi possível juntar a guia: \(error.localizedDescription)"
             }
         }
         .alert("Erro", isPresented: Binding(get: { erro != nil }, set: { if !$0 { erro = nil } }), presenting: erro) { _ in
@@ -150,7 +150,7 @@ struct FichaCadeiraView: View {
             try FichaCadeira.removerPrograma(em: cadeira.pasta)
             temPrograma = false
         } catch {
-            erro = "Não foi possível remover a guía: \(error.localizedDescription)"
+            erro = "Não foi possível remover a guia: \(error.localizedDescription)"
         }
     }
 
