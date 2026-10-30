@@ -8,6 +8,7 @@ struct AulaLeitura: View {
     @Environment(Library.self) private var library
     @Environment(Navegacao.self) private var navegacao
     @Environment(Estudo.self) private var estudo
+    @Environment(Definicoes.self) private var definicoes
     @Environment(\.horizontalSizeClass) private var largura
     /// Só no iPhone: marcar dentro da aula mostra o aviso com a próxima.
     @Environment(AvisoRevista.self) private var aviso: AvisoRevista?
@@ -22,6 +23,9 @@ struct AulaLeitura: View {
     @State private var alturas: [Int: CGFloat] = [:]
     @State private var verCompleta = false
     @State private var erro: String?
+    /// Os apontamentos tal como estão no disco, para "Ouvir".
+    @State private var markdown: String?
+    @State private var leitor = LeitorAula()
 
     private var aula: Aula? { library.aula(em: pasta) }
     private var mostrarEstudo: Binding<Bool> { largura == .compact ? $estudoAqui : $estudoGuardado }
@@ -47,6 +51,10 @@ struct AulaLeitura: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { barra(aula) }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if leitor.ativo { BarraLeitor(leitor: leitor) }
+            }
+            .onDisappear { leitor.parar() }
             .navigationDestination(isPresented: $verCompleta) { AulaCompletaIOS(aula: aula) }
             .modifier(ComEstudo(aula: aula, mostrar: mostrarEstudo))
             .alert("Não foi possível marcar a aula", isPresented: Binding(get: { erro != nil }, set: { if !$0 { erro = nil } })) {
@@ -161,6 +169,10 @@ struct AulaLeitura: View {
         }
         ToolbarItem(placement: .primaryAction) {
             Menu("Mais", systemImage: "ellipsis") {
+                Button("Ouvir a aula", systemImage: "headphones") {
+                    if let markdown { leitor.comecar(markdown, idioma: TextoFalado.idiomaVoz(definicoes.linguaApontamentos)) }
+                }
+                .disabled(markdown == nil)
                 Button("Transcrição, slides e materiais", systemImage: "doc.text.magnifyingglass") { verCompleta = true }
             }
         }
@@ -183,6 +195,7 @@ struct AulaLeitura: View {
     private func carregar() async {
         let pasta = pasta
         let md = await Task.detached { Disco.lerApontamentos(pasta) }.value
+        markdown = md
         guard let md else { partes = nil; return }
         let novas = SeccoesApontamentos.partir(md)
         guard novas != partes else { return }
