@@ -40,6 +40,8 @@ struct ContentViewIOS: View {
             }
         }
         .imagemEmGrande(navegacao)
+        // Depois de uma atualização pelo TestFlight, uma vez: o que há de novo.
+        .modifier(ComNovidades())
         .environment(library)
         .environment(definicoes)
         .environment(estudo)

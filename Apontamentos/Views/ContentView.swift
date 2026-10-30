@@ -114,6 +114,8 @@ struct ContentView: View {
         }
         .environment(aviso)
         .imagemEmGrande(navegacao)
+        // Depois de uma atualização, uma vez: o que há de novo.
+        .modifier(ComNovidades())
         // Num Mac novo (ou se faltar o Claude Code ou o modelo), o assistente abre sozinho.
         .sheet(isPresented: $preparar) { PreparacaoView() }
         .onAppear { if PreparacaoView.faltaAlgo(definicoes) { preparar = true } }
