@@ -46,6 +46,11 @@ struct ApontamentosApp: App {
                 .environment(atualizador)
         }
 
+        Window("Sobre o Recap", id: "sobre") {
+            SobreView()
+        }
+        .windowResizability(.contentSize)
+
         Window("Em direto", id: "direto") {
             DiretoView()
                 .environment(direto)
@@ -64,6 +69,7 @@ struct ApontamentosApp: App {
                 .environment(direto)
         }
         .commands {
+            ComandoSobre()
             CommandGroup(replacing: .newItem) {
                 Button("Transcrever em direto…") { NotificationCenter.default.post(name: .transcreverEmDireto, object: nil) }
                     .keyboardShortcut("l", modifiers: [.command, .shift])
@@ -91,6 +97,17 @@ struct ApontamentosApp: App {
                 .environment(library)
                 .environment(fila)
                 .environment(direto)
+        }
+    }
+}
+
+/// Recap → Sobre o Recap: a versão e o que veio com cada uma (em vez do painel "Acerca de" do sistema).
+private struct ComandoSobre: Commands {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some Commands {
+        CommandGroup(replacing: .appInfo) {
+            Button("Sobre o Recap") { openWindow(id: "sobre") }
         }
     }
 }
