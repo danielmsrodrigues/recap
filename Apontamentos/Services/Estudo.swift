@@ -303,6 +303,10 @@ final class Estudo {
     private(set) var procuraExame: (feitas: Int, total: Int)?
     private(set) var erroExame: String?
     @ObservationIgnored private var tarefaExame: Task<Void, Never>?
+    /// A procura das secções da guia nas aulas anteriores (ver `procurarSeccoesGuia`), por cadeira.
+    private(set) var procuraGuia: [URL: (feitas: Int, total: Int)] = [:]
+    private(set) var erroGuia: [URL: String] = [:]
+    @ObservationIgnored private var tarefasGuia: [URL: Task<Void, Never>] = [:]
 
     private let library: Library
     private let definicoes: Definicoes
@@ -389,6 +393,56 @@ final class Estudo {
     }
 
     func cancelarPistasExame() { tarefaExame?.cancel() }
+
+    // MARK: Progresso do programa
+
+    /// As aulas transcritas onde ainda não se sabe que secções da guia foram dadas (as novas já o guardam).
+    func aulasSemSeccoesGuia(_ cadeira: Cadeira) -> [Aula] {
+        cadeira.aulas.filter { $0.temTranscricao && Disco.lerSeccoesGuia($0.pasta) == nil }
+    }
+
+    /// Vê, aula a aula, que secções da guia foram dadas nas aulas anteriores (um pedido curto por aula). Continua
+    /// quando se muda de vista; uma aula que falhe fica por ver e as outras seguem.
+    func procurarSeccoesGuia(_ cadeira: Cadeira) {
+        let chave = cadeira.pasta
+        guard procuraGuia[chave] == nil else { return }
+        let porVer = aulasSemSeccoesGuia(cadeira)
+        guard !porVer.isEmpty else { return }
+        erroGuia[chave] = nil
+        procuraGuia[chave] = (0, porVer.count)
+        tarefasGuia[chave] = Task { [weak self] in
+            guard let self else { return }
+            defer { procuraGuia[chave] = nil; tarefasGuia[chave] = nil }
+            guard let (indice, _) = await Task.detached(operation: { GuiaEstudo.carregar(cadeira: chave) }).value else {
+                erroGuia[chave] = "Não consegui ler o índice da guia."
+                return
+            }
+            let gerador: NotesGenerator
+            do { gerador = try definicoes.gerador() } catch {
+                erroGuia[chave] = error.localizedDescription
+                return
+            }
+            var falhas = 0
+            for (i, aula) in porVer.enumerated() {
+                if Task.isCancelled { return }
+                if let t = Disco.lerTranscricao(aula.pasta) {
+                    do {
+                        let r = try await SeccoesDaAula.escolher(indice, transcricao: t, gerador: gerador)
+                        try Disco.escreverSeccoesGuia(SeccoesGuardadas(r.selecao, indice: indice), em: aula.pasta)
+                        versao += 1
+                    } catch is CancellationError {
+                        return
+                    } catch {
+                        falhas += 1
+                    }
+                }
+                procuraGuia[chave] = (i + 1, porVer.count)
+            }
+            if falhas > 0 { erroGuia[chave] = "\(falhas) \(falhas == 1 ? "aula ficou" : "aulas ficaram") por ver: tenta outra vez mais tarde." }
+        }
+    }
+
+    func cancelarSeccoesGuia(_ cadeira: Cadeira) { tarefasGuia[cadeira.pasta]?.cancel() }
 
     // MARK: Pedidos
 
