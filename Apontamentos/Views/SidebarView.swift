@@ -19,9 +19,7 @@ struct BarraLateral: View {
     @Binding var aEditarCadeira: Cadeira?
     /// Uma aula da fila, para ver o progresso.
     var aoAbrirAula: (URL) -> Void = { _ in }
-    var aoAdicionar: (Adicionar) -> Void
-
-    enum Adicionar { case direto, video, cadeira }
+    var aoNovaCadeira: () -> Void
 
     @State private var cadeiraParaLixo: Cadeira?
     @State private var erro: String?
@@ -43,7 +41,8 @@ struct BarraLateral: View {
                 Label("Por rever", systemImage: "circle.inset.filled")
                     .badge(Revisao.porRever(cadeiras).count)
                     .tag(FiltroAulas.porRever)
-                Label("Esta semana", systemImage: "calendar")
+                // Um relógio e não um calendário: são as aulas dos últimos 7 dias, não um calendário.
+                Label("Esta semana", systemImage: "clock")
                     .badge(ListaAulas.daSemana(cadeiras).count)
                     .tag(FiltroAulas.semana)
             }
@@ -113,17 +112,11 @@ struct BarraLateral: View {
                 .help("Mudar de \(library.organizacao == .ano ? "ano" : library.nomePeriodo) (a procura é em todos)")
             }
             Spacer()
-            Menu {
-                Button("Transcrever em direto…") { aoAdicionar(.direto) }
-                Button("Importar vídeo…") { aoAdicionar(.video) }
-                Button("Nova cadeira…") { aoAdicionar(.cadeira) }
-            } label: {
-                Image(systemName: "plus")
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("Transcrever, importar um vídeo ou criar uma cadeira")
+            // Por baixo das cadeiras, só cria cadeiras: transcrever e importar ficam no "Transcrever" e no Início.
+            Button("Nova cadeira…", systemImage: "plus", action: aoNovaCadeira)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .help("Nova cadeira")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -180,7 +173,27 @@ struct ListaAulas: View {
         case .semana: Self.daSemana(cadeiras)
         case .cadeira: cadeiraEscolhida?.aulas ?? []
         }
-        return lista.sorted { $0.meta.data > $1.meta.data }
+        // A mais recente primeiro; no mesmo dia, a criada por último.
+        return lista.sorted { ($0.meta.data, $0.meta.criadaEm) > ($1.meta.data, $1.meta.criadaEm) }
+    }
+
+    /// Com várias cadeiras misturadas, um cabeçalho por dia mostra a ordem (a data da aula).
+    private func porDia(_ aulas: [Aula]) -> [(dia: Date, aulas: [Aula])] {
+        var ordem: [Date] = []
+        var grupos: [Date: [Aula]] = [:]
+        for a in aulas {
+            let dia = Calendar.current.startOfDay(for: a.meta.data)
+            if grupos[dia] == nil { ordem.append(dia) }
+            grupos[dia, default: []].append(a)
+        }
+        return ordem.map { ($0, grupos[$0] ?? []) }
+    }
+
+    private func nomeDoDia(_ dia: Date) -> String {
+        if Calendar.current.isDateInToday(dia) { return "Hoje" }
+        if Calendar.current.isDateInYesterday(dia) { return "Ontem" }
+        let texto = dia.formatted(.dateTime.weekday(.wide).day().month(.wide).locale(Locale(identifier: "pt_PT")))
+        return texto.prefix(1).uppercased() + texto.dropFirst()
     }
 
     private var titulo: String {
@@ -206,13 +219,17 @@ struct ListaAulas: View {
                     SiglaCadeira(nome: cadeira.nome, lado: 26)
                 }
                 .padding(.vertical, 3)
+                .padding(.horizontal, 4)
                 .tag(FichaCadeira.url(cadeira.pasta))
             }
-            ForEach(aulas) { aula in
-                LinhaAula(aula: aula, numero: library.numeroDaAula(aula), cor: library.cor(aula.cadeira),
-                          aCorrer: fila.job(para: aula.pasta)?.estado == .aCorrer)
-                    .tag(aula.pasta)
-                    .contextMenu { menu(aula) }
+            if cadeiraEscolhida != nil {
+                ForEach(aulas) { linha($0) }
+            } else {
+                ForEach(porDia(aulas), id: \.dia) { grupo in
+                    Section(nomeDoDia(grupo.dia)) {
+                        ForEach(grupo.aulas) { linha($0) }
+                    }
+                }
             }
         }
         .overlay {
@@ -221,31 +238,32 @@ struct ListaAulas: View {
                                        systemImage: filtro == .porRever ? "checkmark.circle" : "tray")
             }
         }
-        .navigationTitle(titulo)
-        .navigationSubtitle(porRever > 0 ? "\(aulas.count) aulas · \(porRever) por rever" : "\(aulas.count) aulas")
-        .toolbar {
-            ToolbarItem {
-                if direto.ativa {
-                    Button {
-                        openWindow(id: "direto")
-                        NSApp.activate()
-                    } label: {
-                        Label(Timestamp.format(direto.segundosDeAula), systemImage: "stop.circle.fill")
-                            .monospacedDigit()
-                    }
-                    .labelStyle(.titleAndIcon)
-                    .tint(.red)
-                    .help("A captar em direto: mostrar a janela da captação")
-                } else {
-                    Button(action: aoTranscrever) {
-                        Label("Transcrever", systemImage: "record.circle")
-                    }
-                    .labelStyle(.titleAndIcon)
-                    .buttonStyle(.borderedProminent)
-                    .help("Transcrever em direto (⇧⌘L)")
+        // O título, a contagem e o "Transcrever" no topo da coluna, como no design: na barra da janela, o botão
+        // mudava de sítio conforme a aula aberta tinha botões ou não.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(titulo).font(.headline).lineLimit(1)
+                    Text(porRever > 0 ? "\(aulas.count) aulas · \(porRever) por rever" : "\(aulas.count) aulas")
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
+                .layoutPriority(1)
+                Spacer(minLength: 0)
+                // Numa coluna estreita, só o ícone: o título não fica cortado.
+                ViewThatFits(in: .horizontal) {
+                    botaoTranscrever.labelStyle(.titleAndIcon)
+                    botaoTranscrever.labelStyle(.iconOnly)
+                }
+                // Em cápsula e do tamanho grande, como no design.
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(.bar)
         }
+        .navigationTitle(titulo)
+        .toolbar(removing: .title)
         .sheet(item: $aEditarAula) { aula in
             EditarAulaSheet(aula: aula) { nova in if selecao == aula.pasta { selecao = nova } }
         }
@@ -267,6 +285,33 @@ struct ListaAulas: View {
         .alert("Erro", isPresented: Binding(get: { erro != nil }, set: { if !$0 { erro = nil } }), presenting: erro) { _ in
             Button("OK") {}
         } message: { Text($0) }
+    }
+
+    @ViewBuilder private var botaoTranscrever: some View {
+        if direto.ativa {
+            Button {
+                openWindow(id: "direto")
+                NSApp.activate()
+            } label: {
+                Label(Timestamp.format(direto.segundosDeAula), systemImage: "stop.circle.fill").monospacedDigit()
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.red)
+            .help("A captar em direto: mostrar a janela da captação")
+        } else {
+            Button(action: aoTranscrever) {
+                Label("Transcrever", systemImage: "circle.fill").fontWeight(.semibold).imageScale(.small)
+            }
+            .buttonStyle(.borderedProminent)
+            .help("Transcrever em direto (⇧⌘L)")
+        }
+    }
+
+    private func linha(_ aula: Aula) -> some View {
+        LinhaAula(aula: aula, numero: library.numeroDaAula(aula), cor: library.cor(aula.cadeira),
+                  aCorrer: fila.job(para: aula.pasta)?.estado == .aCorrer)
+            .tag(aula.pasta)
+            .contextMenu { menu(aula) }
     }
 
     @ViewBuilder private func menu(_ aula: Aula) -> some View {

@@ -9,7 +9,12 @@ extension Library {
     /// se ler nos dois.
     func cor(_ cadeira: String) -> Color {
         let semestre = cadeiras.first { $0.nome == cadeira }?.semestre
-        let h = Revisao.matizes(cadeiras.filter { $0.semestre == semestre }.map(\.nome))[cadeira] ?? 0.6
+        let doSemestre = cadeiras.filter { $0.semestre == semestre }.map { (nome: $0.nome, escolhida: $0.meta.cor) }
+        return Self.cor(matiz: Revisao.matizes(doSemestre)[cadeira] ?? 0.6)
+    }
+
+    /// Uma cor da paleta das cadeiras, para o modo claro e o escuro.
+    static func cor(matiz h: Double) -> Color {
         #if os(macOS)
         return Color(NSColor(name: nil) { aparencia in
             aparencia.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
@@ -131,40 +136,56 @@ struct VistaAvisoRevista: View {
 }
 
 
-/// A barra de capítulos por baixo dos separadores da aula: um bloco por capítulo, da largura do seu tempo, com
-/// uma marca por slide. Clicar leva a esse momento da transcrição.
+/// A barra de capítulos por baixo dos separadores da aula, como no design: um bloco por capítulo, da largura do seu
+/// tempo, com o nome e uma marca por slide. Por baixo, o início, o capítulo onde está o rato (ou o escolhido) e o
+/// fim. Clicar leva a esse momento da transcrição.
 struct LinhaCapitulos: View {
     let capitulos: [Capitulos.Capitulo]
     var aoEscolher: (Capitulos.Capitulo) -> Void
     @State private var escolhido: Double?
+    @State private var sobRato: Double?
 
     private var inicio: Double { capitulos.first?.inicio ?? 0 }
     private var fim: Double { capitulos.last?.fim ?? 1 }
 
+    private var emFoco: Capitulos.Capitulo? {
+        capitulos.first { $0.inicio == (sobRato ?? escolhido) }
+    }
+
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 5) {
             GeometryReader { g in
                 let espaco: CGFloat = 3
                 let util = max(0, g.size.width - espaco * CGFloat(capitulos.count - 1))
                 HStack(spacing: espaco) {
                     ForEach(capitulos) { c in
+                        let largura = util * CGFloat((c.fim - c.inicio) / max(1, fim - inicio))
                         Button {
                             escolhido = c.inicio
                             aoEscolher(c)
                         } label: {
-                            let largura = util * CGFloat((c.fim - c.inicio) / max(1, fim - inicio))
-                            bloco(c, comNome: largura > 70).frame(width: largura)
+                            bloco(c, comNome: largura > 44).frame(width: largura)
                         }
                         .buttonStyle(.plain)
-                        .help("\(c.titulo) · \(Self.relogio(c.inicio))–\(Self.relogio(c.fim))"
-                              + (c.slides > 0 ? " · \(c.slides) \(c.slides == 1 ? "slide" : "slides")" : ""))
+                        .onHover { dentro in
+                            if dentro { sobRato = c.inicio } else if sobRato == c.inicio { sobRato = nil }
+                        }
+                        .help(c.seccoes.count > 1 ? c.seccoes.joined(separator: "\n") : c.titulo)
                     }
                 }
             }
-            .frame(height: 28)
-            HStack {
+            .frame(height: 30)
+            HStack(spacing: 8) {
                 Text(Self.relogio(inicio))
-                Spacer()
+                Spacer(minLength: 0)
+                if let c = emFoco {
+                    Text("\(c.titulo) · \(Self.relogio(c.inicio))–\(Self.relogio(c.fim))"
+                         + (c.slides > 0 ? " · \(c.slides) \(c.slides == 1 ? "slide" : "slides")" : ""))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer(minLength: 0)
                 Text(Self.relogio(fim))
             }
             .font(.caption2.monospacedDigit())
@@ -178,24 +199,27 @@ struct LinhaCapitulos: View {
         return t >= 3600 ? String(format: "%d:%02d:%02d", t / 3600, t / 60 % 60, t % 60) : String(format: "%02d:%02d", t / 60, t % 60)
     }
 
-    /// `comNome`: num capítulo estreito, o nome cortado a uma letra não se lia; fica só a ajuda ao passar o rato.
     private func bloco(_ c: Capitulos.Capitulo, comNome: Bool) -> some View {
         let ativo = escolhido == c.inicio
+        let sob = sobRato == c.inicio
         return RoundedRectangle(cornerRadius: 6)
-            .fill(ativo ? AnyShapeStyle(Color.accentColor.opacity(0.4)) : AnyShapeStyle(.quaternary))
+            .fill(ativo ? AnyShapeStyle(Color.accentColor.opacity(0.4))
+                  : AnyShapeStyle(Color.primary.opacity(sob ? 0.13 : 0.07)))
             .overlay(alignment: .leading) {
-                Text(comNome ? c.titulo : "")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(ativo ? .primary : .secondary)
-                    .lineLimit(1)
-                    .padding(.horizontal, 8)
+                if comNome {
+                    Text(c.titulo)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(ativo ? .primary : .secondary)
+                        .lineLimit(1)
+                        .padding(.horizontal, 8)
+                }
             }
             .overlay(alignment: .bottom) {
                 // Uma marca por slide que apareceu neste capítulo.
                 HStack(spacing: 0) {
                     ForEach(0..<min(c.slides, 30), id: \.self) { _ in
                         Spacer(minLength: 0)
-                        Capsule().fill(.secondary.opacity(0.6)).frame(width: 2, height: 3)
+                        RoundedRectangle(cornerRadius: 1).fill(Color.primary.opacity(0.4)).frame(width: 2, height: 3)
                     }
                     Spacer(minLength: 0)
                 }

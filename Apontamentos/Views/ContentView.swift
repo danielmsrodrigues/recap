@@ -32,12 +32,8 @@ struct ContentView: View {
     var body: some View {
         // Três colunas, como no Notas e no Mail: as listas e as cadeiras, as aulas, a aula.
         NavigationSplitView {
-            BarraLateral(filtro: $filtro, semestre: $semestre, aEditarCadeira: $aEditarCadeira, aoAbrirAula: { selecao = $0 }) { acao in
-                switch acao {
-                case .direto: configurarDireto = true
-                case .video: importar = true
-                case .cadeira: criarCadeira = true
-                }
+            BarraLateral(filtro: $filtro, semestre: $semestre, aEditarCadeira: $aEditarCadeira, aoAbrirAula: { selecao = $0 }) {
+                criarCadeira = true
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 320)
         } content: {
@@ -48,20 +44,25 @@ struct ContentView: View {
                     ResultadosPesquisaView(termo: pesquisa).navigationTitle("Procurar")
                 }
             }
-            .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 440)
             .searchable(text: $pesquisa, placement: .sidebar, prompt: "Procurar em todas as aulas")
+            // Por fora do `.searchable`: por dentro, a largura pedida não chegava à coluna.
+            .navigationSplitViewColumnWidth(min: 280, ideal: 320, max: 440)
         } detail: {
             if let selecao, selecao.lastPathComponent == FichaCadeira.fichaMD,
                let cadeira = library.cadeiras.first(where: { $0.pasta.mesmoCaminho(selecao.deletingLastPathComponent()) }) {
                 FichaCadeiraView(cadeira: cadeira).id(cadeira.pasta)
+                    .navigationSplitViewColumnWidth(min: 520, ideal: 900)
             } else if let selecao, let aula = library.aula(em: selecao) {
                 AulaComPainel(aula: aula)
+                    .navigationSplitViewColumnWidth(min: 600, ideal: 1000)
             } else {
                 Inicio(semestre: semestre, aCaptar: direto.ativa,
                        aoTranscrever: { configurarDireto = true }, aoEscolherVideo: { importar = true },
                        aoAbrir: { selecao = $0 }, aoVerPorRever: { filtro = .porRever })
+                    .navigationSplitViewColumnWidth(min: 520, ideal: 900)
             }
         }
+        // Sem mínimo, a lista do meio podia ficar com a janela toda e o Início, espremido, com uma letra por linha.
         .frame(minWidth: 1000, minHeight: 600)
         // "Início" fecha a aula; uma cadeira abre "Sobre a cadeira", como no design.
         .onChange(of: filtro) { _, novo in
@@ -264,35 +265,8 @@ private struct Inicio: View {
                     Text(porRever.isEmpty ? "Está tudo revisto" : porRever.count == 1 ? "Tens 1 aula por rever" : "Tens \(porRever.count) aulas por rever")
                         .font(.largeTitle.bold())
                 }
-                HStack(alignment: .top, spacing: 12) {
-                    Button(action: aoTranscrever) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Label(aCaptar ? "Já há uma aula em direto" : "Transcrever em direto…", systemImage: "record.circle")
-                                .font(.title3.bold())
-                            Text("Ouve a aula ao vivo ou uma gravação no browser e escreve os apontamentos no fim.")
-                                .font(.callout).opacity(0.85)
-                            Text("⇧⌘L").font(.caption).opacity(0.7)
-                        }
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
-                        .padding(18)
-                        .background(Color.accentColor, in: .rect(cornerRadius: 16))
-                        .contentShape(.rect(cornerRadius: 16))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(aCaptar)
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Tens o vídeo da aula?").font(.title3.bold())
-                        HStack(spacing: 4) {
-                            Text("Larga-o aqui ou").foregroundStyle(.secondary)
-                            Button("escolhe o ficheiro…", action: aoEscolherVideo).buttonStyle(.link)
-                        }
-                        .font(.callout)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
-                    .padding(18)
-                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.quaternary, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])))
-                }
+                // Lado a lado: a coluna tem largura mínima, por isso cabem sempre.
+                HStack(alignment: .top, spacing: 12) { cartoes }
                 if !porRever.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(alignment: .firstTextBaseline) {
@@ -332,6 +306,37 @@ private struct Inicio: View {
         }
         .navigationTitle("Início")
     }
+
+    /// O cartão "Transcrever em direto" e o de largar o vídeo.
+    @ViewBuilder private var cartoes: some View {
+        Button(action: aoTranscrever) {
+            VStack(alignment: .leading, spacing: 6) {
+                Label(aCaptar ? "Já há uma aula em direto" : "Transcrever em direto…", systemImage: "record.circle")
+                    .font(.title3.bold())
+                Text("Ouve a aula ao vivo ou uma gravação no browser e escreve os apontamentos no fim.")
+                    .font(.callout).opacity(0.85)
+                Text("⇧⌘L").font(.caption).opacity(0.7)
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+            .padding(18)
+            .background(Color.accentColor, in: .rect(cornerRadius: 16))
+            .contentShape(.rect(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+        .disabled(aCaptar)
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Tens o vídeo da aula?").font(.title3.bold())
+            HStack(spacing: 4) {
+                Text("Larga-o aqui ou").foregroundStyle(.secondary)
+                Button("escolhe o ficheiro…", action: aoEscolherVideo).buttonStyle(.link)
+            }
+            .font(.callout)
+        }
+        .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+        .padding(18)
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.quaternary, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])))
+    }
 }
 
 /// A aula com o painel das perguntas à direita. Vive numa vista própria para o arrasto da divisória
@@ -350,9 +355,10 @@ private struct AulaComPainel: View {
         // o inspector entrava num ciclo de layout e a app fechava. (O HSplitView abria o painel largo demais.)
         HStack(spacing: 0) {
             AulaDetailView(aula: aula).id(aula.pasta)
-                .frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
+                .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
             if mostrarEstudo {
-                let largura = aArrastar ?? larguraGuardada
+                // Com três colunas, um painel largo (até 620 antes) já não cabia e o macOS escondia a barra lateral.
+                let largura = min(aArrastar ?? larguraGuardada, DivisoriaPainel.limites.upperBound)
                 DivisoriaPainel(largura: Binding(get: { largura }, set: { aArrastar = $0 })) {
                     if let final = aArrastar { larguraGuardada = final }
                     aArrastar = nil
@@ -367,6 +373,7 @@ private struct AulaComPainel: View {
                 .id(aula.pasta)
                 .frame(width: largura)
                 .frame(maxHeight: .infinity)
+                .clipped()
             }
         }
     }
@@ -377,7 +384,7 @@ private struct DivisoriaPainel: View {
     @Binding var largura: Double
     let aoTerminar: () -> Void
     @State private var inicio: Double?
-    static let limites = 260.0...620.0
+    static let limites = 260.0...460.0
 
     var body: some View {
         Rectangle()

@@ -114,6 +114,13 @@ enum TituloAula {
     /// `aula` é a palavra na língua dos apontamentos ("Aula", "Clase", "Lecture").
     static func titulo(numero: Int, tema: String, aula: String = "Aula") -> String { "\(aula) \(numero) · \(tema)" }
 
+    /// O título de uma aula nova na cadeira destas `aulas`: "Aula" e o número a seguir ao da última (pelos títulos
+    /// "Aula 3 · …", ou, sem eles, pelo número de aulas).
+    static func proximo(_ aulas: [Aula]) -> String {
+        let numeros = aulas.compactMap { separar($0.meta.titulo)?.numero }
+        return "Aula \(max(aulas.count, numeros.max() ?? 0) + 1)"
+    }
+
     /// O contrário de `titulo`, em qualquer língua dos apontamentos. nil num título escrito à mão sem número.
     static func separar(_ titulo: String) -> (numero: Int, tema: String)? {
         let p = titulo.components(separatedBy: " · ")

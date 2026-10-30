@@ -11,6 +11,8 @@ struct CadeiraMeta: Codable, Hashable, Sendable {
     var semestre: Semestre?
     /// Para uma cadeira dada noutra língua; nil = a língua das aulas das Definições.
     var idioma: IdiomaAula?
+    /// A cor escolhida à mão (índice de `Revisao.paleta`); nil = automática.
+    var cor: Int?
 
     init(glossario: String = "", regiaoIgnorar: RegiaoIgnorar = .automatica, semestre: Semestre? = nil, idioma: IdiomaAula? = nil) {
         self.glossario = glossario
@@ -25,6 +27,7 @@ struct CadeiraMeta: Codable, Hashable, Sendable {
         regiaoIgnorar = try c.decodeIfPresent(RegiaoIgnorar.self, forKey: .regiaoIgnorar) ?? .automatica
         semestre = try c.decodeIfPresent(Semestre.self, forKey: .semestre)
         idioma = try c.decodeIfPresent(IdiomaAula.self, forKey: .idioma)
+        cor = try c.decodeIfPresent(Int.self, forKey: .cor)
     }
 }
 

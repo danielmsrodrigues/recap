@@ -31,15 +31,25 @@ enum Revisao {
         return (String(primeira.prefix(1)) + String(usadas[1].prefix(1))).uppercased()
     }
 
-    /// Matizes (0–1) que não se confundem uns com os outros: azul, verde, âmbar, roxo, vermelho, turquesa, lima, anil.
-    private static let paleta: [Double] = [215, 140, 45, 285, 350, 180, 100, 255].map { $0 / 360 }
+    /// Matizes (0–1) que não se confundem uns com os outros. A cor escolhida à mão para uma cadeira é um destes
+    /// (o índice fica em `CadeiraMeta.cor`).
+    static let paleta: [Double] = [215, 140, 45, 285, 350, 180, 100, 255].map { $0 / 360 }
+    static let nomesDasCores = ["Azul", "Verde", "Âmbar", "Roxo", "Vermelho", "Turquesa", "Lima", "Anil"]
 
     /// O matiz de cada cadeira. Cada uma parte de uma cor tirada do nome (a mesma em todos os aparelhos) e, se
     /// essa já for de outra, fica com a seguinte livre: duas cadeiras nunca ficam da mesma cor (até 8).
     static func matizes(_ nomes: [String]) -> [String: Double] {
-        var livres = Array(paleta.indices)
+        matizes(nomes.map { (nome: $0, escolhida: nil) })
+    }
+
+    /// Com as cores escolhidas à mão (índices de `paleta`): essas ficam, e as automáticas não as usam.
+    static func matizes(_ cadeiras: [(nome: String, escolhida: Int?)]) -> [String: Double] {
         var resultado: [String: Double] = [:]
-        for nome in Set(nomes).sorted() {
+        for c in cadeiras {
+            if let i = c.escolhida, paleta.indices.contains(i) { resultado[c.nome] = paleta[i] }
+        }
+        var livres = paleta.indices.filter { !resultado.values.contains(paleta[$0]) }
+        for nome in Set(cadeiras.filter { resultado[$0.nome] == nil }.map(\.nome)).sorted() {
             var h: UInt64 = 5381
             for u in nome.lowercased().unicodeScalars { h = (h &* 33) &+ UInt64(u.value) }
             let preferido = Int(h % UInt64(paleta.count))
@@ -129,16 +139,34 @@ enum Capitulos {
         var inicio: Double
         var fim: Double
         var slides: Int
+        /// As secções dos apontamentos que este capítulo junta (a primeira dá o título).
+        var seccoes: [String] = []
         var id: Double { inicio }
     }
 
-    /// Vazio com menos de dois capítulos: uma barra com um só não diz nada.
-    static func calcular(_ seccoes: [SeccoesApontamentos.Seccao], duracao: Double, slides: [Double]) -> [Capitulo] {
+    /// Vazio com menos de dois capítulos: uma barra com um só não diz nada. Uma secção com menos de `minimo` da
+    /// aula junta-se à anterior: num bloco de poucos minutos não cabia o nome.
+    static func calcular(_ seccoes: [SeccoesApontamentos.Seccao], duracao: Double, slides: [Double],
+                         minimo: Double = 0.06) -> [Capitulo] {
         let comTempo = seccoes.compactMap { s in s.inicio.map { (s.titulo, $0) } }.sorted { $0.1 < $1.1 }
         guard comTempo.count >= 2 else { return [] }
-        return comTempo.enumerated().map { i, c in
-            let fim = i + 1 < comTempo.count ? comTempo[i + 1].1 : max(duracao, c.1 + 1)
-            return Capitulo(titulo: c.0, inicio: c.1, fim: fim, slides: slides.filter { $0 >= c.1 && $0 < fim }.count)
+        let fimDaAula = max(duracao, (comTempo.last?.1 ?? 0) + 1)
+        let total = fimDaAula - comTempo[0].1
+        var juntos: [Capitulo] = []
+        for (i, c) in comTempo.enumerated() {
+            let fim = i + 1 < comTempo.count ? comTempo[i + 1].1 : fimDaAula
+            if let ultimo = juntos.last, (fim - c.1) / total < minimo || (ultimo.fim - ultimo.inicio) / total < minimo {
+                juntos[juntos.count - 1].fim = fim
+                juntos[juntos.count - 1].seccoes.append(c.0)
+            } else {
+                juntos.append(Capitulo(titulo: c.0, inicio: c.1, fim: fim, slides: 0, seccoes: [c.0]))
+            }
+        }
+        guard juntos.count >= 2 else { return [] }
+        return juntos.map { c in
+            var c = c
+            c.slides = slides.filter { $0 >= c.inicio && $0 < c.fim }.count
+            return c
         }
     }
 }
