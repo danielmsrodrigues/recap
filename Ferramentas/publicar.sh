@@ -9,8 +9,11 @@ cd "${0:A:h}/.."
 versao_app=()
 [[ "${1:-}" == "--github" ]] && versao_app=("MARKETING_VERSION=${2:?indica a versão, por exemplo: --github 1.2}")
 
+# Sem a cobertura de testes (o esquema gerado liga-a) e sem os símbolos de depuração: a app passa de ~20 MB a ~7 MB.
+final=(CLANG_COVERAGE_MAPPING=NO CLANG_ENABLE_CODE_COVERAGE=NO DEPLOYMENT_POSTPROCESSING=YES STRIP_INSTALLED_PRODUCT=YES
+       DEAD_CODE_STRIPPING=YES)
 xcodebuild -project Apontamentos.xcodeproj -scheme Apontamentos -configuration Release \
-  -derivedDataPath build/DerivedData build "${versao_app[@]}" | grep -E "error|BUILD" || true
+  -derivedDataPath build/DerivedData build "${versao_app[@]}" "${final[@]}" | grep -E "error|BUILD" || true
 app=build/DerivedData/Build/Products/Release/Recap.app
 codesign --verify --deep --strict "$app"
 

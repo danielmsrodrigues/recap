@@ -139,8 +139,15 @@ final class PipelineRunner {
 
     // MARK: Slides
 
+    /// As capturas da janela, se ainda lá estiverem. Depois de extraídos os slides, a pasta é apagada: ao repetir um
+    /// trabalho que falhou mais à frente, usam-se os slides já guardados (extrair de nada apagava-os).
+    nonisolated static func capturasPorAnalisar(_ frames: URL?) -> URL? {
+        guard let frames, FileManager.default.fileExists(atPath: frames.path) else { return nil }
+        return frames
+    }
+
     private func obterSlides(_ job: Job) async throws -> [Slide] {
-        if let frames = job.framesDireto {
+        if let frames = Self.capturasPorAnalisar(job.framesDireto) {
             let cadeira = library.cadeira(nome: library.aula(em: job.pastaAula)?.cadeira ?? "")
             var config = definicoes.configSlides(regiao: cadeira?.meta.regiaoIgnorar ?? .automatica)
             config.escalaTempo = job.velocidade

@@ -214,9 +214,13 @@ struct AulaCompletaIOS: View {
     let aula: Aula
     /// O mesmo interruptor da barra da `AulaDetailView`.
     @AppStorage("mostrarEstudo") private var mostrarEstudo = true
+    @Environment(\.horizontalSizeClass) private var largura
 
     var body: some View {
         AulaDetailView(aula: aula).modifier(ComEstudo(aula: aula, mostrar: $mostrarEstudo))
+            // No iPhone o painel é uma folha por cima da aula: abre só quando se pede (como na leitura), e não
+            // porque ficou aberto na aula anterior.
+            .onAppear { if largura == .compact { mostrarEstudo = false } }
     }
 }
 

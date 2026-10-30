@@ -31,6 +31,9 @@ struct NotesWebTests {
         let md = try await pagina.web.evaluateJavaScript("obterMarkdown()") as? String
         #expect(md?.contains("$x^2$") == true)
         #expect(md?.contains("[01:05]") == true)
+        // O "Ver resolução" é só da página: gravar não o acrescenta ao ficheiro (antes, uma linha a mais por gravação).
+        #expect(md?.contains("Ver resolução") == false)
+        #expect(md?.contains("> Resolução") == true)
     }
 
     /// A resolução dos exercícios fica escondida em qualquer língua dos apontamentos.

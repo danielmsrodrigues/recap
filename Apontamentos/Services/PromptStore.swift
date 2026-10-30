@@ -40,7 +40,8 @@ enum PromptStore {
             try? repor()
             return original
         }
-        try? repor()
+        // Só se repõe quando não há ficheiro: um prompt editado que não se leu desta vez não se apaga.
+        if !FileManager.default.fileExists(atPath: url.path) { try? repor() }
         return original
     }
 

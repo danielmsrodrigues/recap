@@ -122,6 +122,11 @@ struct FichaCadeiraView: View {
                 erro = "Não foi possível juntar a guia: \(error.localizedDescription)"
             }
         }
+        .onDisappear {
+            // O que se escreveu há menos de 1,5 s ainda não foi gravado automaticamente.
+            let pasta = cadeira.pasta
+            controlador.gravarJa { try FichaCadeira.escreverFicha($0, em: pasta) }
+        }
         .alert("Erro", isPresented: Binding(get: { erro != nil }, set: { if !$0 { erro = nil } }), presenting: erro) { _ in
             Button("OK") {}
         } message: { Text($0) }

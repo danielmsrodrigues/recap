@@ -47,6 +47,8 @@ struct AulaDetailView: View {
     @State private var houveEdicao = false
     @State private var pdfPronto = false
     @State private var aCriarPDF = false
+    /// O PDF a ser refeito: cancelado ao sair da aula (senão ficavam vários a ser feitos às escondidas).
+    @State private var tarefaPDF: Task<Void, Never>?
     #if !os(macOS)
     /// PDF criado na hora para partilhar (quando o do Mac está desatualizado).
     @State private var pdfPartilhado: FicheiroPartilhado?
@@ -189,6 +191,12 @@ struct AulaDetailView: View {
         }
         #endif
         .onDisappear {
+            #if os(macOS)
+            tarefaPDF?.cancel()
+            #endif
+            // O que se escreveu há menos de 1,5 s ainda não foi gravado automaticamente.
+            let pasta = aula.pasta
+            controlador.gravarJa { try Disco.escreverApontamentos($0, em: pasta) }
             // As alterações já foram gravadas automaticamente; falta só registar que houve edição.
             if controlador.editando, houveEdicao { try? library.atualizarMeta(em: aula.pasta) { $0.editadoEm = .now } }
             if controlador.editando { largarEdicaoNasLigacoes() }
@@ -653,7 +661,7 @@ struct AulaDetailView: View {
         guard !aCriarPDF else { return }
         aCriarPDF = true
         let pasta = aula.pasta
-        Task(priority: .utility) {
+        tarefaPDF = Task(priority: .utility) {
             defer { aCriarPDF = false }
             try? await Task.sleep(for: .seconds(3))
             guard !Task.isCancelled else { return }

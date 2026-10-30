@@ -71,6 +71,9 @@ final class ExportadorPDF: NSObject, WKNavigationDelegate {
         guard ok, FileManager.default.fileExists(atPath: destino.path) else {
             throw NSError(domain: "Recap", code: 10, userInfo: [NSLocalizedDescriptionKey: "Não foi possível criar o PDF."])
         }
+        // Os slides vêm sem perdas do WebKit: em JPEG o PDF fica com cerca de um terço. Se falhar, fica o original.
+        let pdf = destino
+        try? await Task.detached { try ComprimirPDF.comprimir(pdf) }.value
     }
 
     @objc nonisolated private func terminou(_ operacao: NSPrintOperation, sucesso: Bool, contexto: UnsafeMutableRawPointer?) {
@@ -92,6 +95,12 @@ final class ExportadorPDF: NSObject, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
         carregou?.resume(throwing: error)
+        carregou = nil
+    }
+
+    /// O processo da página morreu a carregar: sem isto, a espera nunca acabava e o botão ficava "a criar o PDF".
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        carregou?.resume(throwing: NSError(domain: "Recap", code: 11, userInfo: [NSLocalizedDescriptionKey: "A página do PDF fechou-se a meio. Tenta outra vez."]))
         carregou = nil
     }
 }

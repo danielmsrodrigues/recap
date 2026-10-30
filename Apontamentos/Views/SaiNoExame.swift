@@ -35,11 +35,12 @@ struct ListaPistasExame: View {
     @Environment(Estudo.self) private var estudo
     @Environment(Navegacao.self) private var navegacao
     let cadeiras: [Cadeira]
+    /// Lidos do disco fora do fio principal, e não a cada redesenho (eram dois `exame.json` por aula de cada vez).
+    @State private var grupos: [PistasExame.Grupo] = []
+    @State private var porVer: [Aula] = []
+    @State private var lido = false
 
     var body: some View {
-        // `estudo.versao` muda quando a procura nas aulas anteriores grava pistas novas: volta a ler-se do disco.
-        let _ = estudo.versao
-        let grupos = PistasExame.porCadeira(cadeiras)
         List {
             ForEach(grupos) { grupo in
                 Section {
@@ -58,12 +59,24 @@ struct ListaPistasExame: View {
             }
         }
         .overlay {
-            if grupos.isEmpty {
+            if lido, grupos.isEmpty {
                 ContentUnavailableView("Ainda nada", systemImage: "star",
                                        description: Text("Quando um professor disser que uma matéria sai no exame, aparece aqui, com o minuto da aula."))
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { procura }
+        // `estudo.versao` muda quando a procura nas aulas anteriores grava pistas novas; `library.versao`, quando chegam
+        // aulas (do iCloud, por exemplo): volta a ler-se do disco.
+        .task(id: "\(estudo.versao)·\(library.versao)·\(cadeiras.map(\.pasta.path))") {
+            let cadeiras = cadeiras
+            let lidos = await Task.detached {
+                (PistasExame.porCadeira(cadeiras),
+                 cadeiras.flatMap(\.aulas).filter { $0.temTranscricao && Disco.lerPistasExame($0.pasta) == nil })
+            }.value
+            grupos = lidos.0
+            porVer = lidos.1
+            lido = true
+        }
     }
 
     private func abrir(_ aula: Aula, _ pista: PistasExame.Pista) {
@@ -72,7 +85,6 @@ struct ListaPistasExame: View {
 
     /// As aulas gravadas antes desta funcionalidade ainda não foram vistas: no Mac, procura-se nelas.
     @ViewBuilder private var procura: some View {
-        let porVer = estudo.aulasSemPistasExame(cadeiras.flatMap(\.aulas))
         if let p = estudo.procuraExame {
             HStack(spacing: 10) {
                 ProgressView(value: Double(p.feitas), total: Double(max(p.total, 1)))

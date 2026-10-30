@@ -132,6 +132,9 @@ struct ClaudeCodeClient: Sendable {
         do { try processo.run() } catch { throw ErroClaudeCode.falhou(error.localizedDescription) }
         let controlo = ControloProcesso(processo)
 
+        // Se o claude fechar ou for cancelado a meio, escrever no pipe dá um erro (que se ignora) e não um SIGPIPE,
+        // que fechava a app inteira (com uma captação em direto a decorrer, se houvesse).
+        _ = fcntl(entrada.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
         // Escrever e ler em paralelo: a transcrição pode ser maior do que o buffer do pipe.
         let escrita = Task.detached {
             try? entrada.fileHandleForWriting.write(contentsOf: mensagem + Data("\n".utf8))

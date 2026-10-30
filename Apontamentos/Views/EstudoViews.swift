@@ -136,8 +136,9 @@ struct PerguntasView: View {
         // `library.versao`: uma resposta pode chegar pelo iCloud (dada no Mac, ou pedida aqui ao Mac).
         .task(id: [estudo.versao, library.versao]) { perguntas = Disco.lerPerguntas(aula.pasta) }
         .task(id: aula.pasta) {
-            let usados = Set(Disco.lerPerguntas(aula.pasta).flatMap { $0.anexos ?? [] } + anexos)
-            Anexos.limparOrfaos(em: aula.pasta, usados: usados)
+            // Sem saber que anexos as perguntas usam (o ficheiro ainda não se lê), não se apaga nenhum.
+            guard let perguntas = Disco.lerPerguntasSePossivel(aula.pasta) else { return }
+            Anexos.limparOrfaos(em: aula.pasta, usados: Set(perguntas.flatMap { $0.anexos ?? [] } + anexos))
         }
         // Um trecho escolhido (ou o painel aberto por causa dele): o cursor vai para o campo.
         .task(id: estudo.pedidosCitacao) {
@@ -373,7 +374,7 @@ struct PerguntasView: View {
     private var conversa: String {
         var md = perguntas.enumerated().map { i, p in
             Self.bloco(p.pergunta, p.citacao, p.anexos ?? []) + p.resposta
-                + (p.documentoPDF == nil || !Self.podeGuardarPDF ? "" : "\n\n<div class=\"guardar-pdf\"><button data-resposta=\"\(i)\">Guardar PDF…</button></div>")
+                + (p.documentoPDF == nil ? "" : "\n\n<div class=\"guardar-pdf\"><button data-resposta=\"\(i)\">Guardar PDF…</button></div>")
         }.joined(separator: "\n\n")
         if let emCurso, let pergunta = emCurso.pergunta {
             md += (md.isEmpty ? "" : "\n\n") + Self.bloco(pergunta, emCurso.citacao, emCurso.anexos)
@@ -398,8 +399,7 @@ struct PerguntasView: View {
     }
 
     #if os(macOS)
-    /// As respostas pedidas em PDF guardam-se com o `ExportadorPDF`, que só existe no Mac.
-    private static let podeGuardarPDF = true
+    /// As respostas pedidas em PDF guardam-se com o `ExportadorPDF` e abrem-se.
     private var aoGuardarPDF: ((Int) -> Void)? { guardarPDF }
 
     /// Guarda em PDF uma resposta pedida assim, com o nome do seu título, e abre-o.
@@ -420,7 +420,6 @@ struct PerguntasView: View {
         }
     }
     #else
-    private static let podeGuardarPDF = true
     private var aoGuardarPDF: ((Int) -> Void)? { guardarPDF }
 
     /// No iOS o PDF é criado num ficheiro temporário e vai para a folha de partilha (guardar no Ficheiros, GoodNotes…).
