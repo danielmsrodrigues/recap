@@ -98,8 +98,10 @@ struct NotesWebView {
     var irParaSeccao: PedidoSeccao?
     /// Chamado com o índice da resposta ao carregar no seu "Guardar PDF…" (respostas pedidas em PDF, na conversa).
     var aoGuardarPDF: ((Int) -> Void)?
+    /// Com o modo "embutida": a vista não faz scroll e diz a altura do texto, para caber numa vista nativa.
+    var aoMudarAltura: ((CGFloat) -> Void)?
 
-    private static let mensagens = ["timestamp", "alterado", "formato", "selecao", "perguntar", "procura", "seccao", "guardarPDF"]
+    private static let mensagens = ["timestamp", "alterado", "formato", "selecao", "perguntar", "procura", "seccao", "guardarPDF", "altura"]
 
     func makeCoordinator() -> Coordenador { Coordenador() }
 
@@ -131,6 +133,7 @@ struct NotesWebView {
         web.isOpaque = false
         web.backgroundColor = .clear
         web.scrollView.backgroundColor = .clear
+        if aoMudarAltura != nil { web.scrollView.isScrollEnabled = false }
         #endif
         coordenador.web = web
         controlador?.web = web
@@ -145,6 +148,7 @@ struct NotesWebView {
         coordenador.aoPerguntar = aoPerguntar
         coordenador.aoClicarSeccao = aoClicarSeccao
         coordenador.aoGuardarPDF = aoGuardarPDF
+        coordenador.aoMudarAltura = aoMudarAltura
         coordenador.controlador = controlador
         coordenador.realcar(realcar)
         coordenador.pastaAula = pastaAula
@@ -168,6 +172,7 @@ struct NotesWebView {
         var aoPerguntar: ((String) -> Void)?
         var aoClicarSeccao: ((LigacaoSeccao) -> Void)?
         var aoGuardarPDF: ((Int) -> Void)?
+        var aoMudarAltura: ((CGFloat) -> Void)?
         weak var controlador: ControladorNotas?
         let esquema = EsquemaAula()
         var pastaAula: URL?
@@ -262,6 +267,15 @@ struct NotesWebView {
             renderPendente()
         }
 
+        /// O sistema matou o processo da página (pouca memória, muitas secções abertas no iPhone): sem isto, ficava
+        /// em branco. Volta a carregá-la e a desenhar o que lá estava.
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            carregado = false
+            if let mostrado { pendente = (mostrado, false) }
+            mostrado = nil
+            webView.reload()
+        }
+
         /// Links externos abrem no browser; a página não navega.
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
             guard action.navigationType == .linkActivated, let url = action.request.url else { return .allow }
@@ -297,6 +311,8 @@ struct NotesWebView {
                 aoClicarSeccao?(LigacaoSeccao(ancora: ancora, texto: d["texto"] as? String ?? ""))
             case "guardarPDF":
                 if let i = (message.body as? NSNumber)?.intValue { aoGuardarPDF?(i) }
+            case "altura":
+                if let h = (message.body as? NSNumber)?.doubleValue { aoMudarAltura?(CGFloat(h)) }
             default:
                 if let segundos = message.body as? Double { aoClicarTimestamp?(segundos) }
                 else if let segundos = message.body as? Int { aoClicarTimestamp?(Double(segundos)) }
