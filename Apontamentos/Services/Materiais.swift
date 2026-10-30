@@ -5,6 +5,9 @@ import Foundation
 /// do chat (`Anexos`): entram no pedido dos apontamentos e no das perguntas, mas não aparecem como slides.
 enum Materiais {
     static let pasta = "materiais"
+    /// O texto de todos os materiais junto (Excel, Word, PowerPoint, texto) vai até aqui: muitas folhas de cálculo
+    /// enchiam o pedido (e a conta), em cada pergunta.
+    static let maximoCaracteres = 150_000
 
     static func url(_ nome: String, em pastaAula: URL) -> URL {
         Anexos.url(nome, em: pastaAula, subpasta: pasta)
@@ -22,9 +25,27 @@ enum Materiais {
         return comData.sorted { $0.criado != $1.criado ? $0.criado < $1.criado : $0.nome < $1.nome }.map(\.nome)
     }
 
-    /// Os bytes de todos: contam para o limite do pedido, com os PDFs do professor.
+    /// O que todos ocupam no pedido: contam para o limite, com os PDFs do professor. Uma imagem vai inteira;
+    /// um Excel, Word, PowerPoint ou texto vai em texto, até à sua parte de `maximoCaracteres` (o ficheiro pode
+    /// ser muito maior, ou, comprimido como um Excel, muito mais pequeno do que o texto que dá).
     static func tamanho(em pastaAula: URL) -> Int {
-        nomes(em: pastaAula).reduce(0) { $0 + Anexos.tamanho($1, em: pastaAula, subpasta: pasta) }
+        let nomes = nomes(em: pastaAula)
+        let porTexto = caracteresPorFicheiro(nomes)
+        return nomes.reduce(0) { total, nome in
+            let bytes = Anexos.tamanho(nome, em: pastaAula, subpasta: pasta)
+            let noPedido = switch Anexos.tipo(nome) {
+            case .imagem, .pdf: bytes
+            case .texto: min(bytes, porTexto)
+            default: porTexto
+            }
+            return total + noPedido
+        }
+    }
+
+    /// A parte de `maximoCaracteres` de cada material que vai em texto.
+    private static func caracteresPorFicheiro(_ nomes: [String]) -> Int {
+        let emTexto = nomes.filter { ![.imagem, .pdf].contains(Anexos.tipo($0)) }.count
+        return maximoCaracteres / max(1, emTexto)
     }
 
     /// Copia os ficheiros para a aula e devolve os nomes com que ficaram. Um igual a um já juntado é saltado.
@@ -33,21 +54,35 @@ enum Materiais {
     static func juntar(_ origens: [URL], em pastaAula: URL) throws -> [String] {
         var juntados: [String] = []
         for origem in origens {
-            let existentes = nomes(em: pastaAula).map { url($0, em: pastaAula) }
-            if existentes.contains(where: { FileManager.default.contentsEqual(atPath: $0.path, andPath: origem.path) }) { continue }
-            let nome = try Anexos.juntar(origem, em: pastaAula, subpasta: pasta)
+            guard let nome = try Anexos.juntarSeNovo(origem, em: pastaAula, subpasta: pasta) else { continue }
             let copia = url(nome, em: pastaAula)
             // A ordem é a da data de criação: a cópia pode trazer a do ficheiro original.
             try? FileManager.default.setAttributes([.creationDate: Date.now], ofItemAtPath: copia.path)
             let total = Disco.tamanhoPDFsProfessor(em: pastaAula) + tamanho(em: pastaAula)
             guard total <= Disco.tamanhoMaximoPDF else {
                 try? FileManager.default.removeItem(at: copia)
+                let antes = juntados.isEmpty ? "" : " Os anteriores (\(juntados.joined(separator: ", "))) ficaram juntados."
                 throw NSError(domain: "Recap", code: 41, userInfo: [NSLocalizedDescriptionKey:
-                    "Com \"\(origem.lastPathComponent)\", os PDFs e os materiais desta aula ficavam com \(total / 1_048_576) MB; o máximo é \(Disco.tamanhoMaximoPDF / 1_048_576) MB."])
+                    "Com \"\(origem.lastPathComponent)\", os PDFs e os materiais desta aula ficavam com \(total / 1_048_576) MB; o máximo é \(Disco.tamanhoMaximoPDF / 1_048_576) MB.\(antes)"])
             }
             juntados.append(nome)
         }
         return juntados
+    }
+
+    /// Ao juntar duas gravações (`JuntarAulas`): copia os materiais de `outra` tal como estão (sem converter de novo
+    /// as imagens nem voltar a medir), saltando os que já cá estão iguais.
+    static func copiar(de outra: URL, para pastaAula: URL) throws {
+        let destino = pastaAula.appending(path: pasta, directoryHint: .isDirectory)
+        let existentes = nomes(em: pastaAula).map { url($0, em: pastaAula) }
+        for nome in nomes(em: outra) {
+            let origem = url(nome, em: outra)
+            if existentes.contains(where: { FileManager.default.contentsEqual(atPath: $0.path, andPath: origem.path) }) { continue }
+            try FileManager.default.createDirectory(at: destino, withIntermediateDirectories: true)
+            let copia = destino.appending(path: Anexos.nomeLivre(Anexos.nomeGuardado(nome), em: destino))
+            try FileManager.default.copyItem(at: origem, to: copia)
+            try? FileManager.default.setAttributes([.creationDate: Date.now], ofItemAtPath: copia.path)
+        }
     }
 
     /// Vai para o Lixo (recuperável).
@@ -58,6 +93,7 @@ enum Materiais {
 
     /// Para o pedido ao Claude (Excel, Word e PowerPoint já em texto). Lê do disco: fora do fio principal.
     static func blocos(em pastaAula: URL) -> [BlocoConteudo] {
-        Anexos.blocos(nomes(em: pastaAula), em: pastaAula, subpasta: pasta)
+        let nomes = nomes(em: pastaAula)
+        return Anexos.blocos(nomes, em: pastaAula, subpasta: pasta, maximoCaracteres: caracteresPorFicheiro(nomes))
     }
 }

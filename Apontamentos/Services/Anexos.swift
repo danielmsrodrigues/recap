@@ -93,23 +93,47 @@ enum Anexos {
     /// As imagens são convertidas para JPEG com no máximo `ladoMaximoImagem` píxeis.
     @discardableResult
     static func juntar(_ origem: URL, em pastaAula: URL, subpasta: String = pasta) throws -> String {
+        // Sem saltar repetidos, há sempre um nome.
+        try guardar(origem, em: pastaAula, subpasta: subpasta, saltarRepetido: false) ?? origem.lastPathComponent
+    }
+
+    /// Como `juntar`, mas nil se já lá houver um ficheiro igual (no caso de uma imagem, igual ao JPEG que ficaria).
+    static func juntarSeNovo(_ origem: URL, em pastaAula: URL, subpasta: String) throws -> String? {
+        try guardar(origem, em: pastaAula, subpasta: subpasta, saltarRepetido: true)
+    }
+
+    private static func guardar(_ origem: URL, em pastaAula: URL, subpasta: String, saltarRepetido: Bool) throws -> String? {
         let nomeOriginal = origem.lastPathComponent
         guard let tipo = tipo(nomeOriginal) else { throw ErroAnexo.tipoNaoSuportado(nomeOriginal) }
         let destinoPasta = pastaAula.appending(path: subpasta, directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: destinoPasta, withIntermediateDirectories: true)
+        let existentes = saltarRepetido
+            ? (try? FileManager.default.contentsOfDirectory(at: destinoPasta, includingPropertiesForKeys: [.fileSizeKey])) ?? []
+            : []
 
         if tipo == .imagem {
             let jpeg = try jpeg(de: origem)
             try verificarTamanho(jpeg.count, nomeOriginal)
-            let nome = nomeLivre(((nomeOriginal as NSString).deletingPathExtension) + ".jpg", em: destinoPasta)
+            if existentes.contains(where: { (try? Data(contentsOf: $0)) == jpeg }) { return nil }
+            let nome = nomeLivre(nomeGuardado(((nomeOriginal as NSString).deletingPathExtension) + ".jpg"), em: destinoPasta)
             try jpeg.write(to: destinoPasta.appending(path: nome), options: .atomic)
             return nome
         }
         let bytes = (try? origem.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         try verificarTamanho(bytes, nomeOriginal)
-        let nome = nomeLivre(nomeOriginal, em: destinoPasta)
+        if existentes.contains(where: { FileManager.default.contentsEqual(atPath: $0.path, andPath: origem.path) }) { return nil }
+        let nome = nomeLivre(nomeGuardado(nomeOriginal), em: destinoPasta)
         try FileManager.default.copyItem(at: origem, to: destinoPasta.appending(path: nome))
         return nome
+    }
+
+    /// O nome com que um ficheiro fica guardado: sempre um que `nomeSeguro` aceita e que se vê na pasta. No disco,
+    /// o "Exame 2024/25.xlsx" do Finder chama-se "Exame 2024:25.xlsx"; um ".notas.txt" ficava escondido.
+    static func nomeGuardado(_ nome: String) -> String {
+        var limpo = nome.replacingOccurrences(of: ":", with: "-").replacingOccurrences(of: "/", with: "-")
+        while limpo.hasPrefix(".") { limpo.removeFirst() }
+        limpo = limpo.trimmingCharacters(in: .whitespaces)
+        return limpo.isEmpty || limpo.hasPrefix(".") ? "ficheiro" : limpo
     }
 
     static func remover(_ nome: String, em pastaAula: URL) {
@@ -133,7 +157,7 @@ enum Anexos {
         guard bytes <= tamanhoMaximo else { throw ErroAnexo.grandeDemais(nome, mb: max(1, bytes / 1_048_576)) }
     }
 
-    private static func nomeLivre(_ nome: String, em pasta: URL) -> String {
+    static func nomeLivre(_ nome: String, em pasta: URL) -> String {
         guard FileManager.default.fileExists(atPath: pasta.appending(path: nome).path) else { return nome }
         let base = (nome as NSString).deletingPathExtension, ext = (nome as NSString).pathExtension
         var n = 2
@@ -188,17 +212,19 @@ enum Anexos {
     // MARK: Para o Claude
 
     /// Cada ficheiro precedido do nome. Um que não se consegue ler fica só com o aviso, em vez de estragar o pedido.
-    static func blocos(_ nomes: [String], em pastaAula: URL, subpasta: String = pasta) -> [BlocoConteudo] {
+    /// `maximoCaracteres`: até onde vai o texto de cada ficheiro.
+    static func blocos(_ nomes: [String], em pastaAula: URL, subpasta: String = pasta,
+                       maximoCaracteres: Int = maximoCaracteres) -> [BlocoConteudo] {
         nomes.flatMap { nome -> [BlocoConteudo] in
             do {
-                return try blocos(nome, em: pastaAula, subpasta: subpasta)
+                return try blocos(nome, em: pastaAula, subpasta: subpasta, maximo: maximoCaracteres)
             } catch {
                 return [.texto("Ficheiro \"\(nome)\": não foi possível lê-lo.")]
             }
         }
     }
 
-    private static func blocos(_ nome: String, em pastaAula: URL, subpasta: String) throws -> [BlocoConteudo] {
+    private static func blocos(_ nome: String, em pastaAula: URL, subpasta: String, maximo: Int) throws -> [BlocoConteudo] {
         guard nomeSeguro(nome) != nil else { throw ErroAnexo.naoLido(nome) }
         guard let tipo = tipo(nome) else { throw ErroAnexo.tipoNaoSuportado(nome) }
         // Vindo do iPhone pelo iCloud, pode ainda estar a descarregar.
@@ -221,13 +247,12 @@ enum Anexos {
         case .apresentacao:
             texto = try self.texto(apresentacao: dados)
         }
-        return [.texto("\(titulo)\n\n<ficheiro>\n\(cortado(texto))\n</ficheiro>")]
+        return [.texto("\(titulo)\n\n<ficheiro>\n\(cortado(texto, maximo: maximo))\n</ficheiro>")]
     }
 
-    private static func cortado(_ texto: String) -> String {
-        guard texto.count > maximoCaracteres else { return texto }
-        return String(texto.prefix(maximoCaracteres))
-            + "\n… (cortado: o ficheiro tem mais \(texto.count - maximoCaracteres) caracteres)"
+    private static func cortado(_ texto: String, maximo: Int) -> String {
+        guard texto.count > maximo else { return texto }
+        return String(texto.prefix(maximo)) + "\n… (cortado: o ficheiro tem mais \(texto.count - maximo) caracteres)"
     }
 
     /// Dos ficheiros (do mais recente para o mais antigo), os que cabem em `bytes`. Um grande demais

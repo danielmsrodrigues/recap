@@ -701,41 +701,59 @@ struct AulaDetailView: View {
 
     #if os(macOS)
     /// Os PDFs são os slides do professor; o resto (Excel, Word…) fica nos materiais (`Materiais`).
+    /// Copiar (de um ficheiro do iCloud ainda por descarregar) e converter imagens grandes faz-se fora do fio principal.
     private func juntarMateriaisProfessor(_ urls: [URL]) {
-        let acedeu = urls.map { $0.startAccessingSecurityScopedResource() }
-        defer { for (url, sim) in zip(urls, acedeu) where sim { url.stopAccessingSecurityScopedResource() } }
-        let pdfs = urls.filter { $0.pathExtension.lowercased() == "pdf" }
-        let outros = urls.filter { $0.pathExtension.lowercased() != "pdf" }
-        do {
-            let juntados = pdfs.isEmpty ? [] : try Disco.juntarPDFsProfessor(pdfs, em: aula.pasta)
-            if !juntados.isEmpty {
-                try library.atualizarMeta(em: aula.pasta) { meta in
-                    var nomes = meta.nomesPDFs ?? [:]
-                    for pdf in juntados { nomes[pdf.ficheiro] = pdf.nome }
-                    meta.nomesPDFs = nomes
+        let pasta = aula.pasta
+        Task {
+            let acedeu = urls.map { $0.startAccessingSecurityScopedResource() }
+            defer { for (url, sim) in zip(urls, acedeu) where sim { url.stopAccessingSecurityScopedResource() } }
+            let r = await Task.detached { Self.copiarMateriais(urls, para: pasta) }.value
+            if !r.pdfs.isEmpty {
+                do {
+                    try library.atualizarMeta(em: pasta) { meta in
+                        var nomes = meta.nomesPDFs ?? [:]
+                        for pdf in r.pdfs { nomes[pdf.ficheiro] = pdf.nome }
+                        meta.nomesPDFs = nomes
+                    }
+                } catch {
+                    erro = error.localizedDescription
                 }
-                pdfsProfessor = Disco.pdfsProfessor(aula.pasta)
-                let pasta = aula.pasta
                 Task { await SlidesNosApontamentos.garantirPaginasEmFundo(em: pasta) }
             }
-            let outrosJuntados = try Materiais.juntar(outros, em: aula.pasta)
-            materiais = Materiais.nomes(em: aula.pasta)
-            guard !juntados.isEmpty || !outrosJuntados.isEmpty else {
+            // A aula aberta pode já ser outra.
+            guard aula.pasta.mesmoCaminho(pasta) else { return }
+            pdfsProfessor = Disco.pdfsProfessor(pasta)
+            materiais = Materiais.nomes(em: pasta)
+            if let falha = r.erro {
+                erro = falha
+                return
+            }
+            guard !r.pdfs.isEmpty || !r.outros.isEmpty else {
                 erro = urls.count == 1 ? "Este ficheiro já está nesta aula." : "Estes ficheiros já estão nesta aula."
                 return
             }
             // Com apontamentos já feitos sem estes materiais, propõe refazê-los para entrarem.
             if apontamentos != nil, !ocupada, definicoes.faltaParaGerar == nil, !controlador.editando {
-                pdfsJuntados = juntados.count
-                materiaisJuntados = outrosJuntados.count
+                pdfsJuntados = r.pdfs.count
+                materiaisJuntados = r.outros.count
                 confirmarRegenerar = true
             } else {
                 tab = .slides
             }
+        }
+    }
+
+    /// Os PDFs juntados, os outros materiais juntados e, se algum foi recusado, porquê (o que entrou antes fica).
+    nonisolated private static func copiarMateriais(_ urls: [URL], para pasta: URL)
+        -> (pdfs: [PDFProfessor], outros: [String], erro: String?) {
+        var pdfs: [PDFProfessor] = [], outros: [String] = []
+        do {
+            let soPDFs = urls.filter { $0.pathExtension.lowercased() == "pdf" }
+            if !soPDFs.isEmpty { pdfs = try Disco.juntarPDFsProfessor(soPDFs, em: pasta) }
+            outros = try Materiais.juntar(urls.filter { $0.pathExtension.lowercased() != "pdf" }, em: pasta)
+            return (pdfs, outros, nil)
         } catch {
-            // Um PDF pode ter entrado antes de um material ser recusado: a lista mostra o que ficou.
-            materiais = Materiais.nomes(em: aula.pasta)
-            erro = error.localizedDescription
+            return (pdfs, outros, error.localizedDescription)
         }
     }
 

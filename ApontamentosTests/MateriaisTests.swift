@@ -53,6 +53,47 @@ struct MateriaisTests {
         #expect(Materiais.nomes(em: aula) == ["Notas.csv"])
     }
 
+    @Test func aMesmaImagemNaoEntraDuasVezes() throws {
+        let aula = try pastaTemporaria()
+        defer { try? FileManager.default.removeItem(at: aula) }
+        let imagem = try png("Quadro.png", em: aula)
+        try Materiais.juntar([imagem], em: aula)
+        #expect(try Materiais.juntar([imagem], em: aula).isEmpty)
+        #expect(Materiais.nomes(em: aula) == ["Quadro.jpg"])
+    }
+
+    /// No Finder, "Exame 2024/25.xlsx" chama-se "Exame 2024:25.xlsx" no disco.
+    @Test func nomesComDoisPontosOuPontoNoInicioFicamUtilizaveis() throws {
+        let aula = try pastaTemporaria()
+        defer { try? FileManager.default.removeItem(at: aula) }
+        let juntados = try Materiais.juntar([try ficheiro("Exame 2024:25.csv", "a;b", em: aula), try ficheiro(".notas.txt", "x", em: aula)], em: aula)
+        #expect(juntados == ["Exame 2024-25.csv", "notas.txt"])
+        #expect(Materiais.nomes(em: aula) == juntados)
+        #expect(Materiais.tamanho(em: aula) > 0)
+        try Materiais.remover("Exame 2024-25.csv", em: aula)
+        #expect(Materiais.nomes(em: aula) == ["notas.txt"])
+    }
+
+    /// Um Excel ou um CSV vai para o Claude em texto, cortado: conta o que vai, não o tamanho do ficheiro.
+    @Test func contaOQueVaiNoPedidoENaoOTamanhoDoFicheiro() throws {
+        let aula = try pastaTemporaria()
+        defer { try? FileManager.default.removeItem(at: aula) }
+        let grande = String(repeating: "1234567;", count: 250_000) // 2 MB de CSV
+        try Materiais.juntar([try ficheiro("Dados.csv", grande, em: aula)], em: aula)
+        #expect(Materiais.tamanho(em: aula) <= Materiais.maximoCaracteres)
+    }
+
+    /// Muitas folhas de cálculo não podem encher o pedido: o texto de todos os materiais tem um limite comum.
+    @Test func oTextoDeTodosOsMateriaisTemUmLimiteComum() throws {
+        let aula = try pastaTemporaria()
+        defer { try? FileManager.default.removeItem(at: aula) }
+        let texto = String(repeating: "a", count: 90_000)
+        for i in 1...4 { try Materiais.juntar([try ficheiro("Folha \(i).csv", texto + "\(i)", em: aula)], em: aula) }
+        let caracteres = Materiais.blocos(em: aula).reduce(0) { if case .texto(let s) = $1 { $0 + s.count } else { $0 } }
+        #expect(caracteres <= Materiais.maximoCaracteres + 2_000)
+        #expect(Materiais.tamanho(em: aula) <= Materiais.maximoCaracteres)
+    }
+
     @Test func recusaOQueNaoSabeLer() throws {
         let aula = try pastaTemporaria()
         defer { try? FileManager.default.removeItem(at: aula) }

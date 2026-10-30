@@ -77,6 +77,40 @@ struct JuntarAulasTests {
         #expect(try String(contentsOf: Materiais.url("Enunciado 2.txt", em: pasta), encoding: .utf8) == "Parte 2")
     }
 
+    /// Uma imagem que já está nas duas aulas não fica duplicada, e a que passa não é convertida de novo.
+    @Test func materiaisIguaisNaoSeRepetemNemSeConvertemDeNovo() throws {
+        let (lib, raiz) = try biblioteca()
+        defer { try? FileManager.default.removeItem(at: raiz) }
+        let p1 = try aula(lib, "Parte 1", duracao: 3000, texto: "Antes")
+        let p2 = try aula(lib, "Parte 2", duracao: 2400, texto: "Depois")
+        let pasta2 = p2.appending(path: Materiais.pasta)
+        try FileManager.default.createDirectory(at: pasta2, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: p1.appending(path: Materiais.pasta), withIntermediateDirectories: true)
+        try Data("jpeg igual".utf8).write(to: pasta2.appending(path: "Quadro.jpg"))
+        try Data("jpeg igual".utf8).write(to: Materiais.url("Quadro.jpg", em: p1))
+        try Data("jpeg só da segunda".utf8).write(to: pasta2.appending(path: "Esquema.jpg"))
+
+        let pasta = try lib.juntar(try #require(lib.aula(em: p2)), a: try #require(lib.aula(em: p1)))
+
+        #expect(Materiais.nomes(em: pasta).sorted() == ["Esquema.jpg", "Quadro.jpg"])
+        #expect(try Data(contentsOf: Materiais.url("Esquema.jpg", em: pasta)) == Data("jpeg só da segunda".utf8))
+    }
+
+    /// O mesmo PDF nas duas partes conta uma vez para o limite (só uma cópia fica).
+    @Test func oMesmoPDFNasDuasPartesContaUmaVez() throws {
+        let (lib, raiz) = try biblioteca()
+        defer { try? FileManager.default.removeItem(at: raiz) }
+        let p1 = try aula(lib, "Parte 1", duracao: 3000, texto: "Antes")
+        let p2 = try aula(lib, "Parte 2", duracao: 2400, texto: "Depois")
+        let pdf = Data(count: Disco.tamanhoMaximoPDF * 2 / 3)
+        try pdf.write(to: p1.appending(path: "slides-professor.pdf"))
+        try pdf.write(to: p2.appending(path: "slides-professor.pdf"))
+
+        let pasta = try lib.juntar(try #require(lib.aula(em: p2)), a: try #require(lib.aula(em: p1)))
+
+        #expect(Disco.pdfsProfessor(pasta).count == 1)
+    }
+
     @Test func semTranscricaoNaoMexeEmNada() throws {
         let (lib, raiz) = try biblioteca()
         defer { try? FileManager.default.removeItem(at: raiz) }
