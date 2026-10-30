@@ -132,6 +132,18 @@ enum Anexos {
         }
     }
 
+    /// Uma miniatura de um ficheiro juntado, com no máximo `lado` píxeis, para o mostrar no campo. nil = não é
+    /// uma imagem (ou não se lê).
+    static func miniatura(_ nome: String, em pastaAula: URL, lado: Int) -> CGImage? {
+        guard tipo(nome) == .imagem, let nome = nomeSeguro(nome),
+              let fonte = CGImageSourceCreateWithURL(url(nome, em: pastaAula) as CFURL, nil) else { return nil }
+        return CGImageSourceCreateThumbnailAtIndex(fonte, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: lado,
+        ] as CFDictionary)
+    }
+
     /// A imagem em JPEG, reduzida e sobre fundo branco (a transparência de uma captura ficava preta).
     private static func jpeg(de origem: URL) throws -> Data {
         let nome = origem.lastPathComponent

@@ -234,26 +234,43 @@ struct PerguntasView: View {
         return anexos.isEmpty ? "Pergunta sobre esta aula…" : "Pergunta sobre os ficheiros (↩ para os explicar)"
     }
 
-    /// Os ficheiros juntados, cada um com um botão para o tirar.
+    /// Os ficheiros juntados, cada um com um botão para o tirar. As imagens aparecem em miniatura, como no WhatsApp.
     private var fichas: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(anexos, id: \.self) { nome in
-                    HStack(spacing: 4) {
-                        Image(systemName: Self.icone(nome)).foregroundStyle(.secondary)
-                        Text(nome).lineLimit(1).truncationMode(.middle)
-                        Button("Tirar \(nome)", systemImage: "xmark.circle.fill") { estudo.tirarAnexo(nome, de: aula) }
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(.borderless)
-                        .foregroundStyle(.secondary)
+                    if Anexos.tipo(nome) == .imagem {
+                        MiniaturaAnexo(nome: nome, pastaAula: aula.pasta)
+                            .overlay(alignment: .topTrailing) {
+                                Button("Tirar \(nome)", systemImage: "xmark.circle.fill") { estudo.tirarAnexo(nome, de: aula) }
+                                    .labelStyle(.iconOnly)
+                                    .buttonStyle(.borderless)
+                                    .font(.body)
+                                    .foregroundStyle(.white, .black.opacity(0.55))
+                                    .padding(3)
+                            }
+                            .help(nome)
+                    } else {
+                        ficha(nome)
                     }
-                    .font(.callout)
-                    .frame(maxWidth: 220)
-                    .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(.quaternary.opacity(0.6), in: .rect(cornerRadius: 8))
                 }
             }
         }
+    }
+
+    private func ficha(_ nome: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: Self.icone(nome)).foregroundStyle(.secondary)
+            Text(nome).lineLimit(1).truncationMode(.middle)
+            Button("Tirar \(nome)", systemImage: "xmark.circle.fill") { estudo.tirarAnexo(nome, de: aula) }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+        }
+        .font(.callout)
+        .frame(maxWidth: 220)
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(.quaternary.opacity(0.6), in: .rect(cornerRadius: 8))
     }
 
     private static func icone(_ nome: String) -> String {
@@ -514,6 +531,30 @@ struct AvisoEsperaMac: View {
             .font(.callout)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 14).padding(.vertical, 8)
+        }
+    }
+}
+
+/// A miniatura de uma imagem juntada à pergunta, lida fora do fio principal.
+private struct MiniaturaAnexo: View {
+    var nome: String
+    var pastaAula: URL
+    @State private var imagem: CGImage?
+
+    var body: some View {
+        Group {
+            if let imagem {
+                Image(decorative: imagem, scale: 1).resizable().scaledToFill()
+            } else {
+                Image(systemName: "photo").foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 56, height: 56)
+        .background(.quaternary.opacity(0.6))
+        .clipShape(.rect(cornerRadius: 8))
+        .task(id: nome) {
+            let nome = nome, pasta = pastaAula
+            imagem = await Task.detached { Anexos.miniatura(nome, em: pasta, lado: 168) }.value
         }
     }
 }

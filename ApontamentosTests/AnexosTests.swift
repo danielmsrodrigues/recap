@@ -36,6 +36,20 @@ struct AnexosTests {
         #expect(CGImageDestinationFinalize(destino))
     }
 
+    @Test func imagensTemMiniaturaPequenaOsOutrosNao() throws {
+        let pasta = try pastaTemporaria()
+        defer { try? FileManager.default.removeItem(at: pasta) }
+        try png(largura: 3000, altura: 1500, em: pasta.appending(path: "Quadro.png"))
+        let nome = try Anexos.juntar(pasta.appending(path: "Quadro.png"), em: pasta)
+        try "a;b".write(to: pasta.appending(path: "dados.csv"), atomically: true, encoding: .utf8)
+        let csv = try Anexos.juntar(pasta.appending(path: "dados.csv"), em: pasta)
+
+        let miniatura = try #require(Anexos.miniatura(nome, em: pasta, lado: 128))
+        #expect(miniatura.width == 128 && miniatura.height == 64)
+        #expect(Anexos.miniatura(csv, em: pasta, lado: 128) == nil)
+        #expect(Anexos.miniatura("não existe.jpg", em: pasta, lado: 128) == nil)
+    }
+
     @Test func aceitaOsTiposPelaExtensao() {
         #expect(Anexos.tipo("Notas.XLSX") == .folha)
         #expect(Anexos.tipo("foto.heic") == .imagem)
