@@ -33,12 +33,17 @@ final class SessaoDireto {
 
     private var pastaAula: URL?
     private var gerarApontamentos = true
-    private var captura: CapturaAudio?
+    private var captura: (any Captacao)?
+    private let criarCaptacao: (EventosCaptacao) -> any Captacao
     private var gravador: GravadorTemporario?
     private var frames: GravadorFrames?
     private var relogio: Task<Void, Never>?
     private weak var library: Library?
     private weak var fila: ProcessingQueue?
+
+    init(criarCaptacao: @escaping (EventosCaptacao) -> any Captacao = { CapturaAudio($0) }) {
+        self.criarCaptacao = criarCaptacao
+    }
 
     var ativa: Bool { [.aPreparar, .aOuvir, .emPausa].contains(estado) }
     /// Há som a chegar neste momento.
@@ -64,10 +69,11 @@ final class SessaoDireto {
             let f = capturarSlides ? try GravadorFrames() : nil
             var aoFrame: (@Sendable (CGImage) -> Void)?
             if let f { aoFrame = { imagem in f.receber(imagem) } }
-            let c = CapturaAudio(aoReceber: { buffer in _ = g.escrever(buffer) },
-                                 aoFrame: aoFrame,
-                                 aoPararJanela: { [weak self] _ in Task { @MainActor in self?.semJanela() } },
-                                 aoParar: { [weak self] erro in Task { @MainActor in self?.interrompida(erro) } })
+            let c = criarCaptacao(EventosCaptacao(
+                aoReceber: { buffer in _ = g.escrever(buffer) },
+                aoFrame: aoFrame,
+                aoPararJanela: { [weak self] _ in Task { @MainActor in self?.semJanela() } },
+                aoParar: { [weak self] erro in Task { @MainActor in self?.interrompida(erro) } }))
             gravador = g
             frames = f
             try await c.iniciar(fonte)
@@ -83,6 +89,24 @@ final class SessaoDireto {
         } catch {
             await limpar(apagarAula: true)
             estado = .falhou(error.localizedDescription)
+        }
+    }
+
+    /// Passa a captar outra janela sem parar (#39): o som, o tempo e a aula continuam. Se a janela for de outra
+    /// aplicação, o som passa a vir dela. As imagens da janela nova vão para outro troço (ver `SlidesDireto`).
+    func mudarJanela(_ nova: FonteAudio) async {
+        guard ativa, let captura, nova.id != fonte?.id else { return }
+        do {
+            let primeira = try await captura.mudar(para: nova)
+            frames?.novoTroco()
+            if let primeira { frames?.receber(primeira) }
+            fonte = nova
+            aviso = nil
+            previa = nil
+            pretaDesde = nil
+            avisoPreto = false
+        } catch {
+            aviso = "Não consegui mudar para \"\(nova.tituloJanela)\": \(error.localizedDescription) Continua a ser captada a janela anterior."
         }
     }
 
