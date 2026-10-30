@@ -1004,7 +1004,7 @@ extension Estudo {
                     aoReceber: { [weak self] pedaco in self?.emCurso[chave]?.texto += pedaco },
                     aoRepetir: { _, _, _ in })
                 let nova = PerguntaAula(pergunta: pergunta, resposta: r.markdown.trimmingCharacters(in: .whitespacesAndNewlines))
-                try Disco.escreverPerguntasCadeira(Disco.lerPerguntasCadeira(cadeira.pasta) + [nova], em: cadeira.pasta)
+                try Disco.juntarPerguntaCadeira(nova, em: cadeira.pasta)
             } catch is CancellationError {
             } catch {
                 if !Task.isCancelled { erros[chave] = error.localizedDescription }
@@ -1097,5 +1097,16 @@ extension Disco {
         let url = pasta.appending(path: perguntasCadeiraJSON)
         if perguntas.isEmpty { try? FileManager.default.removeItem(at: url); return }
         try gravar(encoder.encode(perguntas), em: url)
+    }
+
+    /// Junta uma resposta às anteriores. Se o ficheiro existe mas não se lê (ainda no iCloud, estragado),
+    /// lança um erro em vez de o substituir só pela resposta nova.
+    static func juntarPerguntaCadeira(_ nova: PerguntaAula, em pasta: URL) throws {
+        let url = pasta.appending(path: perguntasCadeiraJSON)
+        var anteriores: [PerguntaAula] = []
+        if FileManager.default.fileExists(atPath: url.path) {
+            anteriores = try decoder.decode([PerguntaAula].self, from: lerDados(url))
+        }
+        try escreverPerguntasCadeira(anteriores + [nova], em: pasta)
     }
 }

@@ -74,4 +74,20 @@ struct PerguntarCadeiraTests {
         // Não é uma aula: a pasta da cadeira não ganha um `aula.json`.
         #expect(!FileManager.default.fileExists(atPath: pasta.appending(path: "aula.json").path))
     }
+
+    /// Uma resposta nova junta-se às anteriores; se o ficheiro existe mas não se lê, não é apagado.
+    @Test func umaRespostaNovaNaoApagaUmHistoricoQueNaoSeLe() throws {
+        let pasta = FileManager.default.temporaryDirectory.appending(path: "cadeira-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: pasta, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: pasta) }
+        let a = PerguntaAula(pergunta: "A?", resposta: "a")
+        try Disco.juntarPerguntaCadeira(a, em: pasta)
+        try Disco.juntarPerguntaCadeira(PerguntaAula(pergunta: "B?", resposta: "b"), em: pasta)
+        #expect(Disco.lerPerguntasCadeira(pasta).map(\.pergunta) == ["A?", "B?"])
+
+        let ficheiro = pasta.appending(path: Disco.perguntasCadeiraJSON)
+        try Data("isto não é json".utf8).write(to: ficheiro)
+        #expect(throws: (any Error).self) { try Disco.juntarPerguntaCadeira(a, em: pasta) }
+        #expect(try String(contentsOf: ficheiro, encoding: .utf8) == "isto não é json")
+    }
 }
