@@ -46,6 +46,7 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 860, minHeight: 560)
+        .imagemEmGrande(navegacao)
         // Num Mac novo (ou se faltar o Claude Code ou o modelo), o assistente abre sozinho.
         .sheet(isPresented: $preparar) { PreparacaoView() }
         .onAppear { if PreparacaoView.faltaAlgo(definicoes) { preparar = true } }

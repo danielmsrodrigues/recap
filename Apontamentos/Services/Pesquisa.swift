@@ -26,6 +26,8 @@ struct DestinoAula: Equatable, Sendable {
 @MainActor @Observable
 final class Navegacao {
     var destino: DestinoAula?
+    /// Uma imagem juntada a uma pergunta, aberta em grande por cima da janela (`ImagemEmGrande`).
+    var imagemAberta: URL?
 }
 
 struct ResultadoPesquisa: Identifiable, Sendable {

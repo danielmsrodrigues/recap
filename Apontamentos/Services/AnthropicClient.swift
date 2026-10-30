@@ -5,7 +5,7 @@ import Foundation
 
 // MARK: Pedido
 
-enum BlocoConteudo: Encodable, Sendable {
+enum BlocoConteudo: Encodable, Equatable, Sendable {
     case texto(String)
     case imagem(mediaType: String, base64: String)
     case documentoPDF(base64: String)
