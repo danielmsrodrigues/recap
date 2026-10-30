@@ -77,7 +77,7 @@ enum PistasExame {
         }
     }
 
-    struct Grupo: Identifiable {
+    struct Grupo: Identifiable, Sendable {
         var cadeira: Cadeira
         var pistas: [(aula: Aula, pista: Pista)]
         var id: URL { cadeira.pasta }

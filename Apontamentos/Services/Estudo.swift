@@ -64,7 +64,7 @@ struct CitacaoPergunta: Codable, Hashable, Sendable {
 
 
 /// Como uma aula se liga às outras da cadeira (`ligacoes.json`), para a vista visual.
-struct LigacoesAula: Codable, Sendable {
+struct LigacoesAula: Codable, Equatable, Sendable {
     enum Direcao: String, Codable, Sendable { case anterior, seguinte }
 
     struct Ligacao: Codable, Hashable, Sendable {
@@ -779,10 +779,14 @@ final class Estudo {
     /// Uma aula nova não conta: ao gerar as suas ligações, elas aparecem também nesta. Ligações de um formato
     /// anterior contam como desatualizadas (as notas eram outras, ou não havia).
     func ligacoesDesatualizadas(_ aula: Aula) -> Bool {
+        Self.ligacoesDesatualizadas(aula, outras: outrasAulas(de: aula), raiz: library.raiz)
+    }
+
+    /// Lê os apontamentos de todas as aulas ligadas: fora do fio principal na interface (`LigacoesView`).
+    nonisolated static func ligacoesDesatualizadas(_ aula: Aula, outras: [Aula], raiz: URL) -> Bool {
         guard let l = Disco.lerLigacoes(aula.pasta) else { return false }
         guard let assinaturas = l.assinaturas, l.formato == LigacoesAula.formatoAtual else { return true }
-        let raiz = library.raiz
-        let aulas = Dictionary(([aula] + outrasAulas(de: aula)).map { (Self.caminhoRelativo($0.pasta, raiz: raiz), $0) }) { a, _ in a }
+        let aulas = Dictionary(([aula] + outras).map { (Self.caminhoRelativo($0.pasta, raiz: raiz), $0) }) { a, _ in a }
         return Set(l.ligacoes.map(\.aula) + [Self.caminhoRelativo(aula.pasta, raiz: raiz)]).contains { caminho in
             guard let md = aulas[caminho].flatMap({ Disco.lerApontamentos($0.pasta) }) else { return true }
             return assinaturas[caminho] != NotasLigacoes.assinatura(md)

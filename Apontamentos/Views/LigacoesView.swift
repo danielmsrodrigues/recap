@@ -10,6 +10,8 @@ struct LigacoesView: View {
     var aoAbrirAula: (URL) -> Void
 
     @State private var dados: LigacoesAula?
+    /// Lido fora do fio principal: obriga a ler os apontamentos de todas as aulas ligadas.
+    @State private var desatualizadas = false
 
     private var emCurso: Bool { estudo.emCurso(aula, .ligacoes) != nil }
     private var aulas: [Aula] { (library.cadeira(nome: aula.cadeira)?.aulas ?? []).sorted { $0.meta.data < $1.meta.data } }
@@ -60,6 +62,8 @@ struct LigacoesView: View {
         }
         .task(id: [estudo.versao, library.versao]) {
             dados = estudo.ligacoes(aula)
+            let (aula, outras, raiz) = (aula, estudo.outrasAulas(de: aula), library.raiz)
+            desatualizadas = await Task.detached { Estudo.ligacoesDesatualizadas(aula, outras: outras, raiz: raiz) }.value
         }
     }
 
@@ -76,7 +80,7 @@ struct LigacoesView: View {
         HStack {
             if let erro = estudo.erro(aula, .ligacoes) {
                 Label(erro, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
-            } else if !emCurso, estudo.ligacoesDesatualizadas(aula) {
+            } else if !emCurso, desatualizadas {
                 Label("Há aulas novas ou apontamentos alterados desde estas ligações.", systemImage: "clock.arrow.circlepath")
                     .foregroundStyle(.orange)
             }

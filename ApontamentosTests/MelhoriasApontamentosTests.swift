@@ -153,6 +153,20 @@ struct TituloAulaTests {
         #expect(library.numeroDaAula(try #require(library.aula(em: segunda))) == 2)
     }
 
+    /// Duas aulas com o mesmo título no mesmo dia: a segunda fica em "… (2)". Editá-la sem mudar o título não a
+    /// pode mandar para "(3)", "(4)"… (antes, cada edição mudava a pasta e partia o que guarda o nome dela).
+    @Test @MainActor func editarUmaAulaRepetidaNaoMudaAPasta() throws {
+        let raiz = FileManager.default.temporaryDirectory.appending(path: "titulo-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: raiz) }
+        let library = Library(raiz: raiz)
+        let dia = Date(timeIntervalSince1970: 86_400)
+        _ = try library.criarAula(cadeira: "Empresas", titulo: "Aula 1", data: dia, video: nil)
+        let segunda = try library.criarAula(cadeira: "Empresas", titulo: "Aula 1", data: dia, video: nil)
+        #expect(segunda.lastPathComponent.hasSuffix(" (2)"))
+        let editada = try library.editarAula(try #require(library.aula(em: segunda)), titulo: "Aula 1", data: dia, cadeira: "Empresas")
+        #expect(editada.lastPathComponent == segunda.lastPathComponent)
+    }
+
     @Test @MainActor func mudarOTituloAMaoMarcaComoManual() throws {
         let raiz = FileManager.default.temporaryDirectory.appending(path: "titulo-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: raiz) }

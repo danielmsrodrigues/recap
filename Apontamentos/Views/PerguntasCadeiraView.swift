@@ -71,7 +71,9 @@ struct PerguntasCadeiraView: View {
     }
 
     private static func bolha(_ pergunta: String) -> String {
-        let seguro = pergunta.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
+        // As mudanças de linha passam a <br>, como nas perguntas da aula: uma linha em branco fechava a bolha.
+        let seguro = pergunta.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;").replacingOccurrences(of: "\n", with: "<br>")
         return "<div class=\"pergunta\">\(seguro)</div>\n\n"
     }
 

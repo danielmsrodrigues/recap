@@ -317,7 +317,7 @@ struct SlideExtractor: Sendable {
             let frame = try await fonte.frame(em: c.ultimoTempo, maxLado: config.ladoMaximo)
             let grande = Self.tapar(frame, mascara)
             guard try await Self.pareceSlide(grande, soComTexto: config.soComTexto) else { continue }
-            let novo = Escolhido(inicio: c.inicio, fim: min(c.fim, duracao), tempoImagem: c.ultimoTempo, fp: c.ultimaFP,
+            let novo = Escolhido(inicio: c.inicio, fim: min(c.fim, duracao), fp: c.ultimaFP,
                                  grelha: c.ultimaFina, temporario: pastaSlides.appending(path: "tmp_\(escolhidos.count).jpg"))
 
             // Já apareceu antes: só regista a reaparição.
@@ -376,7 +376,6 @@ struct SlideExtractor: Sendable {
     private struct Escolhido {
         var inicio: Double
         var fim: Double
-        var tempoImagem: Double
         var fp: FeaturePrintObservation
         /// Grelha fina da imagem (só num recorte do slide).
         var grelha: [Float]

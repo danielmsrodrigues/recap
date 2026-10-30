@@ -8,6 +8,8 @@ struct ProgressoGuiaView: View {
     let cadeira: Cadeira
     @State private var aberto = false
     @State private var temas: [ProgressoGuia.Tema] = []
+    /// As aulas onde ainda não se viu o que deram da guia (lidas com os temas, não a cada redesenho).
+    @State private var porVer: [Aula] = []
 
     var body: some View {
         let principais = temas.filter { !$0.subtema }
@@ -32,13 +34,20 @@ struct ProgressoGuiaView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .task(id: [estudo.versao, library.versao]) { calcular() }
+        .task(id: [estudo.versao, library.versao]) { await calcular() }
     }
 
-    private func calcular() {
-        guard let indice = ProgressoGuia.indiceGuardado(cadeira.pasta) else { temas = []; return }
-        let aulas = cadeira.aulas.compactMap { a in Disco.lerSeccoesGuia(a.pasta).map { (a, $0) } }
-        temas = ProgressoGuia.calcular(indice, aulas: aulas)
+    /// Lê o índice e o que cada aula deu fora do fio principal (um ficheiro por aula).
+    private func calcular() async {
+        let cadeira = cadeira
+        let (temas, porVer) = await Task.detached { () -> ([ProgressoGuia.Tema], [Aula]) in
+            let lidas = cadeira.aulas.map { ($0, Disco.lerSeccoesGuia($0.pasta)) }
+            let porVer = lidas.filter { $0.0.temTranscricao && $0.1 == nil }.map(\.0)
+            guard let indice = ProgressoGuia.indiceGuardado(cadeira.pasta) else { return ([], porVer) }
+            return (ProgressoGuia.calcular(indice, aulas: lidas.compactMap { a, s in s.map { (a, $0) } }), porVer)
+        }.value
+        self.temas = temas
+        self.porVer = porVer
     }
 
     private func linha(_ t: ProgressoGuia.Tema) -> some View {
@@ -64,7 +73,6 @@ struct ProgressoGuiaView: View {
 
     /// As aulas gravadas antes disto ainda não dizem que secções deram: no Mac, vê-se nelas.
     @ViewBuilder private var procura: some View {
-        let porVer = estudo.aulasSemSeccoesGuia(cadeira)
         if let p = estudo.procuraGuia[cadeira.pasta] {
             HStack(spacing: 8) {
                 ProgressView(value: Double(p.feitas), total: Double(max(p.total, 1)))

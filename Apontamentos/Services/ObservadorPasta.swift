@@ -11,6 +11,7 @@ import CoreServices
 @MainActor
 final class ObservadorPasta {
     private let aoMudar: @MainActor () -> Void
+    private let raiz: URL
     private var pendente: Task<Void, Never>?
     #if os(macOS)
     private var stream: FSEventStreamRef?
@@ -18,14 +19,26 @@ final class ObservadorPasta {
     private var presenter: Presenter?
     #endif
 
+    /// Os pedidos entre o iPhone e o Mac mudam a cada poucos segundos enquanto o Mac responde, e cada lado já os vigia
+    /// sozinho (`PonteMac`, `Estudo`): não obrigam a reler a biblioteca toda.
+    nonisolated static func ignorar(_ caminho: String, raiz: URL) -> Bool {
+        let pedidos = raiz.appending(path: Disco.pastaSistema).appending(path: "pedidos").standardizedFileURL.path
+        return caminho == pedidos || caminho.hasPrefix(pedidos + "/")
+    }
+
     init(_ raiz: URL, aoMudar: @escaping @MainActor () -> Void) {
         self.aoMudar = aoMudar
+        self.raiz = raiz
         #if os(macOS)
         var contexto = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
-        let chamada: FSEventStreamCallback = { _, info, _, _, _, _ in
+        let chamada: FSEventStreamCallback = { _, info, _, caminhos, _, _ in
             guard let info else { return }
             let observador = Unmanaged<ObservadorPasta>.fromOpaque(info).takeUnretainedValue()
-            MainActor.assumeIsolated { observador.mudou() }
+            let lista = (Unmanaged<CFArray>.fromOpaque(caminhos).takeUnretainedValue() as? [String]) ?? []
+            MainActor.assumeIsolated {
+                guard lista.isEmpty || lista.contains(where: { !ObservadorPasta.ignorar($0, raiz: observador.raiz) }) else { return }
+                observador.mudou()
+            }
         }
         stream = FSEventStreamCreate(nil, chamada, &contexto, [raiz.path] as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
                                      1.0, FSEventStreamCreateFlags(kFSEventStreamCreateFlagIgnoreSelf | kFSEventStreamCreateFlagUseCFTypes))
@@ -35,7 +48,7 @@ final class ObservadorPasta {
         }
         #else
         let p = Presenter(raiz) { [weak self] url in
-            guard !Disco.gravadoHaPouco(url) else { return }
+            guard !Disco.gravadoHaPouco(url), !Self.ignorar(url.standardizedFileURL.path, raiz: raiz) else { return }
             self?.mudou()
         }
         NSFileCoordinator.addFilePresenter(p)

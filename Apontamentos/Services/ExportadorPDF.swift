@@ -97,4 +97,10 @@ final class ExportadorPDF: NSObject, WKNavigationDelegate {
         carregou?.resume(throwing: error)
         carregou = nil
     }
+
+    /// O processo da página morreu a carregar: sem isto, a espera nunca acabava e o botão ficava "a criar o PDF".
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        carregou?.resume(throwing: NSError(domain: "Recap", code: 11, userInfo: [NSLocalizedDescriptionKey: "A página do PDF fechou-se a meio. Tenta outra vez."]))
+        carregou = nil
+    }
 }

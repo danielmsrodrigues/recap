@@ -321,7 +321,6 @@
       a.title = "Ir para esta secção nos apontamentos";
     }
     substituirBlocos(r, n);
-    alterado = false;
     esconderPerguntar();
     // O documento é outro: a procura em curso volta a ser feita, sem mexer no scroll.
     if (procura.termo) procurarTexto(procura.termo, true);
@@ -400,9 +399,8 @@
 
   // MARK: Edição
 
-  let alterado = false;
+  // O estado "há alterações" vive no Swift (`ControladorNotas.alterado`).
   function marcarAlterado() {
-    alterado = true;
     enviar("alterado", true);
   }
 
@@ -474,7 +472,6 @@
     document.body.classList.toggle("editar", ligar);
     fecharEditorFormula(false);
     esconderPerguntar();
-    alterado = false;
     historico = ligar ? [{ html: r.innerHTML, cursor: null }] : [];
     futuro = [];
     if (ligar) r.focus();

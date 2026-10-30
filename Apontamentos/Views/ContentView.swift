@@ -443,9 +443,8 @@ private struct DivisoriaPainel: View {
             .frame(width: 1)
             .padding(.horizontal, 3)
             .contentShape(.rect)
-            .onHover { dentro in
-                if dentro { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-            }
+            // O sistema troca o cursor (com push/pop à mão ficava preso se o painel fechasse com o rato em cima).
+            .pointerStyle(.columnResize)
             .gesture(
                 DragGesture(minimumDistance: 1, coordinateSpace: .global)
                     .onChanged { g in

@@ -100,6 +100,8 @@ struct TelefoneView: View {
     private func abrir(_ destino: DestinoIOS, substituindo: Bool) {
         var c = caminhos[separador] ?? []
         if substituindo, case .aula = c.last { c.removeLast() }
+        // Já está aberta (um [mm:ss] do Estudo dentro da própria aula completa): não se abre outra por cima.
+        guard c.last != destino else { return }
         c.append(destino)
         caminhos[separador] = c
     }
@@ -274,6 +276,8 @@ struct CadeiraView: View {
     @Environment(Estudo.self) private var estudo
     @Environment(Navegacao.self) private var navegacao
     @Environment(AvisoRevista.self) private var aviso: AvisoRevista?
+    /// Os avisos de exame da cadeira, lidos fora do fio principal (e não a cada redesenho).
+    @State private var exame: PistasExame.Grupo?
 
     private var cadeira: Cadeira? { library.cadeiras.first { $0.pasta.mesmoCaminho(pasta) } }
 
@@ -300,7 +304,7 @@ struct CadeiraView: View {
                     }
                 }
                 // O que o professor disse que sai no exame; tocar abre a aula nesse minuto.
-                if let grupo = pistasExame(cadeira) {
+                if let grupo = exame {
                     Section("Sai no exame") {
                         ForEach(Array(grupo.pistas.enumerated()), id: \.offset) { _, item in
                             Button {
@@ -328,15 +332,13 @@ struct CadeiraView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
+            // Relidos quando a procura nas aulas anteriores grava pistas novas ou chegam aulas do iCloud.
+            .task(id: "\(estudo.versao)·\(library.versao)") {
+                exame = await Task.detached { PistasExame.porCadeira([cadeira]).first }.value
+            }
         } else {
             ContentUnavailableView("Cadeira não encontrada", systemImage: "questionmark.folder")
         }
-    }
-
-    /// Os avisos de exame da cadeira (relidos quando a procura nas aulas anteriores grava pistas novas).
-    private func pistasExame(_ cadeira: Cadeira) -> PistasExame.Grupo? {
-        _ = estudo.versao
-        return PistasExame.porCadeira([cadeira]).first
     }
 
     /// Com o aviso ao marcar, para se poder desfazer um toque por engano.
