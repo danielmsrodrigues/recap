@@ -35,6 +35,7 @@ private struct ItensMenuAula: View {
 
     var body: some View {
         Button("Editar apontamentos") { c?.editar?() }
+            .keyboardShortcut("e")
             .disabled(c?.editar == nil)
         Divider()
         Button(c?.temApontamentos == true ? "Gerar apontamentos de novo…" : "Gerar apontamentos") { c?.gerarApontamentos?() }

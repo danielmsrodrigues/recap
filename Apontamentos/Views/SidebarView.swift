@@ -146,6 +146,8 @@ struct ListaAulas: View {
     let filtro: FiltroAulas
     let semestre: Semestre?
     @Binding var selecao: URL?
+    /// O texto do campo de pesquisa no topo da coluna: com ele, a lista dá lugar aos resultados de todas as aulas.
+    @Binding var pesquisa: String
     var aoTranscrever: () -> Void
 
     @State private var paraLixo: Aula?
@@ -208,62 +210,30 @@ struct ListaAulas: View {
     var body: some View {
         let aulas = aulas
         let porRever = aulas.filter { $0.temApontamentos && !$0.meta.revista }.count
-        List(selection: $selecao) {
-            if let cadeira = cadeiraEscolhida {
-                Label {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Sobre a cadeira").fontWeight(.semibold)
-                        Text("Avaliação, datas, programa e avisos").font(.caption).foregroundStyle(.secondary)
-                    }
-                } icon: {
-                    SiglaCadeira(nome: cadeira.nome, lado: 26)
-                }
-                .padding(.vertical, 3)
-                .padding(.horizontal, 4)
-                .tag(FichaCadeira.url(cadeira.pasta))
-            }
-            if cadeiraEscolhida != nil {
-                ForEach(aulas) { linha($0) }
+        Group {
+            if pesquisa.trimmingCharacters(in: .whitespaces).isEmpty {
+                lista(aulas)
             } else {
-                ForEach(porDia(aulas), id: \.dia) { grupo in
-                    Section(nomeDoDia(grupo.dia)) {
-                        ForEach(grupo.aulas) { linha($0) }
-                    }
-                }
+                ResultadosPesquisaView(termo: pesquisa)
             }
         }
-        .overlay {
-            if aulas.isEmpty {
-                ContentUnavailableView(filtro == .porRever ? "Está tudo revisto" : "Nenhuma aula",
-                                       systemImage: filtro == .porRever ? "checkmark.circle" : "tray")
-            }
-        }
-        // O título, a contagem e o "Transcrever" no topo da coluna, como no design: na barra da janela, o botão
-        // mudava de sítio conforme a aula aberta tinha botões ou não.
+        // O título e a contagem na barra de cima, por cima da coluna (como no Mail), com o "Transcrever" ao lado,
+        // sempre no mesmo sítio; a pesquisa logo por baixo.
         .safeAreaInset(edge: .top, spacing: 0) {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(titulo).font(.headline).lineLimit(1)
-                    Text(porRever > 0 ? "\(aulas.count) aulas · \(porRever) por rever" : "\(aulas.count) aulas")
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                .layoutPriority(1)
-                Spacer(minLength: 0)
-                // Numa coluna estreita, só o ícone: o título não fica cortado.
-                ViewThatFits(in: .horizontal) {
-                    botaoTranscrever.labelStyle(.titleAndIcon)
-                    botaoTranscrever.labelStyle(.iconOnly)
-                }
-                // Em cápsula e do tamanho grande, como no design.
-                .buttonBorderShape(.capsule)
-                .controlSize(.large)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(.bar)
+            CampoPesquisa(texto: $pesquisa, sugestao: "Procurar em todas as aulas")
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(.bar)
         }
         .navigationTitle(titulo)
-        .toolbar(removing: .title)
+        .navigationSubtitle(porRever > 0 ? "\(aulas.count) aulas · \(porRever) por rever" : "\(aulas.count) aulas")
+        .toolbar {
+            ToolbarItem {
+                botaoTranscrever
+                    .labelStyle(.titleAndIcon)
+                    .buttonBorderShape(.capsule)
+            }
+        }
         .sheet(item: $aEditarAula) { aula in
             EditarAulaSheet(aula: aula) { nova in if selecao == aula.pasta { selecao = nova } }
         }
@@ -285,6 +255,38 @@ struct ListaAulas: View {
         .alert("Erro", isPresented: Binding(get: { erro != nil }, set: { if !$0 { erro = nil } }), presenting: erro) { _ in
             Button("OK") {}
         } message: { Text($0) }
+    }
+
+    private func lista(_ aulas: [Aula]) -> some View {
+        List(selection: $selecao) {
+            if let cadeira = cadeiraEscolhida {
+                HStack(spacing: 10) {
+                    SiglaCadeira(nome: cadeira.nome, lado: 28)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Sobre a cadeira").fontWeight(.semibold)
+                        Text("Avaliação, datas, programa e avisos").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
+                .padding(.horizontal, 4)
+                .tag(FichaCadeira.url(cadeira.pasta))
+            }
+            if cadeiraEscolhida != nil {
+                ForEach(aulas) { linha($0) }
+            } else {
+                ForEach(porDia(aulas), id: \.dia) { grupo in
+                    Section(nomeDoDia(grupo.dia)) {
+                        ForEach(grupo.aulas) { linha($0) }
+                    }
+                }
+            }
+        }
+        .overlay {
+            if aulas.isEmpty {
+                ContentUnavailableView(filtro == .porRever ? "Está tudo revisto" : "Nenhuma aula",
+                                       systemImage: filtro == .porRever ? "checkmark.circle" : "tray")
+            }
+        }
     }
 
     @ViewBuilder private var botaoTranscrever: some View {
@@ -309,7 +311,8 @@ struct ListaAulas: View {
 
     private func linha(_ aula: Aula) -> some View {
         LinhaAula(aula: aula, numero: library.numeroDaAula(aula), cor: library.cor(aula.cadeira),
-                  aCorrer: fila.job(para: aula.pasta)?.estado == .aCorrer)
+                  aCorrer: fila.job(para: aula.pasta)?.estado == .aCorrer,
+                  escolhida: selecao.map { aula.pasta.mesmoCaminho($0) } ?? false)
             .tag(aula.pasta)
             .contextMenu { menu(aula) }
     }
@@ -358,16 +361,16 @@ struct ListaAulas: View {
     }
 }
 
-/// Uma aula na lista do meio: o tema, e por baixo a cor e a sigla da cadeira, o número e a data. Como no Mail,
-/// o ponto azul quer dizer por rever.
+/// Uma aula na lista do meio: o tema, e por baixo a cor e a sigla da cadeira, o número e a data. À direita,
+/// "Por rever" ou o visto verde de revista.
 private struct LinhaAula: View {
     let aula: Aula
     let numero: Int
     let cor: Color
     /// Os apontamentos desta aula estão a ser gerados.
     let aCorrer: Bool
-    /// Linha selecionada (fundo azul): o ponto azul passa a branco para não desaparecer.
-    @Environment(\.backgroundProminence) private var proeminencia
+    /// Linha escolhida (fundo azul): a etiqueta "Por rever" e o visto passam a branco para não desaparecerem.
+    let escolhida: Bool
 
     /// "Aula 3 · Tema" → só o tema; o número vai para a linha de baixo. Outros títulos ficam inteiros.
     private var tema: String { TituloAula.separar(aula.meta.titulo)?.tema ?? aula.meta.titulo }
@@ -379,7 +382,7 @@ private struct LinhaAula: View {
     }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .center, spacing: 8) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(tema).fontWeight(.semibold).lineLimit(2)
                 HStack(spacing: 5) {
@@ -393,12 +396,28 @@ private struct LinhaAula: View {
             Spacer(minLength: 0)
             if aCorrer {
                 Girador(tamanho: .mini)
-            } else if aula.temApontamentos && !aula.meta.revista {
-                Circle().fill(proeminencia == .increased ? Color.white : Color.accentColor)
-                    .frame(width: 8, height: 8).help("Por rever")
+            } else if aula.temApontamentos {
+                revisao
             }
         }
         .padding(.vertical, 3)
+    }
+
+    /// "Por rever" numa etiqueta azul; revista, um visto verde. Na linha escolhida (fundo azul), a branco.
+    @ViewBuilder private var revisao: some View {
+        if aula.meta.revista {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(escolhida ? Color.white : Color.green)
+                .help("Revista")
+        } else {
+            Text("Por rever")
+                .font(.caption2.weight(.semibold))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .foregroundStyle(escolhida ? Color.white : Color.accentColor)
+                .background((escolhida ? Color.white : Color.accentColor).opacity(0.18), in: .capsule)
+                .fixedSize()
+        }
     }
 }
 
@@ -436,6 +455,50 @@ private struct LinhaJob: View {
                 return "\(etapa.nome) · \(p.formatted(.percent.precision(.fractionLength(0))))"
             }
             return etapa.nome
+        }
+    }
+}
+
+/// O campo de pesquisa do macOS (com a lupa e o botão de limpar), no topo da coluna das aulas: o `.searchable`
+/// só o põe na barra da janela ou na barra lateral.
+struct CampoPesquisa: NSViewRepresentable {
+    @Binding var texto: String
+    var sugestao: String
+
+    func makeNSView(context: Context) -> NSSearchField {
+        let campo = Campo()
+        campo.placeholderString = sugestao
+        campo.delegate = context.coordinator
+        campo.controlSize = .large
+        campo.sendsSearchStringImmediately = true
+        return campo
+    }
+
+    func updateNSView(_ campo: NSSearchField, context: Context) {
+        context.coordinator.texto = $texto
+        if campo.stringValue != texto { campo.stringValue = texto }
+    }
+
+    func makeCoordinator() -> Coordenador { Coordenador(texto: $texto) }
+
+    /// Só fica com o cursor depois de clicado: ao abrir a janela, as setas continuam a mexer na lista.
+    final class Campo: NSSearchField {
+        private var clicado = false
+        override var acceptsFirstResponder: Bool { clicado }
+        override func mouseDown(with event: NSEvent) {
+            clicado = true
+            window?.makeFirstResponder(self)
+            super.mouseDown(with: event)
+        }
+    }
+
+    final class Coordenador: NSObject, NSSearchFieldDelegate {
+        var texto: Binding<String>
+        init(texto: Binding<String>) { self.texto = texto }
+
+        func controlTextDidChange(_ nota: Notification) {
+            guard let campo = nota.object as? NSSearchField else { return }
+            texto.wrappedValue = campo.stringValue
         }
     }
 }

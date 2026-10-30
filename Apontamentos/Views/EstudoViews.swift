@@ -38,7 +38,12 @@ struct PainelEstudo: View {
             case .ligacoes: LigacoesView(aula: aula, aoClicarTimestamp: aoClicarTimestamp, aoAbrirAula: aoAbrirAula)
             }
         }
+        #if os(macOS)
+        // Só até à barra de cima da aula: por baixo dela, o fundo subia até ao topo da janela.
+        .background(.background, ignoresSafeAreaEdges: [])
+        #else
         .background(.background)
+        #endif
     }
 }
 

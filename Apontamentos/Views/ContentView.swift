@@ -37,16 +37,8 @@ struct ContentView: View {
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 320)
         } content: {
-            Group {
-                if pesquisa.trimmingCharacters(in: .whitespaces).isEmpty {
-                    ListaAulas(filtro: filtro, semestre: semestre, selecao: $selecao) { configurarDireto = true }
-                } else {
-                    ResultadosPesquisaView(termo: pesquisa).navigationTitle("Procurar")
-                }
-            }
-            .searchable(text: $pesquisa, placement: .sidebar, prompt: "Procurar em todas as aulas")
-            // Por fora do `.searchable`: por dentro, a largura pedida não chegava à coluna.
-            .navigationSplitViewColumnWidth(min: 280, ideal: 320, max: 440)
+            ListaAulas(filtro: filtro, semestre: semestre, selecao: $selecao, pesquisa: $pesquisa) { configurarDireto = true }
+                .navigationSplitViewColumnWidth(min: 300, ideal: 330, max: 440)
         } detail: {
             if let selecao, selecao.lastPathComponent == FichaCadeira.fichaMD,
                let cadeira = library.cadeiras.first(where: { $0.pasta.mesmoCaminho(selecao.deletingLastPathComponent()) }) {
@@ -304,7 +296,8 @@ private struct Inicio: View {
             .frame(maxWidth: 780)
             .frame(maxWidth: .infinity)
         }
-        .navigationTitle("Início")
+        // Sem botões nesta vista: o espaço fica à direita e o "Transcrever" da lista não foge para a ponta da janela.
+        .toolbar { ToolbarSpacer(.flexible) }
     }
 
     /// O cartão "Transcrever em direto" e o de largar o vídeo.
