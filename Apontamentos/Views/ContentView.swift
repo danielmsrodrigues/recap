@@ -41,8 +41,17 @@ struct ContentView: View {
         NavigationSplitView {
             barraLateral
         } content: {
-            ListaAulas(filtro: filtro, semestre: semestre, selecao: $selecao, pesquisa: $pesquisa) { configurarDireto = true }
-                .navigationSplitViewColumnWidth(min: 300, ideal: 330, max: 440)
+            Group {
+                if filtro == .exame {
+                    // Os avisos de exame do semestre; um clique abre a aula nesse minuto.
+                    ListaPistasExame(cadeiras: library.cadeiras(no: semestre))
+                        .navigationTitle("Sai no exame")
+                        .toolbar { ToolbarItem { BotaoTranscrever { configurarDireto = true } } }
+                } else {
+                    ListaAulas(filtro: filtro, semestre: semestre, selecao: $selecao, pesquisa: $pesquisa) { configurarDireto = true }
+                }
+            }
+            .navigationSplitViewColumnWidth(min: 300, ideal: 330, max: 440)
         } detail: {
             if let selecao, selecao.lastPathComponent == FichaCadeira.fichaMD,
                let cadeira = library.cadeiras.first(where: { $0.pasta.mesmoCaminho(selecao.deletingLastPathComponent()) }) {
