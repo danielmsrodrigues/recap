@@ -72,6 +72,19 @@ struct CampoPerguntaTests {
         #expect(NSImage(contentsOf: try #require(urls.first)) != nil)
     }
 
+    /// O ⌘V só chega ao `paste` se o campo disser que sabe ler o que está copiado: um campo de texto simples
+    /// não lê imagens, e o "Colar" ficava desligado com uma captura de ecrã copiada.
+    @Test func oColarFicaLigadoComUmaImagemCopiada() {
+        let pb = NSPasteboard(name: .init("teste-\(UUID().uuidString)"))
+        defer { pb.releaseGlobally() }
+        let imagem = NSImage(size: NSSize(width: 20, height: 10), flipped: false) { r in
+            NSColor.red.setFill(); r.fill(); return true
+        }
+        pb.clearContents()
+        pb.writeObjects([imagem])
+        #expect(pb.availableType(from: campo("").readablePasteboardTypes) != nil)
+    }
+
     @Test func textoColaComoTexto() {
         let pb = NSPasteboard(name: .init("teste-\(UUID().uuidString)"))
         defer { pb.releaseGlobally() }

@@ -141,6 +141,12 @@ final class TextoPergunta: NSTextView {
         }
     }
 
+    /// Sem as imagens aqui, um campo de texto simples desliga o "Colar" (e não aceita o arrasto) quando o que
+    /// está copiado é só uma imagem, e o `paste` nunca chega a ser chamado.
+    override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
+        super.readablePasteboardTypes + NSImage.imageTypes.map { NSPasteboard.PasteboardType($0) }
+    }
+
     override func paste(_ sender: Any?) {
         guard let urls = Self.ficheirosParaColar(.general) else { return super.paste(sender) }
         aoJuntar(urls)
