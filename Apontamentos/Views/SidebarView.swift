@@ -300,7 +300,7 @@ struct ListaAulas: View {
             .help("A captar em direto: mostrar a janela da captação")
         } else {
             Button(action: aoTranscrever) {
-                Label("Transcrever", systemImage: "circle.fill").fontWeight(.semibold).imageScale(.small)
+                Label("Transcrever", systemImage: "record.circle").fontWeight(.semibold)
             }
             .buttonStyle(.borderedProminent)
             .help("Transcrever em direto (⇧⌘L)")
