@@ -69,6 +69,9 @@ struct ProgressoGuiaView: View {
             HStack(spacing: 8) {
                 ProgressView(value: Double(p.feitas), total: Double(max(p.total, 1)))
                 Text("A ver as aulas anteriores: \(p.feitas) de \(p.total)").font(.caption).monospacedDigit()
+                #if os(macOS)
+                Button("Parar") { estudo.cancelarSeccoesGuia(cadeira) }.controlSize(.small)
+                #endif
             }
         } else if !porVer.isEmpty {
             #if os(macOS)

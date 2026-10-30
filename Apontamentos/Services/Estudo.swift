@@ -301,6 +301,7 @@ final class Estudo {
     /// A procura das secções da guia nas aulas anteriores (ver `procurarSeccoesGuia`), por cadeira.
     private(set) var procuraGuia: [URL: (feitas: Int, total: Int)] = [:]
     private(set) var erroGuia: [URL: String] = [:]
+    @ObservationIgnored private var tarefasGuia: [URL: Task<Void, Never>] = [:]
 
     private let library: Library
     private let definicoes: Definicoes
@@ -359,9 +360,9 @@ final class Estudo {
         guard !porVer.isEmpty else { return }
         erroGuia[chave] = nil
         procuraGuia[chave] = (0, porVer.count)
-        Task { [weak self] in
+        tarefasGuia[chave] = Task { [weak self] in
             guard let self else { return }
-            defer { procuraGuia[chave] = nil }
+            defer { procuraGuia[chave] = nil; tarefasGuia[chave] = nil }
             guard let (indice, _) = await Task.detached(operation: { GuiaEstudo.carregar(cadeira: chave) }).value else {
                 erroGuia[chave] = "Não consegui ler o índice da guia."
                 return
@@ -373,11 +374,14 @@ final class Estudo {
             }
             var falhas = 0
             for (i, aula) in porVer.enumerated() {
+                if Task.isCancelled { return }
                 if let t = Disco.lerTranscricao(aula.pasta) {
                     do {
                         let r = try await SeccoesDaAula.escolher(indice, transcricao: t, gerador: gerador)
                         try Disco.escreverSeccoesGuia(SeccoesGuardadas(r.selecao, indice: indice), em: aula.pasta)
                         versao += 1
+                    } catch is CancellationError {
+                        return
                     } catch {
                         falhas += 1
                     }
@@ -387,6 +391,8 @@ final class Estudo {
             if falhas > 0 { erroGuia[chave] = "\(falhas) \(falhas == 1 ? "aula ficou" : "aulas ficaram") por ver: tenta outra vez mais tarde." }
         }
     }
+
+    func cancelarSeccoesGuia(_ cadeira: Cadeira) { tarefasGuia[cadeira.pasta]?.cancel() }
 
     // MARK: Pedidos
 
