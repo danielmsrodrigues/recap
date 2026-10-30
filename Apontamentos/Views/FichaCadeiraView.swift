@@ -7,6 +7,9 @@ struct FichaCadeiraView: View {
     let cadeira: Cadeira
     @Environment(Fichas.self) private var fichas
     @Environment(Navegacao.self) private var navegacao
+    @Environment(Library.self) private var library
+    /// O livro da cadeira (PDF) está a ser feito.
+    @State private var aFazerLivro = false
 
     @State private var ficha: String?
     @State private var controlador = ControladorNotas()
@@ -37,6 +40,11 @@ struct FichaCadeiraView: View {
                 Divider()
             }
             estado
+            // O progresso do programa, só com guia e fora da edição.
+            if temPrograma && !controlador.editando {
+                ProgressoGuiaView(cadeira: cadeira)
+                Divider()
+            }
             if let ficha {
                 NotesWebView(markdown: ficha, controlador: controlador, realcar: controlador.editando ? [] : realce)
             } else {
@@ -71,6 +79,9 @@ struct FichaCadeiraView: View {
                 }
                 .labelStyle(.titleAndIcon)
                 .disabled(controlador.editando || fichas.aAtualizar(cadeira) != nil)
+                Button(aFazerLivro ? "A fazer o livro…" : "Livro da cadeira (PDF)…", systemImage: "book") { fazerLivro() }
+                    .help("Um PDF com a ficha, todas as aulas por ordem e o glossário, para estudar sem ecrã")
+                    .disabled(aFazerLivro || !cadeira.aulas.contains(where: \.temApontamentos))
                 #else
                 if temPrograma {
                     Button("Guia de estudo", systemImage: "doc.text") { guiaAberta = FichaCadeira.urlPrograma(cadeira.pasta) }
@@ -144,6 +155,26 @@ struct FichaCadeiraView: View {
         procurando = false
         controlador.limparProcura()
     }
+
+    #if os(macOS)
+    /// Pergunta onde guardar e faz o PDF (as partes uma a uma, com o aspeto dos apontamentos).
+    private func fazerLivro() {
+        let painel = NSSavePanel()
+        painel.nameFieldStringValue = "\(cadeira.nome) — livro da cadeira.pdf"
+        painel.allowedContentTypes = [.pdf]
+        guard painel.runModal() == .OK, let destino = painel.url else { return }
+        aFazerLivro = true
+        Task {
+            defer { aFazerLivro = false }
+            do {
+                try await LivroCadeira.exportar(cadeira, library: library, para: destino)
+                NSWorkspace.shared.activateFileViewerSelecting([destino])
+            } catch {
+                erro = "Não foi possível fazer o livro da cadeira: \(error.localizedDescription)"
+            }
+        }
+    }
+    #endif
 
     private func removerPrograma() {
         do {

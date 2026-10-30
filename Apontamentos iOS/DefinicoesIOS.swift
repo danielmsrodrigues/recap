@@ -25,6 +25,12 @@ struct DefinicoesIOS: View {
                 }
 
                 Section {
+                    NavigationLink("Sobre o Recap") { SobreView() }
+                } footer: {
+                    Text("Versão \(Novidades.atual): o que veio com cada versão.")
+                }
+
+                Section {
                     Picker("Por onde", selection: $definicoes.motor) {
                         ForEach(MotorTipo.allCases) { Text($0.nome).tag($0) }
                     }

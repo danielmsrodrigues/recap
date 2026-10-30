@@ -30,6 +30,10 @@ final class SessaoDireto {
     private var pretaDesde: Double?
     /// O que está a ser captado da janela da aula (nil = sem slides ou ainda sem imagem).
     private(set) var previa: CGImage?
+    /// Os bocados (tempo de aula) marcados com "Não estou a perceber", por ordem; o último pode estar aberto.
+    private(set) var naoPercebi: [IntervaloNaoPercebi] = []
+    /// "Não estou a perceber" está ligado: o botão passa a "Já percebi".
+    var aNaoPerceber: Bool { naoPercebi.last.map { $0.fim == nil } ?? false }
     /// A janela "Em direto" está a mostrar as janelas para mudar (#39). Enquanto se escolhe, não termina sozinha
     /// por silêncio (o aviso não se vê); fecha quando a captação acaba.
     var escolherJanela = false
@@ -68,6 +72,7 @@ final class SessaoDireto {
         self.fila = fila
         fila.emEspera = true
         segundos = 0; silencio = 0; houveSom = false; nivel = -120; previa = nil; pretaDesde = nil; avisoPreto = false
+        naoPercebi = []
         do {
             let g = try GravadorTemporario()
             let f = capturarSlides ? try GravadorFrames(janela: fonte.janela) : nil
@@ -122,6 +127,38 @@ final class SessaoDireto {
         }
     }
 
+    /// "Não estou a perceber" abre um bocado da aula; "Já percebi" fecha-o. Fica logo na aula (se a app fechar, não se
+    /// perde), e os apontamentos explicam esse tema outra vez. O tempo é o do gravador nesse instante, não o do relógio
+    /// da janela (atualizado de meio em meio segundo).
+    func alternarNaoPercebi() {
+        guard ativa, let gravador else { return }
+        let agora = (gravador.segundos * velocidade).rounded()
+        if aNaoPerceber {
+            naoPercebi[naoPercebi.count - 1].fim = max(agora, naoPercebi[naoPercebi.count - 1].inicio)
+        } else {
+            naoPercebi.append(IntervaloNaoPercebi(inicio: agora))
+        }
+        guardarNaoPercebi()
+    }
+
+    /// Um "Não estou a perceber" ainda aberto fecha no fim da captação.
+    func fecharNaoPercebi() {
+        guard aNaoPerceber, let gravador else { return }
+        naoPercebi[naoPercebi.count - 1].fim = max((gravador.segundos * velocidade).rounded(), naoPercebi[naoPercebi.count - 1].inicio)
+        guardarNaoPercebi()
+    }
+
+    private func guardarNaoPercebi() {
+        guard let pastaAula else { return }
+        do {
+            var meta = try Disco.lerMeta(pastaAula)
+            meta.naoPercebi = naoPercebi
+            try Disco.escreverMeta(meta, em: pastaAula)
+        } catch {
+            aviso = "Não consegui guardar o bocado que não percebeste: \(error.localizedDescription)"
+        }
+    }
+
     func pausar(_ pausar: Bool) {
         guard estado == .aOuvir || estado == .emPausa else { return }
         gravador?.definirPausa(pausar)
@@ -139,6 +176,7 @@ final class SessaoDireto {
             return
         }
         frames?.concluir()
+        fecharNaoPercebi()
         fila?.adicionar(Job(pastaAula: pastaAula, titulo: titulo, video: nil, gerarApontamentos: gerarApontamentos,
                             audioDireto: gravador.url, velocidade: velocidade, framesDireto: frames?.pasta))
         self.gravador = nil

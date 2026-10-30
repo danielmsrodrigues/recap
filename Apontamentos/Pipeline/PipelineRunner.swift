@@ -207,6 +207,8 @@ final class PipelineRunner {
                 do {
                     let r = try await SeccoesDaAula.escolher(indice, transcricao: transcricao, gerador: gerador)
                     geracaoSelecao = r.geracao
+                    // Fica na aula para o progresso do programa ("Sobre a cadeira").
+                    try? Disco.escreverSeccoesGuia(SeccoesGuardadas(r.selecao, indice: indice), em: job.pastaAula)
                     contexto.guia = GuiaDaAula.montar(indice, paginas: paginas, selecao: r.selecao)
                     if let semEspaco = contexto.guia?.semEspaco, !semEspaco.isEmpty {
                         avisos.append("Secções da guia que não couberam no pedido (só com a referência): \(semEspaco.map(\.id).joined(separator: ", ")).")
@@ -270,6 +272,19 @@ final class PipelineRunner {
             avisos.append("Não foi possível acrescentar as explicações 💡: \(error.localizedDescription)")
         }
 
+        // Terceiro passo: o que o professor disse que sai no exame (`exame.json`). Se falhar, a aula fica por procurar.
+        job.atualizar(.apontamentos, progresso: nil, detalhe: "A procurar o que sai no exame…")
+        var pistasExame: [PistasExame.Pista]?
+        do {
+            let r = try await PistasExame.procurar(transcricao, lingua: definicoes.linguaApontamentos, gerador: revisor)
+            pistasExame = r.pistas
+            geracao.somar(r.geracao)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            avisos.append("Não foi possível procurar o que sai no exame: \(error.localizedDescription)")
+        }
+
         // As páginas da guia citadas têm de vir das secções enviadas; as outras ficam "por confirmar".
         if let guia = contexto.guia {
             let v = CitacoesGuia.verificar(semSobre, paginas: guia.paginasPermitidas, seccoes: guia.idsPermitidos)
@@ -288,6 +303,7 @@ final class PipelineRunner {
         try Disco.guardarCopiaApontamentos(em: job.pastaAula)
         try Disco.escreverApontamentos(semSobre, em: job.pastaAula)
         try FichaCadeira.escreverExcerto(sobre, em: job.pastaAula)
+        if let pistasExame { try Disco.escreverPistasExame(pistasExame, em: job.pastaAula) }
         try library.atualizarMeta(em: job.pastaAula) {
             $0.geracoes.append(geracao)
             if let titulo { $0.titulo = titulo }

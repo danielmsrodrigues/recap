@@ -251,6 +251,7 @@ extension ContextoAula {
         contexto.anexos = Anexos.blocos(anexos, em: aula.pasta)
         contexto.anexosAnteriores = Anexos.blocos(anexosAnteriores, em: aula.pasta)
         contexto.materiaisProfessor = Materiais.blocos(em: aula.pasta)
+        contexto.naoPercebi = aula.meta.naoPercebi ?? []
         return contexto
     }
 
@@ -298,6 +299,14 @@ final class Estudo {
     @ObservationIgnored private var focoPendente = false
     /// Muda quando um ficheiro de estudo é gravado (as vistas voltam a ler do disco).
     private(set) var versao = 0
+    /// A procura do que sai no exame nas aulas anteriores (ver `procurarPistasExame`): quantas já foram vistas, de quantas.
+    private(set) var procuraExame: (feitas: Int, total: Int)?
+    private(set) var erroExame: String?
+    @ObservationIgnored private var tarefaExame: Task<Void, Never>?
+    /// A procura das secções da guia nas aulas anteriores (ver `procurarSeccoesGuia`), por cadeira.
+    private(set) var procuraGuia: [URL: (feitas: Int, total: Int)] = [:]
+    private(set) var erroGuia: [URL: String] = [:]
+    @ObservationIgnored private var tarefasGuia: [URL: Task<Void, Never>] = [:]
 
     private let library: Library
     private let definicoes: Definicoes
@@ -339,6 +348,101 @@ final class Estudo {
         defer { focoPendente = false }
         return focoPendente
     }
+
+    // MARK: Sai no exame
+
+    /// As aulas transcritas onde ainda não se procurou o que sai no exame (as novas já vêm com isso).
+    func aulasSemPistasExame(_ aulas: [Aula]) -> [Aula] {
+        aulas.filter { $0.temTranscricao && Disco.lerPistasExame($0.pasta) == nil }
+    }
+
+    /// Procura, aula a aula, o que sai no exame nas aulas anteriores. Continua quando se muda de vista; uma aula que
+    /// falhe fica por procurar e as outras seguem.
+    func procurarPistasExame(_ aulas: [Aula]) {
+        guard tarefaExame == nil else { return }
+        let porVer = aulasSemPistasExame(aulas)
+        guard !porVer.isEmpty else { return }
+        erroExame = nil
+        procuraExame = (0, porVer.count)
+        tarefaExame = Task { [weak self] in
+            guard let self else { return }
+            defer { procuraExame = nil; tarefaExame = nil }
+            let gerador: NotesGenerator
+            do { gerador = try definicoes.gerador(esforco: .medium) } catch {
+                erroExame = error.localizedDescription
+                return
+            }
+            var falhas = 0
+            for (i, aula) in porVer.enumerated() {
+                if Task.isCancelled { return }
+                if let t = Disco.lerTranscricao(aula.pasta) {
+                    do {
+                        let r = try await PistasExame.procurar(t, lingua: definicoes.linguaApontamentos, gerador: gerador)
+                        try Disco.escreverPistasExame(r.pistas, em: aula.pasta)
+                        versao += 1
+                    } catch is CancellationError {
+                        return
+                    } catch {
+                        falhas += 1
+                    }
+                }
+                procuraExame = (i + 1, porVer.count)
+            }
+            if falhas > 0 { erroExame = "\(falhas) \(falhas == 1 ? "aula ficou" : "aulas ficaram") por ver: tenta outra vez mais tarde." }
+        }
+    }
+
+    func cancelarPistasExame() { tarefaExame?.cancel() }
+
+    // MARK: Progresso do programa
+
+    /// As aulas transcritas onde ainda não se sabe que secções da guia foram dadas (as novas já o guardam).
+    func aulasSemSeccoesGuia(_ cadeira: Cadeira) -> [Aula] {
+        cadeira.aulas.filter { $0.temTranscricao && Disco.lerSeccoesGuia($0.pasta) == nil }
+    }
+
+    /// Vê, aula a aula, que secções da guia foram dadas nas aulas anteriores (um pedido curto por aula). Continua
+    /// quando se muda de vista; uma aula que falhe fica por ver e as outras seguem.
+    func procurarSeccoesGuia(_ cadeira: Cadeira) {
+        let chave = cadeira.pasta
+        guard procuraGuia[chave] == nil else { return }
+        let porVer = aulasSemSeccoesGuia(cadeira)
+        guard !porVer.isEmpty else { return }
+        erroGuia[chave] = nil
+        procuraGuia[chave] = (0, porVer.count)
+        tarefasGuia[chave] = Task { [weak self] in
+            guard let self else { return }
+            defer { procuraGuia[chave] = nil; tarefasGuia[chave] = nil }
+            guard let (indice, _) = await Task.detached(operation: { GuiaEstudo.carregar(cadeira: chave) }).value else {
+                erroGuia[chave] = "Não consegui ler o índice da guia."
+                return
+            }
+            let gerador: NotesGenerator
+            do { gerador = try definicoes.gerador() } catch {
+                erroGuia[chave] = error.localizedDescription
+                return
+            }
+            var falhas = 0
+            for (i, aula) in porVer.enumerated() {
+                if Task.isCancelled { return }
+                if let t = Disco.lerTranscricao(aula.pasta) {
+                    do {
+                        let r = try await SeccoesDaAula.escolher(indice, transcricao: t, gerador: gerador)
+                        try Disco.escreverSeccoesGuia(SeccoesGuardadas(r.selecao, indice: indice), em: aula.pasta)
+                        versao += 1
+                    } catch is CancellationError {
+                        return
+                    } catch {
+                        falhas += 1
+                    }
+                }
+                procuraGuia[chave] = (i + 1, porVer.count)
+            }
+            if falhas > 0 { erroGuia[chave] = "\(falhas) \(falhas == 1 ? "aula ficou" : "aulas ficaram") por ver: tenta outra vez mais tarde." }
+        }
+    }
+
+    func cancelarSeccoesGuia(_ cadeira: Cadeira) { tarefasGuia[cadeira.pasta]?.cancel() }
 
     // MARK: Pedidos
 
@@ -933,4 +1037,180 @@ final class Estudo {
     - Nas explicações, refere as outras aulas pelo título ("na aula de Autovalores…"), nunca pelo id (A1).
     - Explicações, conceitos e notas em {{lingua_apontamentos}}, mas os nomes dos campos do JSON ficam exatamente como no exemplo, em português ("explicacao", não "explicacion"). Dentro dos textos, usa « » em vez de aspas. Sem LaTeX nem Markdown: símbolos em Unicode (λ, Σ, ∇, A⁻¹, x²).
     """
+}
+
+// MARK: - Perguntar à cadeira
+
+/// O painel de perguntas, mas sobre a cadeira inteira: a ficha e os apontamentos de todas as aulas. As respostas
+/// levam ao momento de uma aula com `[Aula 3 · 12:34](#<aula>@12:34)` ou a uma secção com `[Título](#<aula>/<secção>)`.
+/// A conversa fica em `<cadeira>/perguntas-cadeira.json`.
+extension Estudo {
+    /// Uma aula no pedido das perguntas à cadeira.
+    struct AulaNaCadeira: Sendable {
+        var numero: Int
+        var titulo: String
+        var data: Date
+        var prefixo: String
+        var apontamentos: String
+    }
+
+    /// Quanto dos apontamentos das aulas vai com cada pergunta (~100 mil tokens). Passando disto, as aulas mais
+    /// antigas vão só com o resumo e os títulos.
+    nonisolated static let limiteCadeira = 360_000
+
+    /// A mesma chave das perguntas de uma aula, mas com a pasta da cadeira (nunca coincidem).
+    static func chave(_ cadeira: Cadeira) -> Chave { Chave(pasta: cadeira.pasta.standardizedFileURL.path, tipo: .pergunta) }
+
+    func emCurso(_ cadeira: Cadeira) -> EmCurso? { emCurso[Self.chave(cadeira)] }
+    func erro(_ cadeira: Cadeira) -> String? { erros[Self.chave(cadeira)] }
+    func cancelar(_ cadeira: Cadeira) { emCurso[Self.chave(cadeira)]?.tarefa?.cancel() }
+
+    func apagarPerguntas(_ cadeira: Cadeira) {
+        try? Disco.escreverPerguntasCadeira([], em: cadeira.pasta)
+        versao += 1
+    }
+
+    func perguntar(_ pergunta: String, aCadeira cadeira: Cadeira) {
+        let chave = Self.chave(cadeira)
+        guard emCurso[chave] == nil else { return }
+        erros[chave] = nil
+        let gerador: NotesGenerator
+        do { gerador = try definicoes.gerador(esforco: .medium) } catch {
+            erros[chave] = error.localizedDescription
+            return
+        }
+        let anteriores = Disco.lerPerguntasCadeira(cadeira.pasta)
+        let aulas = cadeira.aulas.filter(\.temApontamentos).sorted { $0.meta.data < $1.meta.data }.map {
+            AulaNaCadeira(numero: library.numeroDaAula($0), titulo: $0.meta.titulo, data: $0.meta.data,
+                          prefixo: Self.prefixoLink($0.pasta), apontamentos: Disco.lerApontamentos($0.pasta) ?? "")
+        }
+        guard !aulas.isEmpty else {
+            erros[chave] = "Esta cadeira ainda não tem aulas com apontamentos."
+            return
+        }
+        var blocos: [BlocoConteudo] = []
+        if let ficha = FichaCadeira.lerFicha(cadeira.pasta) {
+            blocos.append(.texto("Ficha da cadeira:\n\n<ficha>\n\(ficha)\n</ficha>"))
+        }
+        blocos.append(.texto(Self.aulasParaCadeira(aulas, limite: Self.limiteCadeira)))
+        if !anteriores.isEmpty {
+            let conversa = anteriores.suffix(8).map { "Pergunta: \($0.pergunta)\n\nResposta: \($0.resposta)" }.joined(separator: "\n\n---\n\n")
+            blocos.append(.texto("Perguntas anteriores sobre esta cadeira:\n\n<conversa>\n\(conversa)\n</conversa>"))
+        }
+        blocos.append(.texto("Pergunta do estudante:\n\n\(pergunta)"))
+        let sistema = definicoes.prompt(Self.sistemaCadeira, idioma: definicoes.idioma(da: cadeira))
+        emCurso[chave] = EmCurso(pergunta: pergunta)
+        emCurso[chave]?.tarefa = Task {
+            do {
+                let r = try await gerador.gerar(
+                    sistema: sistema, conteudo: blocos,
+                    aoRecomecar: { [weak self] in self?.emCurso[chave]?.texto = "" },
+                    aoReceber: { [weak self] pedaco in self?.emCurso[chave]?.texto += pedaco },
+                    aoRepetir: { _, _, _ in })
+                let nova = PerguntaAula(pergunta: pergunta, resposta: r.markdown.trimmingCharacters(in: .whitespacesAndNewlines))
+                try Disco.juntarPerguntaCadeira(nova, em: cadeira.pasta)
+            } catch is CancellationError {
+            } catch {
+                if !Task.isCancelled { erros[chave] = error.localizedDescription }
+            }
+            emCurso[chave] = nil
+            versao += 1
+        }
+    }
+
+    /// As aulas por ordem. As mais recentes vão completas enquanto couberem em `limite`; as outras só com o resumo e os títulos.
+    nonisolated static func aulasParaCadeira(_ aulas: [AulaNaCadeira], limite: Int) -> String {
+        var sobra = limite
+        var completas: Set<String> = []
+        for a in aulas.reversed() where a.apontamentos.count <= sobra {
+            completas.insert(a.prefixo)
+            sobra -= a.apontamentos.count
+        }
+        let lista = aulas.map { aulaParaCadeira($0, completa: completas.contains($0.prefixo)) }.joined(separator: "\n\n")
+        let como = completas.count == aulas.count ? "com os apontamentos completos" : "as mais recentes com os apontamentos completos, as mais antigas só com o resumo e os títulos"
+        return "Aulas da cadeira, por ordem (\(como)):\n\n\(lista)"
+    }
+
+    /// Uma aula no pedido: o número, o prefixo dos links, as secções já como links e os apontamentos com os [mm:ss]
+    /// (são eles que dão os links para o momento da aula). Sem as imagens dos slides.
+    nonisolated static func aulaParaCadeira(_ a: AulaNaCadeira, completa: Bool) -> String {
+        let quando = a.data.formatted(.dateTime.day().month(.wide).year().locale(Locale(identifier: "pt_PT")))
+        let seccoes = Seccoes.lista(a.apontamentos).map { s in
+            Seccoes.Seccao(indice: s.indice, nivel: s.nivel, titulo: s.titulo, ancora: "\(a.prefixo)/\(s.ancora)")
+        }
+        let corpo = (completa ? a.apontamentos : esqueleto(a.apontamentos))
+            .components(separatedBy: .newlines).filter { !$0.hasPrefix("![") }.joined(separator: "\n")
+        return """
+        <aula numero="\(a.numero)" titulo="\(a.titulo)" data="\(quando)" prefixo="\(a.prefixo)">
+        <seccoes>
+        \(Seccoes.indice(seccoes))
+        </seccoes>
+        <\(completa ? "apontamentos" : "resumo")>
+        \(corpo.trimmingCharacters(in: .whitespacesAndNewlines))
+        </\(completa ? "apontamentos" : "resumo")>
+        </aula>
+        """
+    }
+
+    /// Para onde leva um link de uma resposta sobre a cadeira: `#<aula>@mm:ss` ao momento da transcrição,
+    /// `#<aula>/<secção>` à secção dos apontamentos. nil se a aula não for desta cadeira.
+    nonisolated static func destino(_ ligacao: LigacaoSeccao, aulas: [Aula]) -> DestinoAula? {
+        var ancora = ligacao.ancora.removingPercentEncoding ?? ligacao.ancora
+        if ancora.hasPrefix("#") { ancora.removeFirst() }
+        let separador = ancora.firstIndex { $0 == "@" || $0 == "/" }
+        guard let separador else { return nil }
+        let prefixo = String(ancora[..<separador])
+        let resto = String(ancora[ancora.index(after: separador)...])
+        guard let aula = aulas.first(where: { prefixoLink($0.pasta) == prefixo }) else { return nil }
+        if ancora[separador] == "@" {
+            guard let tempo = Timestamp.parse(resto) else { return nil }
+            return DestinoAula(pasta: aula.pasta, separador: .transcricao, tempo: tempo)
+        }
+        return DestinoAula(pasta: aula.pasta, separador: .apontamentos, seccao: LigacaoSeccao(ancora: resto, texto: ligacao.texto))
+    }
+
+    /// Com `{{contexto}}`, `{{idioma}}` e `{{regras_lingua}}` por substituir (`Definicoes.prompt`).
+    static let sistemaCadeira = """
+    Respondes às perguntas de um estudante sobre uma cadeira universitária inteira. {{contexto}} Recebes a ficha da cadeira e os apontamentos de cada aula (feitos a partir das aulas, em {{idioma}}; das mais antigas, às vezes, só o resumo e os títulos).
+
+    ## Como responder
+    - Responde diretamente à pergunta, de forma clara e curta, para quem está a estudar para o exame.
+    - Baseia-te no que foi dado nas aulas e diz sempre de que aula vem ("na Aula 3, a professora…").
+    - A matéria é muitas vezes dada aos bocados: se um assunto aparece em várias aulas, junta-as por ordem e diz o que cada uma acrescenta.
+    - Para levar o estudante a um momento de uma aula, põe um link assim: [Aula 3 · 12:34](#<prefixo>@12:34), com o prefixo da aula e um minuto [mm:ss] que esteja nos apontamentos dessa aula. Para uma secção, usa o link tal como vem na lista de secções da aula, ex.: [Límites](#<prefixo>/limites). Só links destas listas e minutos que existam: nunca inventes.
+    - Nunca escrevas um [mm:ss] sozinho, sem o link: aqui não se sabe de que aula é.
+    - Podes acrescentar explicações que o professor não deu, se forem conhecimento padrão e estiverem certas; põe-nas num bloco `> 💡 **Explicação extra:** ...`.
+    - Se nenhuma aula falar do assunto, diz isso claramente antes de responder com conhecimento geral. Nunca inventes o que o professor disse.
+    - Sem cabeçalho com a pergunta: começa logo pela resposta.
+
+    ## Língua e formato
+    {{regras_lingua}}
+    - Markdown. Matemática em LaTeX: `$...$` inline e `$$...$$` em bloco, numa linha própria.
+    """
+}
+
+extension Disco {
+    static let perguntasCadeiraJSON = "perguntas-cadeira.json"
+
+    static func lerPerguntasCadeira(_ pasta: URL) -> [PerguntaAula] {
+        guard let dados = try? lerDados(pasta.appending(path: perguntasCadeiraJSON)) else { return [] }
+        return (try? decoder.decode([PerguntaAula].self, from: dados)) ?? []
+    }
+
+    static func escreverPerguntasCadeira(_ perguntas: [PerguntaAula], em pasta: URL) throws {
+        let url = pasta.appending(path: perguntasCadeiraJSON)
+        if perguntas.isEmpty { try? FileManager.default.removeItem(at: url); return }
+        try gravar(encoder.encode(perguntas), em: url)
+    }
+
+    /// Junta uma resposta às anteriores. Se o ficheiro existe mas não se lê (ainda no iCloud, estragado),
+    /// lança um erro em vez de o substituir só pela resposta nova.
+    static func juntarPerguntaCadeira(_ nova: PerguntaAula, em pasta: URL) throws {
+        let url = pasta.appending(path: perguntasCadeiraJSON)
+        var anteriores: [PerguntaAula] = []
+        if FileManager.default.fileExists(atPath: url.path) {
+            anteriores = try decoder.decode([PerguntaAula].self, from: lerDados(url))
+        }
+        try escreverPerguntasCadeira(anteriores + [nova], em: pasta)
+    }
 }

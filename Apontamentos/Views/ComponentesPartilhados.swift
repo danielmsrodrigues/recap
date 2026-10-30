@@ -141,6 +141,9 @@ struct VistaAvisoRevista: View {
 /// fim. Clicar leva a esse momento da transcrição.
 struct LinhaCapitulos: View {
     let capitulos: [Capitulos.Capitulo]
+    /// Os bocados marcados com "Não estou a perceber": uma faixa laranja em cada, que leva ao seu início.
+    var naoPercebi: [IntervaloNaoPercebi] = []
+    var aoIrPara: ((Double) -> Void)? = nil
     var aoEscolher: (Capitulos.Capitulo) -> Void
     @State private var escolhido: Double?
     @State private var sobRato: Double?
@@ -172,6 +175,18 @@ struct LinhaCapitulos: View {
                         }
                         .help(c.seccoes.count > 1 ? c.seccoes.joined(separator: "\n") : c.titulo)
                     }
+                }
+                ForEach(naoPercebi, id: \.self) { b in
+                    let x0 = g.size.width * CGFloat((b.inicio - inicio) / max(1, fim - inicio))
+                    let x1 = g.size.width * CGFloat(((b.fim ?? b.inicio + 30) - inicio) / max(1, fim - inicio))
+                    let largura = max(8, x1 - x0)
+                    Button { aoIrPara?(b.inicio) } label: {
+                        Capsule().fill(.orange).frame(width: largura, height: 5)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Não percebeste: \(Self.relogio(b.inicio))–\(Self.relogio(b.fim ?? b.inicio))")
+                    .accessibilityLabel("Não percebeste, de \(Self.relogio(b.inicio)) a \(Self.relogio(b.fim ?? b.inicio))")
+                    .position(x: min(max(x0 + largura / 2, largura / 2), g.size.width - largura / 2), y: 2)
                 }
             }
             .frame(height: 30)

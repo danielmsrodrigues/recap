@@ -271,6 +271,8 @@ private struct CadeirasView: View {
 struct CadeiraView: View {
     let pasta: URL
     @Environment(Library.self) private var library
+    @Environment(Estudo.self) private var estudo
+    @Environment(Navegacao.self) private var navegacao
     @Environment(AvisoRevista.self) private var aviso: AvisoRevista?
 
     private var cadeira: Cadeira? { library.cadeiras.first { $0.pasta.mesmoCaminho(pasta) } }
@@ -297,6 +299,19 @@ struct CadeiraView: View {
                         }
                     }
                 }
+                // O que o professor disse que sai no exame; tocar abre a aula nesse minuto.
+                if let grupo = pistasExame(cadeira) {
+                    Section("Sai no exame") {
+                        ForEach(Array(grupo.pistas.enumerated()), id: \.offset) { _, item in
+                            Button {
+                                navegacao.destino = DestinoAula(pasta: item.aula.pasta, separador: .transcricao, tempo: item.pista.tempo)
+                            } label: {
+                                LinhaPistaExame(aula: item.aula, pista: item.pista)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
                 Section("Aulas") {
                     ForEach(cadeira.aulas.sorted { $0.meta.data < $1.meta.data }) { aula in
                         HStack(spacing: 12) {
@@ -316,6 +331,12 @@ struct CadeiraView: View {
         } else {
             ContentUnavailableView("Cadeira não encontrada", systemImage: "questionmark.folder")
         }
+    }
+
+    /// Os avisos de exame da cadeira (relidos quando a procura nas aulas anteriores grava pistas novas).
+    private func pistasExame(_ cadeira: Cadeira) -> PistasExame.Grupo? {
+        _ = estudo.versao
+        return PistasExame.porCadeira([cadeira]).first
     }
 
     /// Com o aviso ao marcar, para se poder desfazer um toque por engano.

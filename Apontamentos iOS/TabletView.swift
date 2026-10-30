@@ -7,7 +7,7 @@ struct TabletView: View {
     @Environment(Navegacao.self) private var navegacao
     var inicial: URL?
 
-    enum Filtro: Hashable { case porRever, calendario, todas, cadeira(URL) }
+    enum Filtro: Hashable { case porRever, calendario, todas, exame, cadeira(URL) }
     enum Selecao: Hashable { case aula(URL), completa(URL), sobre(URL) }
 
     @State private var filtro: Filtro? = .porRever
@@ -23,7 +23,7 @@ struct TabletView: View {
     private var aulas: [Aula] {
         switch filtro {
         case .porRever, nil: Revisao.porRever(library.cadeiras)
-        case .calendario, .todas: library.cadeiras.flatMap(\.aulas).sorted { $0.meta.data > $1.meta.data }
+        case .calendario, .todas, .exame: library.cadeiras.flatMap(\.aulas).sorted { $0.meta.data > $1.meta.data }
         case .cadeira: cadeiraEscolhida?.aulas.sorted { $0.meta.data > $1.meta.data } ?? []
         }
     }
@@ -79,6 +79,7 @@ struct TabletView: View {
                     .badge(Revisao.porRever(library.cadeiras).count)
                     .tag(Filtro.porRever)
                 Label("Calendário", systemImage: "calendar").tag(Filtro.calendario)
+                Label("Sai no exame", systemImage: "star").tag(Filtro.exame)
                 Label("Todas as aulas", systemImage: "list.bullet")
                     .badge(library.cadeiras.reduce(0) { $0 + $1.aulas.count })
                     .tag(Filtro.todas)
@@ -107,7 +108,10 @@ struct TabletView: View {
     }
 
     @ViewBuilder private var lista: some View {
-        if !termo.trimmingCharacters(in: .whitespaces).isEmpty {
+        if filtro == .exame {
+            // Tocar num aviso abre a aula completa nesse minuto (pelo `navegacao.destino`, como a pesquisa).
+            ListaPistasExame(cadeiras: library.cadeiras(no: semestre)).navigationTitle("Sai no exame")
+        } else if !termo.trimmingCharacters(in: .whitespaces).isEmpty {
             ResultadosPesquisaView(termo: termo).navigationTitle("Procurar")
         } else {
             List(selection: $selecao) {
@@ -147,6 +151,7 @@ struct TabletView: View {
         switch filtro {
         case .porRever, nil: "Por rever"
         case .calendario, .todas: "Todas as aulas"
+        case .exame: "Sai no exame"
         case .cadeira: cadeiraEscolhida?.nome ?? ""
         }
     }
