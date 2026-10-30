@@ -37,6 +37,11 @@ struct FichaCadeiraView: View {
                 Divider()
             }
             estado
+            // O progresso do programa, só com guia e fora da edição.
+            if temPrograma && !controlador.editando {
+                ProgressoGuiaView(cadeira: cadeira)
+                Divider()
+            }
             if let ficha {
                 NotesWebView(markdown: ficha, controlador: controlador, realcar: controlador.editando ? [] : realce)
             } else {

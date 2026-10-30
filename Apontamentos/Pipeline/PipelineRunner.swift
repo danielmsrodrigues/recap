@@ -207,6 +207,8 @@ final class PipelineRunner {
                 do {
                     let r = try await SeccoesDaAula.escolher(indice, transcricao: transcricao, gerador: gerador)
                     geracaoSelecao = r.geracao
+                    // Fica na aula para o progresso do programa ("Sobre a cadeira").
+                    try? Disco.escreverSeccoesGuia(SeccoesGuardadas(r.selecao, indice: indice), em: job.pastaAula)
                     contexto.guia = GuiaDaAula.montar(indice, paginas: paginas, selecao: r.selecao)
                     if let semEspaco = contexto.guia?.semEspaco, !semEspaco.isEmpty {
                         avisos.append("Secções da guia que não couberam no pedido (só com a referência): \(semEspaco.map(\.id).joined(separator: ", ")).")
