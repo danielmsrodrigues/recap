@@ -54,13 +54,25 @@ enum Anexos {
         }
     }
 
+    /// O símbolo (SF Symbols) com que o ficheiro aparece na app.
+    static func icone(_ nome: String) -> String {
+        switch tipo(nome) {
+        case .imagem: "photo"
+        case .pdf: "doc.richtext"
+        case .folha: "tablecells"
+        case .apresentacao: "rectangle.on.rectangle"
+        default: "doc.text"
+        }
+    }
+
     /// Para os seletores de ficheiros.
     static var tiposAceites: [UTType] {
         (imagens.union(textos).union(["pdf", "xlsx", "xlsm", "docx", "pptx"])).compactMap { UTType(filenameExtension: $0) }
     }
 
-    static func url(_ nome: String, em pastaAula: URL) -> URL {
-        pastaAula.appending(path: pasta, directoryHint: .isDirectory).appending(path: nome)
+    /// `subpasta`: a do chat, ou a dos materiais do professor (`Materiais`), que guarda os ficheiros da mesma maneira.
+    static func url(_ nome: String, em pastaAula: URL, subpasta: String = pasta) -> URL {
+        pastaAula.appending(path: subpasta, directoryHint: .isDirectory).appending(path: nome)
     }
 
     /// O nome, se for só um nome de ficheiro. Os nomes chegam também do iPhone (`PedidoMac`): um caminho
@@ -70,9 +82,9 @@ enum Anexos {
         return nome
     }
 
-    static func tamanho(_ nome: String, em pastaAula: URL) -> Int {
+    static func tamanho(_ nome: String, em pastaAula: URL, subpasta: String = pasta) -> Int {
         guard let nome = nomeSeguro(nome) else { return 0 }
-        return (try? url(nome, em: pastaAula).resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        return (try? url(nome, em: pastaAula, subpasta: subpasta).resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
     }
 
     // MARK: Juntar
@@ -80,10 +92,10 @@ enum Anexos {
     /// Copia o ficheiro para a pasta da aula e devolve o nome com que ficou (com " 2", " 3"… se já houver um igual).
     /// As imagens são convertidas para JPEG com no máximo `ladoMaximoImagem` píxeis.
     @discardableResult
-    static func juntar(_ origem: URL, em pastaAula: URL) throws -> String {
+    static func juntar(_ origem: URL, em pastaAula: URL, subpasta: String = pasta) throws -> String {
         let nomeOriginal = origem.lastPathComponent
         guard let tipo = tipo(nomeOriginal) else { throw ErroAnexo.tipoNaoSuportado(nomeOriginal) }
-        let destinoPasta = pastaAula.appending(path: pasta, directoryHint: .isDirectory)
+        let destinoPasta = pastaAula.appending(path: subpasta, directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: destinoPasta, withIntermediateDirectories: true)
 
         if tipo == .imagem {
@@ -176,21 +188,21 @@ enum Anexos {
     // MARK: Para o Claude
 
     /// Cada ficheiro precedido do nome. Um que não se consegue ler fica só com o aviso, em vez de estragar o pedido.
-    static func blocos(_ nomes: [String], em pastaAula: URL) -> [BlocoConteudo] {
+    static func blocos(_ nomes: [String], em pastaAula: URL, subpasta: String = pasta) -> [BlocoConteudo] {
         nomes.flatMap { nome -> [BlocoConteudo] in
             do {
-                return try blocos(nome, em: pastaAula)
+                return try blocos(nome, em: pastaAula, subpasta: subpasta)
             } catch {
                 return [.texto("Ficheiro \"\(nome)\": não foi possível lê-lo.")]
             }
         }
     }
 
-    private static func blocos(_ nome: String, em pastaAula: URL) throws -> [BlocoConteudo] {
+    private static func blocos(_ nome: String, em pastaAula: URL, subpasta: String) throws -> [BlocoConteudo] {
         guard nomeSeguro(nome) != nil else { throw ErroAnexo.naoLido(nome) }
         guard let tipo = tipo(nome) else { throw ErroAnexo.tipoNaoSuportado(nome) }
         // Vindo do iPhone pelo iCloud, pode ainda estar a descarregar.
-        let dados = try Disco.lerDados(url(nome, em: pastaAula), esperar: true)
+        let dados = try Disco.lerDados(url(nome, em: pastaAula, subpasta: subpasta), esperar: true)
         let titulo = "Ficheiro \"\(nome)\":"
         let texto: String
         switch tipo {

@@ -1,5 +1,6 @@
 import ImageIO
 import PDFKit
+import QuickLook
 import SwiftUI
 
 /// Grelha dos slides extraídos, com o momento em que apareceram.
@@ -9,13 +10,19 @@ struct SlidesView: View {
     let slides: [Slide]?
     /// PDFs dos slides publicados pelo professor juntados à aula.
     let pdfs: [PDFProfessor]
-    // Extrair e gerir os PDFs faz-se no Mac; no iOS os slides só se veem.
+    /// Outros materiais do professor (Excel, Word…; ver `Materiais`). Não são slides: só se abrem pelo menu.
+    var materiais: [String] = []
+    // Extrair e gerir os PDFs e os materiais faz-se no Mac; no iOS só se veem.
     var podeExtrair = false
     var aoExtrair: () -> Void = {}
-    /// Juntar os slides em PDF publicados pelo professor, e tirar um já junto (vai para o Lixo).
-    var aoJuntarPDF: () -> Void = {}
+    /// Juntar PDFs dos slides ou outros materiais do professor, e tirar um já junto (vai para o Lixo).
+    var aoJuntarMateriais: () -> Void = {}
     var aoRemoverPDF: (PDFProfessor) -> Void = { _ in }
+    var aoRemoverMaterial: (String) -> Void = { _ in }
+    @Environment(Navegacao.self) private var navegacao
     @State private var aberto: Slide?
+    /// Um material que não é imagem, aberto no Quick Look (as imagens abrem em `ImagemEmGrande`).
+    @State private var materialAberto: URL?
     /// O que se escolheu ver; começa no primeiro PDF.
     @State private var escolha: Origem?
 
@@ -32,6 +39,19 @@ struct SlidesView: View {
     }
 
     var body: some View {
+        conteudo.quickLookPreview($materialAberto)
+    }
+
+    /// No Mac o menu está sempre (é por ele que se junta); no iOS só se houver materiais para abrir.
+    private var mostraMenu: Bool {
+        #if os(macOS)
+        true
+        #else
+        !materiais.isEmpty
+        #endif
+    }
+
+    @ViewBuilder private var conteudo: some View {
         if pdfs.isEmpty {
             capturas
         } else {
@@ -57,9 +77,7 @@ struct SlidesView: View {
                         Text("PDF do professor").font(.callout).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    #if os(macOS)
-                    menuPDFs
-                    #endif
+                    if mostraMenu { menuMateriais }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
@@ -73,18 +91,41 @@ struct SlidesView: View {
         }
     }
 
-    /// Juntar mais PDFs do professor e tirar os que já cá estão.
-    private var menuPDFs: some View {
-        Menu("PDFs do professor", systemImage: "doc.badge.plus") {
-            Button("Juntar PDF…", action: aoJuntarPDF)
-            if !pdfs.isEmpty {
+    /// Juntar PDFs e outros materiais do professor, abrir os materiais e tirar o que já cá está.
+    private var menuMateriais: some View {
+        Menu(materiais.isEmpty ? "Materiais do professor" : "Materiais do professor (\(materiais.count))", systemImage: "doc.badge.plus") {
+            #if os(macOS)
+            Button("Juntar ficheiro…", action: aoJuntarMateriais)
+            #endif
+            if !materiais.isEmpty {
+                Section("Abrir") {
+                    ForEach(materiais, id: \.self) { nome in
+                        Button(nome, systemImage: Anexos.icone(nome)) { abrir(nome) }
+                    }
+                }
+            }
+            #if os(macOS)
+            if !pdfs.isEmpty || !materiais.isEmpty {
                 Divider()
                 ForEach(pdfs) { pdf in
                     Button("Remover \"\(pdf.titulo)\"", role: .destructive) { aoRemoverPDF(pdf) }
                 }
+                ForEach(materiais, id: \.self) { nome in
+                    Button("Remover \"\(nome)\"", role: .destructive) { aoRemoverMaterial(nome) }
+                }
             }
+            #endif
         }
         .fixedSize()
+    }
+
+    private func abrir(_ nome: String) {
+        let url = Materiais.url(nome, em: pasta)
+        if Anexos.tipo(nome) == .imagem {
+            withAnimation(.easeOut(duration: 0.15)) { navegacao.imagemAberta = url }
+        } else {
+            materialAberto = url
+        }
     }
 
     @ViewBuilder private var capturas: some View {
@@ -93,9 +134,7 @@ struct SlidesView: View {
                 HStack {
                     Text("\(slides.count) slides").font(.callout).foregroundStyle(.secondary)
                     Spacer()
-                    #if os(macOS)
-                    if pdfs.isEmpty { menuPDFs }
-                    #endif
+                    if pdfs.isEmpty && mostraMenu { menuMateriais }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
@@ -119,16 +158,17 @@ struct SlidesView: View {
             } description: {
                 #if os(macOS)
                 Text(slides == nil
-                     ? "Os slides são extraídos do vídeo depois da transcrição. Se o professor publicou os slides em PDF, junta-os aqui."
-                     : "Parece não haver partilha de ecrã, ou a deteção falhou. Experimenta outra câmara do professor na cadeira, ou outra sensibilidade em Definições → Slides. Se o professor publicou os slides em PDF, junta-os aqui.")
+                     ? "Os slides são extraídos do vídeo depois da transcrição. Se o professor publicou os slides em PDF, ou outros materiais (Excel, Word, PowerPoint…), junta-os aqui."
+                     : "Parece não haver partilha de ecrã, ou a deteção falhou. Experimenta outra câmara do professor na cadeira, ou outra sensibilidade em Definições → Slides. Se o professor publicou os slides em PDF, ou outros materiais (Excel, Word, PowerPoint…), junta-os aqui.")
                 #else
-                Text("Os slides extraem-se no Mac, e os PDFs do professor juntam-se lá.")
+                Text("Os slides extraem-se no Mac, e os PDFs e outros materiais do professor juntam-se lá.")
                 #endif
             } actions: {
                 #if os(macOS)
-                Button("Juntar PDF do professor…", action: aoJuntarPDF).buttonStyle(.borderedProminent)
+                Button("Juntar materiais do professor…", action: aoJuntarMateriais).buttonStyle(.borderedProminent)
                 Button(slides == nil ? "Extrair slides do vídeo" : "Extrair de novo", action: aoExtrair).disabled(!podeExtrair)
                 #endif
+                if !materiais.isEmpty { menuMateriais }
             }
         }
     }

@@ -233,7 +233,7 @@ extension ContextoAula {
     /// encolhem para lhes dar espaço.
     static func carregar(_ aula: Aula, cadeira: Cadeira?, transcricao: Transcricao,
                          anexos: [String] = [], anexosAnteriores: [String] = []) async -> ContextoAula {
-        let reservado = (anexos + anexosAnteriores).reduce(0) { $0 + Anexos.tamanho($1, em: aula.pasta) }
+        let reservado = (anexos + anexosAnteriores).reduce(0) { $0 + Anexos.tamanho($1, em: aula.pasta) } + Materiais.tamanho(em: aula.pasta)
         let pdfs = Disco.pdfsProfessor(aula.pasta, nomes: aula.meta.nomesPDFs ?? [:]).compactMap { pdf in
             (try? Disco.lerDados(pdf.url(em: aula.pasta), esperar: true)).map { PDFComDados(pdf: pdf, dados: $0) }
         }
@@ -250,6 +250,7 @@ extension ContextoAula {
                                     fichaCadeira: cadeira.flatMap { FichaCadeira.lerFicha($0.pasta) })
         contexto.anexos = Anexos.blocos(anexos, em: aula.pasta)
         contexto.anexosAnteriores = Anexos.blocos(anexosAnteriores, em: aula.pasta)
+        contexto.materiaisProfessor = Materiais.blocos(em: aula.pasta)
         return contexto
     }
 
@@ -356,17 +357,15 @@ final class Estudo {
         }
         #endif
         // O Claude não se lembra das perguntas anteriores: os ficheiros delas voltam a ir, os mais recentes primeiro,
-        // enquanto couberem ao lado dos PDFs do professor (o pedido todo não pode passar de ~32 MB).
-        let pdfs = Disco.pdfsProfessor(aula.pasta).reduce(0) {
-            $0 + ((try? $1.url(em: aula.pasta).resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
-        }
+        // enquanto couberem ao lado dos PDFs e dos materiais do professor (o pedido todo não pode passar de ~32 MB).
+        let doProfessor = Disco.tamanhoPDFsProfessor(em: aula.pasta) + Materiais.tamanho(em: aula.pasta)
         let tamanhos = { (nomes: [String]) in nomes.map { ($0, Anexos.tamanho($0, em: aula.pasta)) } }
         guard let escolhidos = Anexos.paraOPedido(
             atuais: tamanhos(anexos),
             anteriores: tamanhos(anteriores.suffix(8).reversed().flatMap { $0.anexos ?? [] }.filter { !anexos.contains($0) }),
-            espaco: Disco.tamanhoMaximoPDF - pdfs)
+            espaco: Disco.tamanhoMaximoPDF - doProfessor)
         else {
-            erros[chave] = "Os PDFs do professor desta aula já ocupam quase todo o pedido: estes ficheiros não cabem. Tira algum, ou junta-os mais pequenos."
+            erros[chave] = "Os PDFs e os materiais do professor desta aula já ocupam quase todo o pedido: estes ficheiros não cabem. Tira algum, ou junta-os mais pequenos."
             return
         }
         let anexosAnteriores = escolhidos.anteriores

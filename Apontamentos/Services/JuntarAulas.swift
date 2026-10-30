@@ -2,7 +2,7 @@ import Foundation
 
 /// Junta duas gravações da mesma aula (o professor parou a gravação no intervalo, por exemplo) numa só.
 /// A `primeira` fica com tudo: a transcrição da `segunda` entra a seguir, com os tempos deslocados pela duração
-/// da primeira, e o mesmo para os slides; os PDFs do professor juntam-se aos que já lá estão. A pasta da segunda
+/// da primeira, e o mesmo para os slides; os PDFs e os outros materiais do professor juntam-se aos que já lá estão. A pasta da segunda
 /// não é tocada (quem chama manda-a para o Lixo), e os apontamentos têm de ser gerados de novo.
 enum JuntarAulas {
     enum Erro: LocalizedError {
@@ -21,7 +21,12 @@ enum JuntarAulas {
         guard let t2 = Disco.lerTranscricao(segunda) else { throw Erro.semTranscricao(meta2.titulo) }
         let desvio = duracao(t1)
 
-        // Os PDFs primeiro: é o único passo que pode recusar (tamanho), e assim nada fica meio junto.
+        // O tamanho primeiro: é o único passo que pode recusar, e assim nada fica meio junto.
+        let total = [primeira, segunda].reduce(0) { $0 + Disco.tamanhoPDFsProfessor(em: $1) + Materiais.tamanho(em: $1) }
+        guard total <= Disco.tamanhoMaximoPDF else {
+            throw NSError(domain: "Recap", code: 42, userInfo: [NSLocalizedDescriptionKey:
+                "Juntas, as duas aulas ficavam com \(total / 1_048_576) MB de PDFs e materiais do professor; o máximo é \(Disco.tamanhoMaximoPDF / 1_048_576) MB. Tira algum PDF ou material de uma delas e tenta de novo."])
+        }
         var nomes = meta1.nomesPDFs ?? [:]
         let pdfs2 = Disco.pdfsProfessor(segunda, nomes: meta2.nomesPDFs ?? [:])
         let juntados = try Disco.juntarPDFsProfessor(pdfs2.map { $0.url(em: segunda) }, em: primeira)
@@ -30,6 +35,8 @@ enum JuntarAulas {
             let original = pdfs2.first { $0.ficheiro == pdf.nome }?.nome
             nomes[pdf.ficheiro] = original ?? pdf.nome
         }
+
+        try Materiais.juntar(Materiais.nomes(em: segunda).map { Materiais.url($0, em: segunda) }, em: primeira)
 
         if let slides2 = Disco.lerSlides(segunda) {
             var slides = Disco.lerSlides(primeira) ?? []

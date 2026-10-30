@@ -272,7 +272,7 @@ struct PerguntasView: View {
         HStack(spacing: 4) {
             Button { anexoAberto = Anexos.url(nome, em: aula.pasta) } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: Self.icone(nome)).foregroundStyle(.secondary)
+                    Image(systemName: Anexos.icone(nome)).foregroundStyle(.secondary)
                     Text(nome).lineLimit(1).truncationMode(.middle)
                 }
             }
@@ -286,16 +286,6 @@ struct PerguntasView: View {
         .frame(maxWidth: 220)
         .padding(.horizontal, 8).padding(.vertical, 4)
         .background(.quaternary.opacity(0.6), in: .rect(cornerRadius: 8))
-    }
-
-    private static func icone(_ nome: String) -> String {
-        switch Anexos.tipo(nome) {
-        case .imagem: "photo"
-        case .pdf: "doc.richtext"
-        case .folha: "tablecells"
-        case .apresentacao: "rectangle.on.rectangle"
-        default: "doc.text"
-        }
     }
 
     private var campo: some View {

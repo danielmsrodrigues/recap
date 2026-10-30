@@ -58,6 +58,25 @@ struct JuntarAulasTests {
         #expect(Disco.pdfsProfessor(pasta, nomes: meta.nomesPDFs).map(\.titulo) == ["Tema 1", "Tema 2"])
     }
 
+    @Test func osMateriaisDaSegundaPassamParaAPrimeira() throws {
+        let (lib, raiz) = try biblioteca()
+        defer { try? FileManager.default.removeItem(at: raiz) }
+        let p1 = try aula(lib, "Parte 1", duracao: 3000, texto: "Antes")
+        let p2 = try aula(lib, "Parte 2", duracao: 2400, texto: "Depois")
+        let origem = raiz.appending(path: "origem")
+        try FileManager.default.createDirectory(at: origem, withIntermediateDirectories: true)
+        try "Parte 1".write(to: origem.appending(path: "Enunciado.txt"), atomically: true, encoding: .utf8)
+        try Materiais.juntar([origem.appending(path: "Enunciado.txt")], em: p1)
+        try "Parte 2".write(to: origem.appending(path: "Enunciado.txt"), atomically: true, encoding: .utf8)
+        try "a;b".write(to: origem.appending(path: "Dados.csv"), atomically: true, encoding: .utf8)
+        try Materiais.juntar([origem.appending(path: "Enunciado.txt"), origem.appending(path: "Dados.csv")], em: p2)
+
+        let pasta = try lib.juntar(try #require(lib.aula(em: p2)), a: try #require(lib.aula(em: p1)))
+
+        #expect(Materiais.nomes(em: pasta) == ["Enunciado.txt", "Enunciado 2.txt", "Dados.csv"])
+        #expect(try String(contentsOf: Materiais.url("Enunciado 2.txt", em: pasta), encoding: .utf8) == "Parte 2")
+    }
+
     @Test func semTranscricaoNaoMexeEmNada() throws {
         let (lib, raiz) = try biblioteca()
         defer { try? FileManager.default.removeItem(at: raiz) }

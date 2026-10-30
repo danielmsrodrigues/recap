@@ -225,18 +225,26 @@ enum Disco {
         }
     }
 
+    /// Os bytes dos PDFs do professor da aula.
+    static func tamanhoPDFsProfessor(em pasta: URL) -> Int {
+        pdfsProfessor(pasta, nomes: [:]).reduce(0) { $0 + ((try? $1.url(em: pasta).resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
+    }
+
     /// Copia PDFs do professor para a aula, a seguir aos que já lá estão (um PDF igual a um já juntado é saltado).
-    /// Devolve os juntados, com o nome original (quem chama guarda-o em `aula.json`).
+    /// Devolve os juntados, com o nome original (quem chama guarda-o em `aula.json`). O limite conta também com
+    /// os outros materiais (`Materiais`): vão todos no mesmo pedido.
     static func juntarPDFsProfessor(_ origens: [URL], em pasta: URL) throws -> [PDFProfessor] {
         let existentes = pdfsProfessor(pasta, nomes: [:])
         let novos = origens.filter { origem in
             !existentes.contains { FileManager.default.contentsEqual(atPath: $0.url(em: pasta).path, andPath: origem.path) }
         }
         let tamanho = { (url: URL) in (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0 }
-        let total = (existentes.map { $0.url(em: pasta) } + novos).map(tamanho).reduce(0, +)
+        let materiais = Materiais.tamanho(em: pasta)
+        let total = (existentes.map { $0.url(em: pasta) } + novos).map(tamanho).reduce(0, +) + materiais
         guard total <= tamanhoMaximoPDF else {
             let mb = total / 1_048_576, maximo = tamanhoMaximoPDF / 1_048_576
-            let qual = existentes.isEmpty && novos.count == 1 ? "O PDF tem \(mb) MB" : "Os PDFs desta aula ficavam com \(mb) MB"
+            let qual = materiais > 0 ? "Os PDFs e os materiais desta aula ficavam com \(mb) MB"
+                : existentes.isEmpty && novos.count == 1 ? "O PDF tem \(mb) MB" : "Os PDFs desta aula ficavam com \(mb) MB"
             throw NSError(domain: "Recap", code: 40, userInfo: [NSLocalizedDescriptionKey:
                 "\(qual); o máximo é \(maximo) MB. Exporta-os com menos qualidade (Pré-visualização → Exportar → Filtro Quartz \"Reduce File Size\") e tenta de novo."])
         }
