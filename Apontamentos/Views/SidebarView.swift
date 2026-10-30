@@ -80,6 +80,8 @@ struct BarraLateral: View {
                 Text(erro).foregroundStyle(.red).font(.caption)
             }
         }
+        // Sem o fundo da lista, vê-se o cartão (em ContentView).
+        .scrollContentBackground(.hidden)
         .safeAreaInset(edge: .bottom, spacing: 0) { rodape }
         .confirmationDialog("Mover a cadeira para o Lixo?", isPresented: Binding(get: { cadeiraParaLixo != nil }, set: { if !$0 { cadeiraParaLixo = nil } }), presenting: cadeiraParaLixo) { cadeira in
             Button("Mover para o Lixo", role: .destructive) {
@@ -124,6 +126,8 @@ struct BarraLateral: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .overlay(alignment: .top) { Divider() }
+        // Dentro do cartão da barra lateral, que fica a 8 pt da margem esquerda e de baixo.
+        .padding(EdgeInsets(top: 0, leading: 8, bottom: 8, trailing: 0))
     }
 
     @ViewBuilder private func menu(_ cadeira: Cadeira) -> some View {

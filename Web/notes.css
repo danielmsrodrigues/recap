@@ -17,9 +17,6 @@
   --mencionado: #a1a1a6;
   --guia: #0f8a8a;
   --fundo-guia: #e8f6f6;
-  /* A folha e a mesa por baixo. */
-  --papel: #ffffff;
-  --mesa: #e8e8eb;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -41,9 +38,6 @@
     --mencionado: #6e6e73;
     --guia: #4cc7c7;
     --fundo-guia: #1b3132;
-    --papel: #2b2b2e;
-    --mesa: #111112;
-    --fundo-bloco: #343438;
   }
 }
 
@@ -63,43 +57,33 @@ main {
   padding: 24px 32px 64px;
 }
 
-/* Os apontamentos como uma folha sobre a mesa, como no Freeform ou no Pages (não no painel das perguntas nem no PDF). */
+/* Os apontamentos como no design: direto sobre o fundo da janela, numa coluna de 660 px ao centro,
+   sem folha à volta (não no painel das perguntas, embutidos nem no PDF). */
 html:not(.conversa):not(.impressao):not(.embutida),
-html:not(.conversa):not(.impressao):not(.embutida) body { background: var(--mesa); }
+html:not(.conversa):not(.impressao):not(.embutida) body { background: transparent; }
 html:not(.conversa):not(.impressao):not(.embutida) main {
-  /* Sempre com mesa à volta: com max-width a folha encostava aos lados quando a área tinha pouco mais de 860 px. */
-  max-width: none;
-  width: min(860px, calc(100% - 56px));
-  margin: 28px auto 56px;
-  padding: 52px 64px 72px;
-  background: var(--papel);
-  border-radius: 12px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 10px 32px rgba(0, 0, 0, 0.12);
-}
-@media (prefers-color-scheme: dark) {
-  html:not(.conversa):not(.impressao):not(.embutida) main {
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 36px rgba(0, 0, 0, 0.6);
-  }
+  max-width: 660px;
+  padding: 40px 36px 90px;
 }
 @media (max-width: 760px) {
-  html:not(.conversa):not(.impressao):not(.embutida) main { width: calc(100% - 36px); margin: 20px auto 36px; padding: 32px 28px 44px; }
+  html:not(.conversa):not(.impressao):not(.embutida) main { padding: 28px 20px 56px; }
 }
 
 h1, h2, h3, h4 { line-height: 1.25; margin: 1.6em 0 0.5em; }
-h1 { font-size: 1.9em; margin-top: 0.2em; }
-h2 { font-size: 1.4em; padding-bottom: 0.25em; border-bottom: 1px solid var(--borda); }
+h1 { font-size: 2em; font-weight: 700; letter-spacing: -0.015em; line-height: 1.15; margin-top: 0.2em; text-wrap: balance; }
+h2 { font-size: 1.33em; font-weight: 700; margin-top: 2em; }
 h3 { font-size: 1.15em; }
 
 p, ul, ol, table, blockquote, pre { margin: 0.7em 0; }
 li { margin: 0.25em 0; }
 a { color: var(--destaque); }
 
+/* Caixas de cantos redondos, sem a barra à esquerda (como o "Resumo" e os "Avisos" do design). */
 blockquote {
-  margin-left: 0;
-  padding: 0.6em 1em;
-  border-left: 4px solid var(--definicao);
+  margin: 1em 0;
+  padding: 14px 18px;
   background: var(--fundo-bloco);
-  border-radius: 0 8px 8px 0;
+  border-radius: 12px;
 }
 blockquote > :first-child { margin-top: 0; }
 blockquote > :last-child { margin-bottom: 0; }
@@ -143,10 +127,12 @@ hr { border: none; border-top: 1px solid var(--borda); margin: 2em 0; }
 
 a.ts {
   display: inline-block;
-  font: 0.78em "SF Mono", Menlo, monospace;
+  font-size: 0.8em;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
   color: var(--destaque);
   background: var(--chip);
-  padding: 0 0.45em;
+  padding: 0 0.6em;
   border-radius: 999px;
   text-decoration: none;
   vertical-align: 0.12em;
@@ -221,14 +207,14 @@ body.editar .math:hover { background: var(--chip); outline: 1px dashed var(--des
 #editor-formula .ef-aplicar { background: var(--destaque); color: white; border-color: var(--destaque); }
 
 /* "💡 Ext.": conhecimento externo (nem da aula nem da guía), à parte das definições. */
-blockquote.extra { border-left-color: var(--extra); background: var(--fundo-extra); }
+blockquote.extra { background: var(--fundo-extra); }
 /* "⭐ Importante": o que o professor sublinhou (costuma sair no exame). "⚠️ Erro comum": a correção de um erro. */
-blockquote.importante { border-left-color: var(--importante); background: var(--fundo-importante); }
-blockquote.erro-comum { border-left-color: var(--erro); background: var(--fundo-erro); }
+blockquote.importante { background: var(--fundo-importante); }
+blockquote.erro-comum { background: var(--fundo-erro); }
 /* "👀 Só mencionado": o professor só o nomeou; fica registado, mas não é matéria dada. */
-blockquote.mencionado { border-left-color: var(--mencionado); color: var(--texto-suave); }
+blockquote.mencionado { color: var(--texto-suave); }
 /* "📘 Guia": o que vem da guía de estudio da cadeira e não foi dito na aula. */
-blockquote.guia { border-left-color: var(--guia); background: var(--fundo-guia); }
+blockquote.guia { background: var(--fundo-guia); }
 
 /* Slides dentro dos apontamentos, com a legenda por baixo. */
 p.figura { margin: 1.1em 0 1.3em; text-align: center; break-inside: avoid; }
@@ -238,7 +224,7 @@ img.slide {
   max-height: 520px;
   margin: 0 auto;
   border: 1px solid var(--borda);
-  border-radius: 6px;
+  border-radius: 10px;
 }
 p.figura .legenda { display: block; margin-top: 0.4em; font-size: 0.85em; color: var(--texto-suave); }
 html.impressao img.slide { max-height: 300px; }

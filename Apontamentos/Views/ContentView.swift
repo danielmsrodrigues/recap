@@ -33,7 +33,8 @@ struct ContentView: View {
         BarraLateral(filtro: $filtro, semestre: $semestre, aEditarCadeira: $aEditarCadeira, aoAbrirAula: { selecao = $0 }) {
             criarCadeira = true
         }
-        .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 320)
+        .navigationSplitViewColumnWidth(min: 200, ideal: 228, max: 320)
+        .background { CartaoBarraLateral() }
     }
 
     /// Três colunas, como no Notas e no Mail: as listas e as cadeiras, as aulas, a aula.
@@ -51,7 +52,7 @@ struct ContentView: View {
                     ListaAulas(filtro: filtro, semestre: semestre, selecao: $selecao, pesquisa: $pesquisa) { configurarDireto = true }
                 }
             }
-            .navigationSplitViewColumnWidth(min: 300, ideal: 330, max: 440)
+            .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 440)
         } detail: {
             if let selecao, selecao.lastPathComponent == FichaCadeira.fichaMD,
                let cadeira = library.cadeiras.first(where: { $0.pasta.mesmoCaminho(selecao.deletingLastPathComponent()) }) {
@@ -373,12 +374,30 @@ private struct Inicio: View {
 
 /// A aula com o painel das perguntas à direita. Vive numa vista própria para o arrasto da divisória
 /// só redesenhar isto, e não a janela inteira.
+/// A barra lateral como no design: um cartão solto, a 8 pt das margens, com cantos redondos.
+/// (A barra lateral nativa deste macOS vai de cima a baixo encostada à janela.)
+private struct CartaoBarraLateral: View {
+    var body: some View {
+        let forma = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        ZStack {
+            // Tapa o fundo nativo da barra lateral, para o cartão se destacar do resto da janela.
+            Color(nsColor: .windowBackgroundColor)
+            forma
+                .fill(Color.primary.opacity(0.07))
+                .overlay { forma.strokeBorder(Color.primary.opacity(0.08)) }
+                .shadow(color: .black.opacity(0.3), radius: 15, y: 10)
+                .padding(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 0))
+        }
+        .ignoresSafeArea()
+    }
+}
+
 private struct AulaComPainel: View {
     let aula: Aula
     @Environment(Navegacao.self) private var navegacao
     @Environment(Estudo.self) private var estudo
     @AppStorage("mostrarEstudo") private var mostrarEstudo = true
-    @AppStorage("larguraPerguntas") private var larguraGuardada = 320.0
+    @AppStorage("larguraPerguntas") private var larguraGuardada = 330.0
     /// A largura durante o arrasto; só no fim é gravada (gravar a cada pixel escrevia nas preferências dezenas de vezes por segundo).
     @State private var aArrastar: Double?
 
