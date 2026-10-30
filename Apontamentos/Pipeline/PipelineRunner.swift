@@ -146,10 +146,11 @@ final class PipelineRunner {
             config.escalaTempo = job.velocidade
             config.recortarZonaAtiva = true
             job.iniciar(.slides, progresso: 0)
-            let slides = try await SlideExtractor(config: config).extrair(de: FontePasta(pasta: frames), para: job.pastaAula) { p in
+            let slides = try await SlidesDireto.extrair(frames, com: SlideExtractor(config: config), para: job.pastaAula) { p in
                 Task { @MainActor in job.atualizar(.slides, progresso: p) }
             }
-            let capturas = try await FontePasta(pasta: frames).tempos(intervalo: 0).count
+            var capturas = 0
+            for troco in FontePasta.trocos(frames) { capturas += try await FontePasta(pasta: troco).tempos(intervalo: 0).count }
             try? FileManager.default.removeItem(at: frames)
             job.concluir(.slides, detalhe: slides.isEmpty
                          ? (capturas == 0 ? "Nenhuma imagem da janela foi captada" : "Nenhum slide em \(capturas) capturas da janela")

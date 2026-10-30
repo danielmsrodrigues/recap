@@ -81,7 +81,7 @@ enum JuntarAulas {
     }
 
     /// Como o `SlideExtractor` os nomeia: `slide_07_52-10.jpg`.
-    private static func nomeSlide(_ n: Int, inicio: Double) -> String {
+    static func nomeSlide(_ n: Int, inicio: Double) -> String {
         String(format: "slide_%02d_%@.jpg", n, Timestamp.format(inicio).replacingOccurrences(of: ":", with: "-"))
     }
 }

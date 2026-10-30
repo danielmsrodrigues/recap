@@ -141,12 +141,7 @@ struct ConfigDiretoSheet: View {
     }
 
     private func grelha(_ janelas: [FonteAudio]) -> some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3), spacing: 12) {
-            ForEach(janelas) { j in
-                CartaoJanela(fonte: j, miniatura: miniaturas[j.janela], escolhida: fonte?.id == j.id)
-                    .onTapGesture { fonte = j }
-            }
-        }
+        GrelhaJanelas(janelas: janelas, miniaturas: miniaturas, escolhida: $fonte)
     }
 
     private func carregarFontes() async {
@@ -190,6 +185,16 @@ struct DiretoView: View {
     @State private var confirmarDescarte = false
 
     var body: some View {
+        // A escolher outra janela da aula, a janela "Em direto" alarga para a grelha.
+        if sessao.escolherJanela, sessao.ativa {
+            EscolherOutraJanela { sessao.escolherJanela = false }
+                .padding(16)
+        } else {
+            estado
+        }
+    }
+
+    private var estado: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Circle()
@@ -240,6 +245,19 @@ struct DiretoView: View {
                 .clipShape(.rect(cornerRadius: 6))
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
         }
+        if let fonte = sessao.fonte {
+            HStack(spacing: 6) {
+                if let icone = NSRunningApplication(processIdentifier: fonte.pid)?.icon {
+                    Image(nsImage: icone).resizable().frame(width: 14, height: 14)
+                }
+                Text(fonte.tituloJanela).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
+                Spacer()
+                Button("Mudar…") { sessao.escolherJanela = true }
+                    .buttonStyle(.link)
+                    .help("Captar outra janela sem parar: o som, o tempo e a aula continuam")
+            }
+            .font(.caption)
+        }
         LabeledContent("Aula captada") {
             Text(Timestamp.format(sessao.segundosDeAula)).monospacedDigit()
         }
@@ -269,6 +287,95 @@ struct DiretoView: View {
             Spacer()
             Button("Terminar") { Task { await sessao.terminar() } }
                 .buttonStyle(.borderedProminent)
+        }
+    }
+}
+
+/// As janelas para escolher, em grelha.
+private struct GrelhaJanelas: View {
+    let janelas: [FonteAudio]
+    let miniaturas: [CGWindowID: CGImage]
+    @Binding var escolhida: FonteAudio?
+    var colunas = 3
+
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: colunas), spacing: 12) {
+            ForEach(janelas) { j in
+                CartaoJanela(fonte: j, miniatura: miniaturas[j.janela], escolhida: escolhida?.id == j.id)
+                    .onTapGesture { escolhida = j }
+            }
+        }
+    }
+}
+
+/// A meio da captação, escolher outra janela da aula (#39): o som, o tempo e a aula continuam.
+private struct EscolherOutraJanela: View {
+    @Environment(SessaoDireto.self) private var sessao
+    var aoFechar: () -> Void
+    @State private var fontes: [FonteAudio] = []
+    @State private var miniaturas: [CGWindowID: CGImage] = [:]
+    @State private var escolhida: FonteAudio?
+    @State private var verOutras = false
+    @State private var aMudar = false
+
+    private var podeMudar: Bool { escolhida != nil && escolhida?.id != sessao.fonte?.id && !aMudar }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Mudar de janela").font(.headline)
+                Spacer()
+                Button("Atualizar", systemImage: "arrow.clockwise") { Task { await carregar() } }
+                    .buttonStyle(.borderless)
+                    .labelStyle(.iconOnly)
+            }
+            Text("A captação não para: o som, o tempo e a aula continuam. Os slides passam a vir da janela escolhida.")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    GrelhaJanelas(janelas: fontes.filter(\.ehConhecida), miniaturas: miniaturas, escolhida: $escolhida, colunas: 2)
+                    let outras = fontes.filter { !$0.ehConhecida }
+                    if !outras.isEmpty {
+                        DisclosureGroup("Outras janelas (\(outras.count))", isExpanded: $verOutras) {
+                            GrelhaJanelas(janelas: outras, miniaturas: miniaturas, escolhida: $escolhida, colunas: 2).padding(.top, 8)
+                        }
+                    }
+                }
+                .padding(2)
+            }
+            .frame(height: 320)
+            if let escolhida, let atual = sessao.fonte, escolhida.bundleID != atual.bundleID {
+                Label("O som passa a vir do \(escolhida.nome) (até agora vinha do \(atual.nome)).", systemImage: "speaker.wave.2")
+                    .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                if aMudar { ProgressView().controlSize(.small) }
+                Spacer()
+                Button("Cancelar", role: .cancel, action: aoFechar)
+                Button("Mudar") { mudar() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!podeMudar)
+            }
+        }
+        .frame(width: 520)
+        .task { await carregar() }
+    }
+
+    private func carregar() async {
+        fontes = (try? await CapturaAudio.fontes()) ?? []
+        if !fontes.contains(where: \.ehConhecida) { verOutras = true }
+        // A janela que está a ser captada aparece escolhida: é a referência.
+        escolhida = fontes.first { $0.id == (escolhida ?? sessao.fonte)?.id }
+        miniaturas = await CapturaAudio.miniaturas(fontes.map(\.janela))
+    }
+
+    private func mudar() {
+        guard let escolhida else { return }
+        aMudar = true
+        Task {
+            await sessao.mudarJanela(escolhida)
+            aMudar = false
+            aoFechar()
         }
     }
 }

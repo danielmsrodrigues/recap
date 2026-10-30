@@ -123,6 +123,19 @@ struct FontePasta: FonteFrames {
 
     static func nome(_ segundos: Double) -> String { String(format: "%09.1f.jpg", segundos) }
 
+    static let prefixoTroco = "troco-"
+
+    /// As pastas de imagens de uma captação em direto, uma por janela (ver `GravadorFrames.novoTroco`):
+    /// a própria pasta e depois `troco-2`, `troco-3`…
+    static func trocos(_ pasta: URL) -> [URL] {
+        let subpastas = (try? FileManager.default.contentsOfDirectory(at: pasta, includingPropertiesForKeys: nil)) ?? []
+        let numeradas = subpastas.compactMap { u -> (Int, URL)? in
+            guard u.lastPathComponent.hasPrefix(prefixoTroco), let n = Int(u.lastPathComponent.dropFirst(prefixoTroco.count)) else { return nil }
+            return (n, u)
+        }
+        return [pasta] + numeradas.sorted { $0.0 < $1.0 }.map(\.1)
+    }
+
     private func ficheiros() -> [(Double, URL)] {
         let urls = (try? FileManager.default.contentsOfDirectory(at: pasta, includingPropertiesForKeys: nil)) ?? []
         return urls.compactMap { u in Double(u.deletingPathExtension().lastPathComponent).map { ($0, u) } }

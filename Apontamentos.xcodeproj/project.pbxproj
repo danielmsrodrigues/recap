@@ -41,6 +41,7 @@
 				Pipeline/PipelineRunner.swift,
 				Pipeline/ProcessingQueue.swift,
 				Pipeline/SessaoDireto.swift,
+				Pipeline/SlidesDireto.swift,
 				Resources/Assets.xcassets,
 				Services/Atualizador.swift,
 				Services/AudioExtractor.swift,
