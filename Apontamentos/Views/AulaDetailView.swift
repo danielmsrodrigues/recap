@@ -70,8 +70,8 @@ struct AulaDetailView: View {
         VStack(alignment: .leading, spacing: 0) {
             cabecalho
                 .padding(.horizontal, 20)
-                .padding(.top, 12)
-                .padding(.bottom, 10)
+                .padding(.top, 16)
+                .padding(.bottom, 14)
             Divider()
             conteudo
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

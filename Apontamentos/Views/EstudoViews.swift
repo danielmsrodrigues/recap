@@ -30,7 +30,7 @@ struct PainelEstudo: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.vertical, 14)
             Divider()
             switch seccao.wrappedValue {
             case .perguntas: PerguntasView(aula: aula, aoClicarTimestamp: aoClicarTimestamp, aoClicarSeccao: aoClicarSeccao)

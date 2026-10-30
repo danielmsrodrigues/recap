@@ -222,7 +222,8 @@ struct ListaAulas: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             CampoPesquisa(texto: $pesquisa, sugestao: "Procurar em todas as aulas")
                 .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .padding(.top, 14)
+                .padding(.bottom, 14)
                 .background(.bar)
         }
         .navigationTitle(titulo)
