@@ -21,6 +21,8 @@ struct ContextoAula: Sendable {
     var anexosAnteriores: [BlocoConteudo] = []
     /// Outros materiais do professor juntados à aula (ver `Materiais`), já em blocos.
     var materiaisProfessor: [BlocoConteudo] = []
+    /// Os bocados da aula que o aluno marcou com "Não estou a perceber".
+    var naoPercebi: [IntervaloNaoPercebi] = []
 }
 
 struct PDFComDados: Sendable {
@@ -126,6 +128,20 @@ struct NotesGenerator: Sendable {
             - Usa-os onde a aula falou deles: os números, os exemplos e os enunciados vêm de lá.
             - Quando uma tabela pequena ajudar a estudar (um exemplo resolvido, um quadro de valores), põe-na nos apontamentos em Markdown. Uma tabela grande não se copia inteira: resume-a, ou fica só com as linhas que a aula usou.
             - As apresentações vêm só em texto: não há imagem dos slides delas, por isso não uses marcas de slide para eles.
+            """
+        }
+        if !c.naoPercebi.isEmpty {
+            let bocados = c.naoPercebi.sorted { $0.inicio < $1.inicio }.map { b in
+                b.fim.map { "de [\(Timestamp.format(b.inicio))] a [\(Timestamp.format($0))]" } ?? "a partir de [\(Timestamp.format(b.inicio))]"
+            }.joined(separator: "; ")
+            pedido += """
+
+
+            Durante a aula, o aluno marcou que não estava a perceber nestes bocados: \(bocados).
+            - Muitas vezes já se tinha perdido antes de carregar no botão: para cada bocado, vê na transcrição que tema estava a ser explicado e volta ao início desse tema, mesmo que seja antes do bocado marcado.
+            - No sítio dos apontamentos onde está esse tema, põe uma caixa própria: `> 🤔 **Não percebeste aqui [mm:ss]:** ...`, com o minuto do início do bocado.
+            - Na caixa, explica outra vez esse tema todo, do princípio ao fim do bocado: mais devagar, por outras palavras e passo a passo, com um exemplo simples e concreto. Se o professor saltou passos, mostra-os.
+            - Escreve a caixa na mesma língua dos apontamentos. Não repitas a explicação que já está no texto; a caixa acrescenta.
             """
         }
         return materiais(c) + [.texto(pedido)]

@@ -4,7 +4,7 @@ import SwiftUI
 /// O que a lista do meio mostra (a barra lateral do Mac, como no Notas ou no Mail).
 enum FiltroAulas: Hashable {
     /// Sem lista escolhida: a coluna da direita mostra o início. No calendário, o mês ocupa a lista e a aula.
-    case inicio, calendario, todas, porRever, semana
+    case inicio, calendario, todas, porRever, semana, exame
     case cadeira(URL)
 }
 
@@ -46,6 +46,8 @@ struct BarraLateral: View {
                 Label("Esta semana", systemImage: "clock")
                     .badge(ListaAulas.daSemana(cadeiras).count)
                     .tag(FiltroAulas.semana)
+                Label("Sai no exame", systemImage: "star")
+                    .tag(FiltroAulas.exame)
             }
             Section("Cadeiras") {
                 ForEach(cadeiras) { cadeira in
@@ -169,7 +171,7 @@ struct ListaAulas: View {
     private var aulas: [Aula] {
         let cadeiras = library.cadeiras(no: semestre)
         let lista: [Aula] = switch filtro {
-        case .inicio, .calendario, .todas: cadeiras.flatMap(\.aulas)
+        case .inicio, .calendario, .todas, .exame: cadeiras.flatMap(\.aulas)
         case .porRever: Revisao.porRever(cadeiras)
         case .semana: Self.daSemana(cadeiras)
         case .cadeira: cadeiraEscolhida?.aulas ?? []
@@ -199,7 +201,7 @@ struct ListaAulas: View {
 
     private var titulo: String {
         switch filtro {
-        case .inicio, .calendario, .todas: "Todas as aulas"
+        case .inicio, .calendario, .todas, .exame: "Todas as aulas"
         case .porRever: "Por rever"
         case .semana: "Esta semana"
         case .cadeira: cadeiraEscolhida?.nome ?? "Cadeira"
