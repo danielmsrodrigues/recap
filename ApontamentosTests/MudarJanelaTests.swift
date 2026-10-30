@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreGraphics
 import Foundation
 import Testing
@@ -9,14 +10,17 @@ import Testing
 struct MudarJanelaTests {
     /// Uma captação a fingir: regista as janelas pedidas e pode recusar mudar.
     private final class CaptacaoFalsa: Captacao, @unchecked Sendable {
+        var eventos: EventosCaptacao?
         var iniciadas: [FonteAudio] = []
         var mudancas: [FonteAudio] = []
         var recusar = false
+        /// false = o som mudou, mas a imagem da janela nova não chega.
+        var comImagens = true
         func iniciar(_ fonte: FonteAudio) async throws { iniciadas.append(fonte) }
-        func mudar(para fonte: FonteAudio) async throws -> CGImage? {
+        func mudar(para fonte: FonteAudio) async throws -> Bool {
             if recusar { throw ErroCaptura.janelaNaoEncontrada }
             mudancas.append(fonte)
-            return nil
+            return comImagens
         }
         func parar() async {}
     }
@@ -41,15 +45,15 @@ struct MudarJanelaTests {
         let fichas = Fichas(library: library, definicoes: definicoes)
         let estudo = Estudo(library: library, definicoes: definicoes)
         let fila = ProcessingQueue(runner: PipelineRunner(library: library, definicoes: definicoes, fichas: fichas, estudo: estudo))
-        return (SessaoDireto(criarCaptacao: { _ in falsa }), library, fila, raiz)
+        return (SessaoDireto(criarCaptacao: { eventos in falsa.eventos = eventos; return falsa }), library, fila, raiz)
     }
 
     @Test func mudarDeJanelaComecaOutroTrocoDeImagens() async throws {
-        let f = try GravadorFrames()
+        let f = try GravadorFrames(janela: 1)
         defer { f.apagar() }
         f.receber(imagem(0.2))
         for s in [0.0, 2, 4] { f.gravarSeDevido(segundos: s) }
-        f.novoTroco()
+        f.novoTroco(janela: 2)
         #expect(!f.temImagem)
         f.gravarSeDevido(segundos: 6) // ainda nada da janela nova: a imagem da antiga não entra no troço novo
         f.receber(imagem(0.8))
@@ -61,6 +65,43 @@ struct MudarJanelaTests {
         #expect(try await FontePasta(pasta: trocos[0]).tempos(intervalo: 0) == [0, 2, 4])
         #expect(try await FontePasta(pasta: trocos[1]).tempos(intervalo: 0) == [8, 10])
         #expect(f.quantidade == 5)
+    }
+
+    /// Voltar a uma janela já captada continua o troço dela (a zona do slide é a mesma).
+    @Test func voltarAUmaJanelaContinuaOTrocoDela() async throws {
+        let f = try GravadorFrames(janela: 1)
+        defer { f.apagar() }
+        f.receber(imagem(0.2))
+        f.gravarSeDevido(segundos: 0)
+        f.novoTroco(janela: 2)
+        f.receber(imagem(0.5))
+        f.gravarSeDevido(segundos: 2)
+        f.novoTroco(janela: 1)
+        f.receber(imagem(0.8))
+        f.gravarSeDevido(segundos: 4)
+        f.concluir()
+        let trocos = FontePasta.trocos(f.pasta)
+        #expect(trocos.count == 2)
+        #expect(try await FontePasta(pasta: trocos[0]).tempos(intervalo: 0) == [0, 4])
+        #expect(try await FontePasta(pasta: trocos[1]).tempos(intervalo: 0) == [2])
+    }
+
+    @Test func recomecarAContarOSilencio() throws {
+        let g = try GravadorTemporario()
+        defer { g.apagar() }
+        let formato = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)!
+        func buffer(_ amplitude: Float) -> AVAudioPCMBuffer {
+            let b = AVAudioPCMBuffer(pcmFormat: formato, frameCapacity: 48_000)!
+            b.frameLength = 48_000
+            for i in 0..<48_000 { b.floatChannelData![0][i] = amplitude * sin(Float(i) * 0.06) }
+            return b
+        }
+        _ = g.escrever(buffer(0.3))
+        for _ in 0..<3 { _ = g.escrever(buffer(0)) }
+        #expect(g.segundosEmSilencio > 2.5)
+        g.reiniciarSilencio()
+        #expect(g.segundosEmSilencio < 0.1)
+        #expect(g.houveSom)
     }
 
     @Test func semMudarHaUmSoTroco() throws {
@@ -126,5 +167,32 @@ struct MudarJanelaTests {
         #expect(s.estado == .aOuvir)
         #expect(s.aviso?.contains("Não consegui mudar") == true)
         await s.descartar()
+    }
+
+    /// O som mudou mas a imagem não: a janela é a nova, e o aviso diz que não há slides.
+    @Test func semImagemDaJanelaNovaAvisaQueNaoHaSlides() async throws {
+        let falsa = CaptacaoFalsa()
+        falsa.comImagens = false
+        let (s, library, fila, raiz) = try sessao(falsa)
+        defer { try? FileManager.default.removeItem(at: raiz) }
+        await s.comecar(fonte: fonte(1), cadeira: "Gestão", titulo: "Aula 1", data: .now, velocidade: 1,
+                        gerarApontamentos: false, capturarSlides: true, library: library, fila: fila)
+
+        await s.mudarJanela(fonte(2))
+
+        #expect(s.fonte?.janela == 2)
+        #expect(s.aviso?.contains("slides") == true)
+        await s.descartar()
+    }
+
+    @Test func aGrelhaFechaQuandoACaptacaoAcaba() async throws {
+        let falsa = CaptacaoFalsa()
+        let (s, library, fila, raiz) = try sessao(falsa)
+        defer { try? FileManager.default.removeItem(at: raiz) }
+        await s.comecar(fonte: fonte(1), cadeira: "Gestão", titulo: "Aula 1", data: .now, velocidade: 1,
+                        gerarApontamentos: false, capturarSlides: true, library: library, fila: fila)
+        s.escolherJanela = true
+        await s.descartar()
+        #expect(!s.escolherJanela)
     }
 }

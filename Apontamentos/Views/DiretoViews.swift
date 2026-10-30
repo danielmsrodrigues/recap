@@ -183,12 +183,11 @@ struct DiretoView: View {
     @Environment(SessaoDireto.self) private var sessao
     @Environment(\.dismissWindow) private var dismissWindow
     @State private var confirmarDescarte = false
-    /// A escolher outra janela da aula (a janela "Em direto" alarga para a grelha).
-    @State private var escolherJanela = false
 
     var body: some View {
-        if escolherJanela, sessao.ativa {
-            EscolherOutraJanela { escolherJanela = false }
+        // A escolher outra janela da aula, a janela "Em direto" alarga para a grelha.
+        if sessao.escolherJanela, sessao.ativa {
+            EscolherOutraJanela { sessao.escolherJanela = false }
                 .padding(16)
         } else {
             estado
@@ -253,7 +252,7 @@ struct DiretoView: View {
                 }
                 Text(fonte.tituloJanela).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
                 Spacer()
-                Button("Mudar…") { escolherJanela = true }
+                Button("Mudar…") { sessao.escolherJanela = true }
                     .buttonStyle(.link)
                     .help("Captar outra janela sem parar: o som, o tempo e a aula continuam")
             }

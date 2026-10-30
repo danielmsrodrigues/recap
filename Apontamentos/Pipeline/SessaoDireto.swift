@@ -30,6 +30,10 @@ final class SessaoDireto {
     private var pretaDesde: Double?
     /// O que está a ser captado da janela da aula (nil = sem slides ou ainda sem imagem).
     private(set) var previa: CGImage?
+    /// A janela "Em direto" está a mostrar as janelas para mudar (#39). Enquanto se escolhe, não termina sozinha
+    /// por silêncio (o aviso não se vê); fecha quando a captação acaba.
+    var escolherJanela = false
+    private var aMudarJanela = false
 
     private var pastaAula: URL?
     private var gerarApontamentos = true
@@ -66,14 +70,19 @@ final class SessaoDireto {
         segundos = 0; silencio = 0; houveSom = false; nivel = -120; previa = nil; pretaDesde = nil; avisoPreto = false
         do {
             let g = try GravadorTemporario()
-            let f = capturarSlides ? try GravadorFrames() : nil
+            let f = capturarSlides ? try GravadorFrames(janela: fonte.janela) : nil
             var aoFrame: (@Sendable (CGImage) -> Void)?
-            if let f { aoFrame = { imagem in f.receber(imagem) } }
+            var aoMudarJanela: (@Sendable (CGWindowID) -> Void)?
+            if let f {
+                aoFrame = { imagem in f.receber(imagem) }
+                aoMudarJanela = { janela in f.novoTroco(janela: janela) }
+            }
             let c = criarCaptacao(EventosCaptacao(
                 aoReceber: { buffer in _ = g.escrever(buffer) },
                 aoFrame: aoFrame,
                 aoPararJanela: { [weak self] _ in Task { @MainActor in self?.semJanela() } },
-                aoParar: { [weak self] erro in Task { @MainActor in self?.interrompida(erro) } }))
+                aoParar: { [weak self] erro in Task { @MainActor in self?.interrompida(erro) } },
+                aoMudarJanela: aoMudarJanela))
             gravador = g
             frames = f
             try await c.iniciar(fonte)
@@ -95,16 +104,19 @@ final class SessaoDireto {
     /// Passa a captar outra janela sem parar (#39): o som, o tempo e a aula continuam. Se a janela for de outra
     /// aplicação, o som passa a vir dela. As imagens da janela nova vão para outro troço (ver `SlidesDireto`).
     func mudarJanela(_ nova: FonteAudio) async {
-        guard ativa, let captura, nova.id != fonte?.id else { return }
+        guard ativa, let captura, let atual = fonte, nova.id != atual.id, !aMudarJanela else { return }
+        aMudarJanela = true
+        defer { aMudarJanela = false }
         do {
-            let primeira = try await captura.mudar(para: nova)
-            frames?.novoTroco()
-            if let primeira { frames?.receber(primeira) }
+            let comImagens = try await captura.mudar(para: nova)
+            // O silêncio da aplicação anterior (o motivo habitual para mudar) não conta para terminar.
+            if nova.bundleID != atual.bundleID { gravador?.reiniciarSilencio() }
             fonte = nova
-            aviso = nil
             previa = nil
             pretaDesde = nil
             avisoPreto = false
+            aviso = comImagens || frames == nil ? nil
+                : "Passei para \"\(nova.tituloJanela)\", mas não consigo captar a imagem dela (minimizada?): a partir daqui não há slides. O som continua a ser captado."
         } catch {
             aviso = "Não consegui mudar para \"\(nova.tituloJanela)\": \(error.localizedDescription) Continua a ser captada a janela anterior."
         }
@@ -133,6 +145,7 @@ final class SessaoDireto {
         frames = nil
         previa = nil
         captura = nil
+        escolherJanela = false
         self.pastaAula = nil
         estado = .parada
     }
@@ -171,7 +184,7 @@ final class SessaoDireto {
                 aviso = "Não está a chegar nenhuma imagem da janela da aula: se estiver minimizada, abre-a (pode ficar por trás de outras). Sem isso não há slides."
             }
         }
-        if estado == .aOuvir, houveSom, silencio >= Self.limiteSilencio {
+        if estado == .aOuvir, houveSom, silencio >= Self.limiteSilencio, !escolherJanela, !aMudarJanela {
             Task { await terminar() }
         }
     }
@@ -198,5 +211,6 @@ final class SessaoDireto {
         captura = nil
         gravador = nil
         pastaAula = nil
+        escolherJanela = false
     }
 }

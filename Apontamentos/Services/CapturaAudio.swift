@@ -43,9 +43,9 @@ struct FonteAudio: Identifiable, Hashable, Sendable {
 /// O que a `SessaoDireto` usa para captar: a `CapturaAudio` (nos testes, uma a fingir).
 protocol Captacao: AnyObject, Sendable {
     func iniciar(_ fonte: FonteAudio) async throws
-    /// Passa a captar outra janela, e o som da aplicação dela, sem parar. Devolve uma primeira imagem da janela
-    /// nova: o ScreenCaptureKit só envia imagens quando a janela muda, e um slide parado podia não dar nenhuma.
-    func mudar(para fonte: FonteAudio) async throws -> CGImage?
+    /// Passa a captar outra janela, e o som da aplicação dela, sem parar. Se o som não muda, lança e nada mudou.
+    /// Devolve false se o som mudou mas a imagem da janela nova não chega (sem slides daqui para a frente).
+    func mudar(para fonte: FonteAudio) async throws -> Bool
     func parar() async
 }
 
@@ -55,6 +55,8 @@ struct EventosCaptacao {
     var aoFrame: (@Sendable (CGImage) -> Void)?
     var aoPararJanela: (@Sendable (Error) -> Void)?
     var aoParar: @Sendable (Error?) -> Void
+    /// Mudou-se de janela: as imagens a seguir já são da janela nova (ver `GravadorFrames.novoTroco`).
+    var aoMudarJanela: (@Sendable (CGWindowID) -> Void)? = nil
 }
 
 /// Ouve só o áudio de uma aplicação (nunca o microfone) com o ScreenCaptureKit e entrega-o em buffers PCM.
@@ -66,24 +68,32 @@ final class CapturaAudio: NSObject, SCStreamOutput, SCStreamDelegate, Captacao, 
     private let aoFrame: (@Sendable (CGImage) -> Void)?
     /// A captura da janela parou (fechada, minimizada…) mas o som continua.
     private let aoPararJanela: (@Sendable (Error) -> Void)?
+    private let aoMudarJanela: (@Sendable (CGWindowID) -> Void)?
     private let trinco = NSLock()
     private var stream: SCStream?
     private var streamJanela: SCStream?
     /// A aplicação de onde vem o som.
     private var bundleAtual: String?
+    /// A meio de mudar de janela: as imagens que chegam podem ser de qualquer das duas, e deitam-se fora.
+    private var aMudar = false
+    /// `parar` já foi chamado: uma troca de janela ainda a meio não pode deixar um stream a correr.
+    private var parado = false
 
     init(aoReceber: @escaping @Sendable (AVAudioPCMBuffer) -> Void,
          aoFrame: (@Sendable (CGImage) -> Void)? = nil,
          aoPararJanela: (@Sendable (Error) -> Void)? = nil,
+         aoMudarJanela: (@Sendable (CGWindowID) -> Void)? = nil,
          aoParar: @escaping @Sendable (Error?) -> Void) {
         self.aoReceber = aoReceber
         self.aoFrame = aoFrame
         self.aoPararJanela = aoPararJanela
+        self.aoMudarJanela = aoMudarJanela
         self.aoParar = aoParar
     }
 
     convenience init(_ eventos: EventosCaptacao) {
-        self.init(aoReceber: eventos.aoReceber, aoFrame: eventos.aoFrame, aoPararJanela: eventos.aoPararJanela, aoParar: eventos.aoParar)
+        self.init(aoReceber: eventos.aoReceber, aoFrame: eventos.aoFrame, aoPararJanela: eventos.aoPararJanela,
+                  aoMudarJanela: eventos.aoMudarJanela, aoParar: eventos.aoParar)
     }
 
     /// Janelas normais das aplicações abertas (sem processos auxiliares nem painéis), com os browsers e o Zoom primeiro.
@@ -190,6 +200,7 @@ final class CapturaAudio: NSObject, SCStreamOutput, SCStreamDelegate, Captacao, 
     }
 
     func iniciar(_ fonte: FonteAudio) async throws {
+        trinco.withLock { parado = false }
         let conteudo = try await Self.partilhavel()
         let filtro = try Self.filtroSom(fonte, em: conteudo)
         let config = SCStreamConfiguration()
@@ -235,13 +246,19 @@ final class CapturaAudio: NSObject, SCStreamOutput, SCStreamDelegate, Captacao, 
             trinco.withLock { if streamJanela === v { streamJanela = nil } }
             throw error
         }
+        // Parou-se enquanto este começava (terminar a meio de uma troca): não fica nenhum a correr.
+        if trinco.withLock({ parado }) {
+            trinco.withLock { if streamJanela === v { streamJanela = nil } }
+            try? await v.stopCapture()
+            throw ErroCaptura.falhou("a captação já tinha parado")
+        }
     }
 
-    func mudar(para fonte: FonteAudio) async throws -> CGImage? {
+    func mudar(para fonte: FonteAudio) async throws -> Bool {
         let conteudo = try await Self.partilhavel()
         guard let janela = conteudo.windows.first(where: { $0.windowID == fonte.janela }) else { throw ErroCaptura.janelaNaoEncontrada }
-        let (s, v, bundle) = trinco.withLock { (stream, streamJanela, bundleAtual) }
-        guard let s else { throw ErroCaptura.falhou("a captação já tinha parado") }
+        let (s, v, bundle, jaParou) = trinco.withLock { (stream, streamJanela, bundleAtual, parado) }
+        guard let s, !jaParou else { throw ErroCaptura.falhou("a captação já tinha parado") }
         // O som primeiro (é o que importa): se falhar, nada mudou.
         if fonte.bundleID != bundle {
             do {
@@ -253,26 +270,45 @@ final class CapturaAudio: NSObject, SCStreamOutput, SCStreamDelegate, Captacao, 
             }
             trinco.withLock { bundleAtual = fonte.bundleID }
         }
-        guard aoFrame != nil else { return nil }
+        guard aoFrame != nil else { return true }
+        trinco.withLock { aMudar = true }
         // Sem imagens da janela nova, a aula continua; só os slides param (como ao fechar a janela).
+        var comImagens = true
         do {
             if let v {
                 let filtro = SCContentFilter(desktopIndependentWindow: janela)
-                try await v.updateConfiguration(Self.configJanela(janela, filtro))
-                try await v.updateContentFilter(filtro)
+                do {
+                    try await v.updateConfiguration(Self.configJanela(janela, filtro))
+                    try await v.updateContentFilter(filtro)
+                } catch {
+                    // O stream pode já ter parado (a janela antiga fechou), ou ficado a meio: começa-se outro.
+                    trinco.withLock { if streamJanela === v { streamJanela = nil } }
+                    try? await v.stopCapture()
+                    try await iniciarJanela(janela)
+                }
             } else {
                 try await iniciarJanela(janela)
             }
         } catch {
-            aoPararJanela?(error)
-            return nil
+            comImagens = false
         }
-        return await Self.imagem(de: janela, largura: 1920)
+        // Na fila das imagens, depois das que já lá estão (de qualquer das janelas, deitadas fora): daqui
+        // para a frente são da janela nova, que fica com o seu troço.
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            fila.async { [self] in
+                trinco.withLock { aMudar = false }
+                aoMudarJanela?(janela.windowID)
+                c.resume()
+            }
+        }
+        // O ScreenCaptureKit só envia imagens quando a janela muda: um slide parado podia não dar nenhuma.
+        if comImagens, let imagem = await Self.imagem(de: janela, largura: 1920) { aoFrame?(imagem) }
+        return comImagens
     }
 
     func parar() async {
         let (s, v) = trinco.withLock { () -> (SCStream?, SCStream?) in
-            defer { stream = nil; streamJanela = nil }
+            defer { stream = nil; streamJanela = nil; parado = true }
             return (stream, streamJanela)
         }
         try? await s?.stopCapture()
@@ -295,7 +331,7 @@ final class CapturaAudio: NSObject, SCStreamOutput, SCStreamDelegate, Captacao, 
     }
 
     private func entregarFrame(_ amostras: CMSampleBuffer) {
-        guard let aoFrame, amostras.isValid,
+        guard let aoFrame, !trinco.withLock({ aMudar }), amostras.isValid,
               let anexos = CMSampleBufferGetSampleAttachmentsArray(amostras, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
               let estado = (anexos.first?[.status] as? Int).flatMap(SCFrameStatus.init(rawValue:)), estado == .complete,
               let pixels = amostras.imageBuffer
@@ -306,13 +342,18 @@ final class CapturaAudio: NSObject, SCStreamOutput, SCStreamDelegate, Captacao, 
     }
 
     func stream(_ stream: SCStream, didStopWithError error: any Error) {
-        // A janela fechada só tira os slides; o som continua.
-        let daJanela = trinco.withLock { () -> Bool in
-            guard stream === streamJanela else { return false }
-            streamJanela = nil
-            return true
+        enum Qual { case janela, som, antigo }
+        let qual = trinco.withLock { () -> Qual in
+            if stream === streamJanela { streamJanela = nil; return .janela }
+            return stream === self.stream ? .som : .antigo
         }
-        if daJanela { aoPararJanela?(error) } else { aoParar(error) }
+        switch qual {
+        // A janela fechada só tira os slides; o som continua.
+        case .janela: aoPararJanela?(error)
+        case .som: aoParar(error)
+        // Um stream de janela já substituído numa troca: não conta.
+        case .antigo: break
+        }
     }
 }
 
@@ -347,6 +388,9 @@ final class GravadorTemporario: @unchecked Sendable {
     }
 
     var segundos: Double { trinco.withLock { Double(amostras) } / AudioExtractor.taxa }
+
+    /// O silêncio volta a contar de agora (mudou-se de aplicação: o silêncio da anterior não conta para terminar).
+    func reiniciarSilencio() { trinco.withLock { if ultimoSom != nil { ultimoSom = amostras } } }
 
     func definirPausa(_ valor: Bool) { trinco.withLock { pausado = valor } }
 
@@ -406,6 +450,8 @@ final class GravadorFrames: @unchecked Sendable {
     /// Onde vão as imagens da janela atual.
     private var pastaAtual: URL
     private var trocos = 1
+    /// O troço de cada janela: voltar a uma janela continua o dela.
+    private var pastasPorJanela: [CGWindowID: URL] = [:]
     private let escrita = DispatchQueue(label: "pt.danielrodrigues.Recap.frames", qos: .utility)
     private var ultima: CGImage?
     private var ultimoTempo = -Double.infinity
@@ -413,19 +459,26 @@ final class GravadorFrames: @unchecked Sendable {
     /// A última imagem gravada e o ficheiro: se não mudou, a captura seguinte é uma ligação a esse ficheiro.
     private var ultimaGravada: (CGImage, URL)?
 
-    init() throws {
+    /// `janela`: a da aula no início (o primeiro troço é a própria pasta).
+    init(janela: CGWindowID? = nil) throws {
         pasta = FileManager.default.temporaryDirectory.appending(path: "Recap-slides-\(UUID().uuidString)", directoryHint: .isDirectory)
         pastaAtual = pasta
+        if let janela { pastasPorJanela[janela] = pasta }
         try FileManager.default.createDirectory(at: pasta, withIntermediateDirectories: true)
     }
 
-    /// Mudou-se de janela: as imagens seguintes vão para um troço novo. A última imagem da janela anterior
-    /// já não conta (até chegar uma da nova, não se grava nada).
-    func novoTroco() {
+    /// Mudou-se de janela: as imagens seguintes vão para o troço dela (um novo, se ainda não tinha). A última
+    /// imagem da janela anterior já não conta (até chegar uma da nova, não se grava nada).
+    func novoTroco(janela: CGWindowID) {
         trinco.withLock {
-            trocos += 1
-            pastaAtual = pasta.appending(path: "\(FontePasta.prefixoTroco)\(trocos)", directoryHint: .isDirectory)
-            try? FileManager.default.createDirectory(at: pastaAtual, withIntermediateDirectories: true)
+            if let pasta = pastasPorJanela[janela] {
+                pastaAtual = pasta
+            } else {
+                trocos += 1
+                pastaAtual = pasta.appending(path: "\(FontePasta.prefixoTroco)\(trocos)", directoryHint: .isDirectory)
+                try? FileManager.default.createDirectory(at: pastaAtual, withIntermediateDirectories: true)
+                pastasPorJanela[janela] = pastaAtual
+            }
             ultima = nil
             ultimaGravada = nil
         }
