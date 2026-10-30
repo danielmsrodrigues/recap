@@ -16,6 +16,8 @@ struct CadeiraSheet: View {
     @State private var semestre: Semestre?
     /// nil = a língua das aulas das Definições.
     @State private var idioma: IdiomaAula?
+    /// Índice de `Revisao.paleta`; nil = automática.
+    @State private var cor: Int?
     @State private var erro: String?
 
     private var nomeLimpo: String { nome.trimmingCharacters(in: .whitespaces) }
@@ -25,6 +27,31 @@ struct CadeiraSheet: View {
             Text(cadeira == nil ? "Nova cadeira" : "Editar cadeira").font(.title2.bold())
             Form {
                 TextField("Nome", text: $nome, prompt: Text("ex.: Álgebra Linear"))
+                LabeledContent("Cor") {
+                    HStack(spacing: 8) {
+                        Button {
+                            cor = nil
+                        } label: {
+                            if cor == nil { Label("Automática", systemImage: "checkmark") } else { Text("Automática") }
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Uma cor que nenhuma outra cadeira do semestre tem, escolhida pelo nome")
+                        ForEach(Revisao.paleta.indices, id: \.self) { i in
+                            Button {
+                                cor = i
+                            } label: {
+                                Circle().fill(Library.cor(matiz: Revisao.paleta[i]))
+                                    .frame(width: 18, height: 18)
+                                    .overlay(Circle().strokeBorder(.primary, lineWidth: 2).padding(-4).opacity(cor == i ? 1 : 0))
+                                    .padding(4)
+                                    .contentShape(.circle)
+                            }
+                            .buttonStyle(.plain)
+                            .help(Revisao.nomesDasCores[i])
+                            .accessibilityLabel(Revisao.nomesDasCores[i])
+                        }
+                    }
+                }
                 if let cadeira, library.organizacao != .nenhuma {
                     Picker(library.rotuloPeriodo, selection: $semestre) {
                         Text("Automático (\(cadeira.meta.semestre == nil ? library.nome(cadeira.semestre) : "pela data das aulas"))").tag(Semestre?.none)
@@ -81,6 +108,7 @@ struct CadeiraSheet: View {
             regiao = cadeira.meta.regiaoIgnorar
             semestre = cadeira.meta.semestre
             idioma = cadeira.meta.idioma
+            cor = cadeira.meta.cor
         }
     }
 
@@ -91,6 +119,7 @@ struct CadeiraSheet: View {
             meta.regiaoIgnorar = regiao
             meta.semestre = semestre
             meta.idioma = idioma
+            meta.cor = cor
             if let cadeira {
                 var atual = cadeira
                 if nomeLimpo != cadeira.nome {

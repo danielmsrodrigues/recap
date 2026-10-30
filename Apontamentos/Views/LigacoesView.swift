@@ -153,6 +153,7 @@ struct LigacoesView: View {
                 Fluxo(espaco: 6) {
                     ForEach(l.conceitos, id: \.self) { c in
                         Text(c)
+                            .lineLimit(1)
                             .font(.caption.weight(.medium))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
@@ -197,6 +198,7 @@ struct LigacoesView: View {
                                 ForEach(t.aulas, id: \.self) { caminho in
                                     if let o = outra(caminho) {
                                         Button(o.meta.titulo) { aoAbrirAula(o.pasta) }
+                                            .lineLimit(1)
                                             .buttonStyle(.plain)
                                             .font(.caption)
                                             .padding(.horizontal, 8)
@@ -226,7 +228,12 @@ private struct LinhaDoTempo: View {
     let ligacoes: [LigacoesAula.Ligacao]
     var aoAbrir: (URL) -> Void
 
-    private let largura: CGFloat = 132
+    /// A largura de cada aula: até 132, a encolher para caber no painel (até 96; com mais aulas desliza).
+    @State private var visivel: CGFloat = 0
+    private var largura: CGFloat {
+        guard visivel > 0, !aulas.isEmpty else { return 132 }
+        return min(132, max(96, (visivel - 8) / CGFloat(aulas.count)))
+    }
     private let alturaArcos: CGFloat = 64
 
     private func ligacao(_ a: Aula) -> LigacoesAula.Ligacao? {
@@ -245,6 +252,7 @@ private struct LinhaDoTempo: View {
             .onAppear { proxy.scrollTo(atual.id, anchor: .center) }
         }
         .frame(height: alturaArcos + 70)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { visivel = $0 }
     }
 
     private var conteudo: some View {
@@ -308,23 +316,31 @@ private struct LinhaDoTempo: View {
 struct Fluxo: Layout {
     var espaco: CGFloat = 6
 
+    /// O tamanho de uma etiqueta, nunca mais larga do que a linha: uma maior encolhe (e corta-se) em vez de
+    /// alargar o painel para lá do ecrã.
+    private func tamanho(_ s: LayoutSubviews.Element, linha: CGFloat) -> CGSize {
+        let ideal = s.sizeThatFits(.unspecified)
+        guard ideal.width > linha else { return ideal }
+        return s.sizeThatFits(ProposedViewSize(width: linha, height: nil))
+    }
+
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let largura = proposal.width ?? .infinity
         var x: CGFloat = 0, y: CGFloat = 0, alturaLinha: CGFloat = 0, maiorX: CGFloat = 0
         for s in subviews {
-            let t = s.sizeThatFits(.unspecified)
+            let t = tamanho(s, linha: largura)
             if x > 0, x + t.width > largura { x = 0; y += alturaLinha + espaco; alturaLinha = 0 }
             x += t.width + espaco
             maiorX = max(maiorX, x - espaco)
             alturaLinha = max(alturaLinha, t.height)
         }
-        return CGSize(width: maiorX, height: y + alturaLinha)
+        return CGSize(width: min(maiorX, largura), height: y + alturaLinha)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         var x = bounds.minX, y = bounds.minY, alturaLinha: CGFloat = 0
         for s in subviews {
-            let t = s.sizeThatFits(.unspecified)
+            let t = tamanho(s, linha: bounds.width)
             if x > bounds.minX, x + t.width > bounds.maxX { x = bounds.minX; y += alturaLinha + espaco; alturaLinha = 0 }
             s.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(t))
             x += t.width + espaco

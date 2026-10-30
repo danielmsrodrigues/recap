@@ -20,27 +20,27 @@ struct ConfigDiretoSheet: View {
     @State private var fonte: FonteAudio?
     @State private var dados = DadosAula()
     @State private var erro: String?
-    /// Primeiro a janela, depois a aula: cada passo é curto e cabe em qualquer ecrã.
-    @State private var passo = 1
 
-    /// Altura da lista de janelas quando há espaço: as filas das conhecidas, ou 330 com as outras abertas.
+    /// Altura da lista de janelas: até duas filas de quatro; com mais, faz scroll.
     private var alturaJanelas: CGFloat {
-        verOutras ? 330 : min(330, CGFloat((fontes.filter(\.ehConhecida).count + 2) / 3) * 156 + 34)
+        verOutras ? 300 : min(300, CGFloat((fontes.filter(\.ehConhecida).count + 3) / 4) * 150 + 34)
     }
 
+    /// Uma folha só (o design "Recap macOS"): a janela em cima, a aula e as opções por baixo.
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Transcrever em direto").font(.title2.bold())
-            if passo == 1 { passoJanela } else { passoAula }
+            janela
+            aula
         }
         .padding(20)
-        .frame(width: 660)
+        .frame(width: 760)
         .task { await carregarFontes() }
         .onAppear { dados.escolherCadeira(library: library, ultima: ultimaCadeira) }
     }
 
-    /// Passo 1: que janela ouvir.
-    private var passoJanela: some View {
+    /// Que janela ouvir.
+    private var janela: some View {
         Group {
             Text("O Recap ouve o som da aplicação dessa janela enquanto a aula toca e transcreve-o no fim. Não guarda vídeo nem áudio.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -77,35 +77,12 @@ struct ConfigDiretoSheet: View {
 
             Text("A janela tem de ficar à vista para os slides saírem (atrás de outras ou minimizada, as capturas saem pretas). O som é o da aplicação inteira: não ponhas outro som a tocar.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-
-            HStack {
-                if fonte == nil {
-                    Label("Escolhe a janela da aula", systemImage: "info.circle").font(.callout).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button("Cancelar", role: .cancel) { dismiss() }
-                Button("Continuar") { passo = 2 }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(fonte == nil)
-            }
         }
     }
 
-    /// Passo 2: que aula é, e como.
-    private var passoAula: some View {
+    /// Que aula é, e como.
+    private var aula: some View {
         Group {
-            if let fonte {
-                HStack(spacing: 6) {
-                    if let icone = NSRunningApplication(processIdentifier: fonte.pid)?.icon {
-                        Image(nsImage: icone).resizable().frame(width: 16, height: 16)
-                    }
-                    Text(fonte.tituloJanela).lineLimit(1).truncationMode(.middle)
-                    Spacer()
-                    Button("Mudar de janela") { passo = 1 }.buttonStyle(.link)
-                }
-                .font(.callout)
-            }
-
             Form {
                 FormularioAula(dados: $dados, rotuloData: "Data da aula")
                 Section {
@@ -128,8 +105,10 @@ struct ConfigDiretoSheet: View {
             .fixedSize(horizontal: false, vertical: true)
 
             HStack {
-                if let falta = dados.falta {
+                if let falta = fonte == nil ? "Escolhe a janela da aula" : dados.falta {
                     Label(falta, systemImage: "info.circle").font(.callout).foregroundStyle(.secondary)
+                } else if let fonte {
+                    Text(fonte.tituloJanela).font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 }
                 Spacer()
                 Button("Cancelar", role: .cancel) { dismiss() }
@@ -141,7 +120,7 @@ struct ConfigDiretoSheet: View {
     }
 
     private func grelha(_ janelas: [FonteAudio]) -> some View {
-        GrelhaJanelas(janelas: janelas, miniaturas: miniaturas, escolhida: $fonte)
+        GrelhaJanelas(janelas: janelas, miniaturas: miniaturas, escolhida: $fonte, colunas: 4)
     }
 
     private func carregarFontes() async {

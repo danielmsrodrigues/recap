@@ -7,6 +7,8 @@ struct DadosAula {
     var novaCadeira = ""
     var titulo = ""
     var data = Date.now
+    /// O último título proposto ("Aula 4"): muda com a cadeira enquanto não for escrito outro.
+    var tituloSugerido = ""
 
     static let novaCadeiraTag = "\u{0}nova"
 
@@ -23,6 +25,15 @@ struct DadosAula {
         if nomeCadeira.isEmpty { return "Falta o nome da cadeira" }
         if tituloLimpo.isEmpty { return "Falta o título da aula" }
         return nil
+    }
+
+    /// Com o título vazio (ou ainda o proposto), propõe "Aula N" a seguir à última aula da cadeira.
+    @MainActor
+    mutating func sugerirTitulo(library: Library) {
+        guard tituloLimpo.isEmpty || titulo == tituloSugerido else { return }
+        let sugestao = TituloAula.proximo(library.cadeira(nome: nomeCadeira)?.aulas ?? [])
+        titulo = sugestao
+        tituloSugerido = sugestao
     }
 
     /// Começa na última cadeira usada, senão na primeira da lista, senão a escrever uma nova.
@@ -50,6 +61,8 @@ struct FormularioAula: View {
             TextField("Nome da cadeira", text: $dados.novaCadeira, prompt: Text("ex.: Álgebra Linear"))
         }
         TextField("Título da aula", text: $dados.titulo, prompt: Text("ex.: Tema 3 – Diagonalização"))
+            // "Aula 4", a seguir à última da cadeira (só num título vazio: ao editar uma aula, o dela fica).
+            .onChange(of: dados.nomeCadeira, initial: true) { dados.sugerirTitulo(library: library) }
         DatePicker(rotuloData, selection: $dados.data, displayedComponents: .date)
     }
 }

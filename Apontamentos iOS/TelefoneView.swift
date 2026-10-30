@@ -12,6 +12,7 @@ struct TelefoneView: View {
     @State private var caminhos: [Separador: [DestinoIOS]] = [:]
     @State private var semestre: Semestre?
     @State private var termo = ""
+    @FocusState private var aProcurar: Bool
     @State private var aviso = AvisoRevista()
 
     var body: some View {
@@ -30,7 +31,12 @@ struct TelefoneView: View {
                 pilha(.procurar) { ProcurarView(termo: termo) }
                     // Só no separador Procurar: o campo fica na barra de separadores.
                     .searchable(text: $termo, prompt: "Aulas e temas")
+                    .searchFocused($aProcurar)
             }
+        }
+        // Tocar na lupa é para escrever: o campo abre já com o teclado.
+        .onChange(of: separador) { _, novo in
+            if novo == .procurar { aProcurar = true }
         }
         .overlay(alignment: .bottom) {
             if let atual = aviso.atual {

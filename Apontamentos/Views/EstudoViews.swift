@@ -30,7 +30,7 @@ struct PainelEstudo: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.vertical, 14)
             Divider()
             switch seccao.wrappedValue {
             case .perguntas: PerguntasView(aula: aula, aoClicarTimestamp: aoClicarTimestamp, aoClicarSeccao: aoClicarSeccao)
@@ -38,7 +38,12 @@ struct PainelEstudo: View {
             case .ligacoes: LigacoesView(aula: aula, aoClicarTimestamp: aoClicarTimestamp, aoAbrirAula: aoAbrirAula)
             }
         }
+        #if os(macOS)
+        // Só até à barra de cima da aula: por baixo dela, o fundo subia até ao topo da janela.
+        .background(.background, ignoresSafeAreaEdges: [])
+        #else
         .background(.background)
+        #endif
     }
 }
 

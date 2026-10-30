@@ -64,8 +64,19 @@ struct ApontamentosApp: App {
                 .environment(direto)
         }
         .commands {
-            CommandGroup(replacing: .newItem) {}
-            CommandGroup(after: .textEditing) { ComandoProcurar() }
+            CommandGroup(replacing: .newItem) {
+                Button("Transcrever em direto…") { NotificationCenter.default.post(name: .transcreverEmDireto, object: nil) }
+                    .keyboardShortcut("l", modifiers: [.command, .shift])
+                Button("Importar vídeo…") { NotificationCenter.default.post(name: .importarVideo, object: nil) }
+                    .keyboardShortcut("o")
+                Divider()
+                Button("Nova cadeira…") { NotificationCenter.default.post(name: .novaCadeira, object: nil) }
+            }
+            CommandGroup(after: .textEditing) {
+                ComandoProcurar()
+                Button("Procurar em todas as aulas") { NotificationCenter.default.post(name: .procurarEmTodasAsAulas, object: nil) }
+                    .keyboardShortcut("f", modifiers: [.command, .option])
+            }
             MenuAula()
             MenuVer()
             CommandGroup(after: .appSettings) {

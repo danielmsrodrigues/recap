@@ -22,6 +22,10 @@ struct AulaDetailView: View {
     @State private var transcricao: Transcricao?
     @State private var apontamentos: String?
     @State private var slides: [Slide]?
+    /// Para a barra de capítulos: as secções dos apontamentos com momento (ver `Capitulos`).
+    @State private var capitulos: [Capitulos.Capitulo] = []
+    /// O aviso "Revista · Abrir próxima · Desfazer" (no Mac e no iPhone).
+    @Environment(AvisoRevista.self) private var aviso: AvisoRevista?
     @State private var pdfsProfessor: [PDFProfessor] = []
     #if os(macOS)
     @State private var escolherPDF = false
@@ -66,17 +70,21 @@ struct AulaDetailView: View {
         VStack(alignment: .leading, spacing: 0) {
             cabecalho
                 .padding(.horizontal, 20)
-                .padding(.top, 12)
-                .padding(.bottom, 10)
+                .padding(.top, 16)
+                .padding(.bottom, 14)
             Divider()
             conteudo
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        // O título e o subtítulo vivem na barra da janela, uma vez só.
+        #if os(macOS)
+        .toolbar { barraMac }
+        #else
+        // O título e o subtítulo vivem na barra, uma vez só.
         .navigationTitle(aula.meta.titulo)
         .navigationSubtitle(subtitulo)
         .toolbar { barra }
+        #endif
         // A `Aula` muda quando a transcrição, os slides, os apontamentos ou os metadados mudam no disco:
         // não é preciso reler a cada alteração noutra aula.
         .task(id: aula) {
@@ -97,6 +105,11 @@ struct AulaDetailView: View {
             if !controlador.editando && !aGerar { apontamentos = Disco.lerApontamentos(aula.pasta) }
         }
         .task(id: navegacao.destino) { aplicarDestino() }
+        .task(id: "\(apontamentos?.hashValue ?? 0)#\(slides?.count ?? -1)#\(transcricao?.duracao ?? 0)") {
+            let seccoes = SeccoesApontamentos.partir(apontamentos ?? "").seccoes
+            capitulos = Capitulos.calcular(seccoes, duracao: transcricao?.duracao ?? aula.meta.duracao ?? 0,
+                                           slides: (slides ?? []).map(\.inicio))
+        }
         .focusedSceneValue(\.procurarNosApontamentos, apontamentos == nil || aGerar ? nil : AcaoProcurar { abrirProcura() })
         .focusedSceneValue(\.comandosAula, comandos)
         .onChange(of: tab) { if tab != .apontamentos { fecharProcura() } }
@@ -189,7 +202,13 @@ struct AulaDetailView: View {
 
     private var cabecalho: some View {
         VStack(alignment: .leading, spacing: 10) {
+            #if !os(macOS)
             seletor
+            #endif
+            if !capitulos.isEmpty {
+                // Durante a edição, não muda de separador: Concluir e Descartar estão nos apontamentos.
+                LinhaCapitulos(capitulos: capitulos) { if !controlador.editando { irParaTranscricao($0.inicio) } }
+            }
 
             #if os(macOS)
             if case .emFalta(let caminho) = estadoVideo {
@@ -370,18 +389,36 @@ struct AulaDetailView: View {
 
     // MARK: Barra
 
-    /// Editar · Gerar ▾ · Exportar ▾ | Estudo | Revista. Tudo isto está também no menu Aula.
-    @ToolbarContentBuilder private var barra: some ToolbarContent {
-        #if os(macOS)
+    #if os(macOS)
+    /// A barra de cima da aula, como no design: o título (cadeira · data · duração por baixo), os separadores e
+    /// Criar com IA ▾ · partilhar · Revista · Estudo. O painel Estudo começa por baixo dela.
+    /// Editar os apontamentos está no menu Aula (⌘E).
+    @ToolbarContentBuilder private var barraMac: some ToolbarContent {
+        ToolbarItem {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(aula.meta.titulo).font(.headline)
+                Text(subtitulo).font(.caption).foregroundStyle(.secondary)
+            }
+            .lineLimit(1)
+            .frame(maxWidth: 380, alignment: .leading)
+            .padding(.horizontal, 8)
+            .help(aula.meta.titulo)
+        }
+        .sharedBackgroundVisibility(.hidden)
+        ToolbarSpacer(.flexible)
+        ToolbarItem { seletor }
+        ToolbarSpacer(.flexible)
         ToolbarItemGroup {
-            Button("Editar", systemImage: "pencil") { comecarEdicao() }
-                .labelStyle(.titleAndIcon)
-                .disabled(apontamentos == nil || controlador.editando || aGerar)
-            Menu("Gerar", systemImage: "sparkles") {
-                Button(apontamentos == nil ? "Gerar apontamentos" : "Gerar apontamentos de novo…") {
-                    if apontamentos == nil { gerar() } else { confirmarRegenerar = true }
+            Menu("Criar com IA", systemImage: "sparkles") {
+                Section("Criar a partir desta aula") {
+                    Button(apontamentos == nil ? "Gerar apontamentos" : "Refazer apontamentos…") {
+                        if apontamentos == nil { gerar() } else { confirmarRegenerar = true }
+                    }
+                    .disabled(transcricao == nil || definicoes.faltaParaGerar != nil)
+                    Button("Exercícios") { abrirEstudo(.exercicios) }
+                    Button("Ligações com outras aulas") { abrirEstudo(.ligacoes) }
                 }
-                .disabled(transcricao == nil || definicoes.faltaParaGerar != nil)
+                Divider()
                 Button("Extrair slides de novo") { extrairSlides() }
                     .disabled(urlVideo == nil)
                 if let g = aula.meta.geracoes.last {
@@ -390,8 +427,9 @@ struct AulaDetailView: View {
                 }
             }
             .labelStyle(.titleAndIcon)
+            .help("Criar materiais de estudo com IA a partir desta aula")
             .disabled(!livre)
-            Menu("Exportar", systemImage: "square.and.arrow.up") {
+            Menu("Partilhar", systemImage: "square.and.arrow.up") {
                 ShareLink(item: aula.pasta.appending(path: Disco.apontamentosPDF),
                           preview: SharePreview(aula.meta.titulo, icon: Image(systemName: "doc.richtext"))) {
                     Label("Partilhar PDF…", systemImage: "square.and.arrow.up")
@@ -401,10 +439,35 @@ struct AulaDetailView: View {
                 Button("Guardar PDF…") { exportar(pdf: true) }.disabled(!pdfPronto)
                 Button("Guardar Markdown…") { exportar(pdf: false) }
             }
-            .labelStyle(.titleAndIcon)
+            .help("Partilhar ou guardar os apontamentos")
             .disabled(apontamentos == nil)
         }
-        #else
+        ToolbarItem {
+            if aula.meta.revista {
+                Button { marcarRevista(false) } label: {
+                    Label("Revista", systemImage: "checkmark.circle.fill").labelStyle(.titleAndIcon)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
+                .help("Revista: clicar volta a pô-la por rever")
+            } else {
+                Button { marcarRevista(true) } label: {
+                    Label("Marcar como revista", systemImage: "checkmark.circle").labelStyle(.titleAndIcon)
+                }
+            }
+        }
+        ToolbarItem {
+            Toggle(isOn: $mostrarEstudo) {
+                Label("Estudo", systemImage: "bubble.left.and.text.bubble.right")
+            }
+            .help("Perguntas, exercícios e ligações desta aula (⌥⌘P)")
+        }
+    }
+    #endif
+
+    #if !os(macOS)
+    /// No iPhone e no iPad: Editar · Partilhar ▾ | Revista | Estudo.
+    @ToolbarContentBuilder private var barra: some ToolbarContent {
         ToolbarItemGroup {
             Button("Editar", systemImage: "pencil") { comecarEdicao() }
                 .disabled(apontamentos == nil || controlador.editando)
@@ -426,36 +489,22 @@ struct AulaDetailView: View {
             }
             .disabled(apontamentos == nil)
         }
-        #endif
         ToolbarItem {
-            Toggle(isOn: $mostrarEstudo) {
-                Label("Estudo", systemImage: "bubble.left.and.text.bubble.right")
-            }
-            .help("Perguntas, exercícios e ligações desta aula (⌥⌘P)")
-        }
-        ToolbarItem {
-            #if os(macOS)
-            if aula.meta.revista {
-                Button { marcarRevista(false) } label: {
-                    Label("Revista", systemImage: "checkmark.circle.fill").labelStyle(.titleAndIcon)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.green)
-            } else {
-                Button { marcarRevista(true) } label: {
-                    Label("Marcar como revista", systemImage: "checkmark.circle").labelStyle(.titleAndIcon)
-                }
-            }
-            #else
             // No iPhone a barra é estreita: só o ícone, verde quando revista.
             Button { marcarRevista(!aula.meta.revista) } label: {
                 Label(aula.meta.revista ? "Revista" : "Marcar como revista",
                       systemImage: aula.meta.revista ? "checkmark.circle.fill" : "checkmark.circle")
             }
             .tint(aula.meta.revista ? .green : nil)
-            #endif
+        }
+        ToolbarItem {
+            Toggle(isOn: $mostrarEstudo) {
+                Label("Estudo", systemImage: "bubble.left.and.text.bubble.right")
+            }
+            .help("Perguntas, exercícios e ligações desta aula (⌥⌘P)")
         }
     }
+    #endif
 
     // MARK: Ações
 
@@ -469,6 +518,12 @@ struct AulaDetailView: View {
     private func perguntarSobre(_ citacao: CitacaoPergunta) {
         estudo.citar(citacao, em: aula)
         UserDefaults.standard.set(SeccaoEstudo.perguntas.rawValue, forKey: "seccaoEstudo")
+        mostrarEstudo = true
+    }
+
+    /// Abre o painel Estudo numa secção (Criar com IA ▾).
+    private func abrirEstudo(_ seccao: SeccaoEstudo) {
+        UserDefaults.standard.set(seccao.rawValue, forKey: "seccaoEstudo")
         mostrarEstudo = true
     }
 
@@ -735,8 +790,17 @@ struct AulaDetailView: View {
 
     #endif
 
+    /// Com o aviso "Abrir próxima" e "Desfazer" quando há quem o mostre (a janela do Mac, o iPhone).
     private func marcarRevista(_ revista: Bool) {
-        do { try library.definirRevista(revista, em: aula.pasta) } catch { erro = error.localizedDescription }
+        do {
+            if let aviso {
+                try aviso.marcar(aula, revista: revista, library: library, mostrar: true)
+            } else {
+                try library.definirRevista(revista, em: aula.pasta)
+            }
+        } catch {
+            erro = error.localizedDescription
+        }
     }
 
     #if os(macOS)

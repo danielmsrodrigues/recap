@@ -58,6 +58,25 @@ struct RevisaoTests {
         #expect(Revisao.matizes(muitas).count == 12)
     }
 
+    /// Uma cor escolhida à mão (em "Editar cadeira…") fica dessa cadeira; as automáticas não a usam.
+    @Test func corEscolhidaAMaoEAsAutomaticasEvitamNa() {
+        let auto = Revisao.matizes(["Cálculo", "Álgebra Lineal"])
+        let calculo = try! #require(Revisao.paleta.firstIndex(of: auto["Cálculo"]!))
+        // A Álgebra escolhe a cor que o Cálculo tinha: o Cálculo passa para outra.
+        let cores = Revisao.matizes([(nome: "Cálculo", escolhida: nil), (nome: "Álgebra Lineal", escolhida: calculo)])
+        #expect(cores["Álgebra Lineal"] == Revisao.paleta[calculo])
+        #expect(cores["Cálculo"] != Revisao.paleta[calculo])
+    }
+
+    /// O título de uma aula nova vem com o número a seguir ao da última da cadeira.
+    @Test func tituloSugeridoEOSeguinteAoDaUltimaAula() {
+        let c = cadeiras[1]  // E3, E4 e E5 (sem número no título)
+        #expect(TituloAula.proximo(c.aulas) == "Aula 4")
+        let comNumeros = [aula("Clase 3 · Gestión financiera", "Empresas", dia: 28), aula("Clase 1 · La empresa", "Empresas", dia: 14)]
+        #expect(TituloAula.proximo(comNumeros) == "Aula 4")
+        #expect(TituloAula.proximo([]) == "Aula 1")
+    }
+
     @Test func apontamentosPartidosEmSeccoes() {
         let md = """
         # Números reales
@@ -82,6 +101,42 @@ struct RevisaoTests {
         #expect(a.seccoes[0].corpo.contains("## isto não é um título"))
         #expect(a.seccoes[0].corpo.hasPrefix("Los números"))
         #expect(a.seccoes[1].corpo == "Abiertos y cerrados: $[a, b]$.")
+    }
+
+    @Test func cadaSeccaoSabeOMinutoEmQueComeca() {
+        // Os apontamentos escrevem [mm:ss] mesmo depois da primeira hora: [122:20].
+        let a = SeccoesApontamentos.partir("# T\n\n## Avisos [00:33]\nx\n\n## Intervalos [1:38:05]\ny\n\n## Rich [122:20]\nw\n\n## Dúvidas\nz")
+        #expect(a.seccoes.map(\.inicio) == [33, 5885, 7340, nil])
+        #expect(a.seccoes.map(\.titulo) == ["Avisos", "Intervalos", "Rich", "Dúvidas"])
+    }
+
+    /// A barra de capítulos do Mac: as secções com minuto, cada uma até à seguinte, com os slides que mostrou.
+    @Test func capitulosAteAoSeguinteComOsSlides() {
+        let s = [SeccoesApontamentos.Seccao(titulo: "Avisos", corpo: "", inicio: 0),
+                 SeccoesApontamentos.Seccao(titulo: "Números", corpo: "", inicio: 600),
+                 SeccoesApontamentos.Seccao(titulo: "Dúvidas", corpo: "", inicio: nil),
+                 SeccoesApontamentos.Seccao(titulo: "Intervalos", corpo: "", inicio: 3000)]
+        let c = Capitulos.calcular(s, duracao: 3600, slides: [10, 620, 700, 3100, 3700])
+        #expect(c.map(\.titulo) == ["Avisos", "Números", "Intervalos"])
+        #expect(c.map(\.inicio) == [0, 600, 3000])
+        #expect(c.map(\.fim) == [600, 3000, 3600])
+        #expect(c.map(\.slides) == [1, 2, 1])
+        // Menos de dois capítulos não dá barra.
+        #expect(Capitulos.calcular(Array(s.prefix(1)), duracao: 3600, slides: []).isEmpty)
+    }
+
+    /// Secções muito curtas juntam-se à anterior: blocos de poucos minutos não tinham onde pôr o nome.
+    @Test func capitulosCurtosJuntamSeAoAnterior() {
+        let s = [SeccoesApontamentos.Seccao(titulo: "Avisos", corpo: "", inicio: 0),
+                 SeccoesApontamentos.Seccao(titulo: "Números", corpo: "", inicio: 1200),
+                 SeccoesApontamentos.Seccao(titulo: "Exemplo", corpo: "", inicio: 2300),
+                 SeccoesApontamentos.Seccao(titulo: "Intervalos", corpo: "", inicio: 2400)]
+        // O "Exemplo" dura 100 s (menos de 6% da hora): fica no capítulo "Números".
+        let c = Capitulos.calcular(s, duracao: 3600, slides: [1250, 2350])
+        #expect(c.map(\.titulo) == ["Avisos", "Números", "Intervalos"])
+        #expect(c[1].fim == 2400)
+        #expect(c[1].seccoes == ["Números", "Exemplo"])
+        #expect(c[1].slides == 2)
     }
 
     @Test func quebrasDeLinhaDoWindows() {

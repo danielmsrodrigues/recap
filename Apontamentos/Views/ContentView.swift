@@ -20,32 +20,75 @@ struct ContentView: View {
     @State private var erro: String?
     @State private var configurarDireto = false
     @State private var criarCadeira = false
+    /// A lista do meio (escolhida na barra lateral).
+    @State private var filtro: FiltroAulas = .inicio
+    /// nil = o semestre mais recente. Não fica guardado: ao abrir, a app mostra sempre o semestre em curso.
+    @State private var semestre: Semestre?
+    @State private var aviso = AvisoRevista()
 
     static let extensoes: Set<String> = ["mp4", "mov", "m4v", "mkv"]
     static let tiposVideo: [UTType] = [.mpeg4Movie, .quickTimeMovie, .movie] + [UTType(filenameExtension: "mkv")].compactMap { $0 }
 
     var body: some View {
+        // Três colunas, como no Notas e no Mail: as listas e as cadeiras, as aulas, a aula.
         NavigationSplitView {
-            Group {
-                if pesquisa.trimmingCharacters(in: .whitespaces).isEmpty {
-                    SidebarView(selecao: $selecao, aEditarCadeira: $aEditarCadeira)
-                } else {
-                    ResultadosPesquisaView(termo: pesquisa)
-                }
+            BarraLateral(filtro: $filtro, semestre: $semestre, aEditarCadeira: $aEditarCadeira, aoAbrirAula: { selecao = $0 }) {
+                criarCadeira = true
             }
-            .navigationSplitViewColumnWidth(min: 220, ideal: 280)
-            .searchable(text: $pesquisa, placement: .sidebar, prompt: "Procurar em todas as aulas")
+            .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 320)
+        } content: {
+            ListaAulas(filtro: filtro, semestre: semestre, selecao: $selecao, pesquisa: $pesquisa) { configurarDireto = true }
+                .navigationSplitViewColumnWidth(min: 300, ideal: 330, max: 440)
         } detail: {
             if let selecao, selecao.lastPathComponent == FichaCadeira.fichaMD,
                let cadeira = library.cadeiras.first(where: { $0.pasta.mesmoCaminho(selecao.deletingLastPathComponent()) }) {
                 FichaCadeiraView(cadeira: cadeira).id(cadeira.pasta)
+                    .navigationSplitViewColumnWidth(min: 520, ideal: 900)
             } else if let selecao, let aula = library.aula(em: selecao) {
                 AulaComPainel(aula: aula)
+                    .navigationSplitViewColumnWidth(min: 600, ideal: 1000)
             } else {
-                EcraInicial(aCaptar: direto.ativa, aoTranscrever: { configurarDireto = true }, aoEscolherVideo: { importar = true })
+                Inicio(semestre: semestre, aCaptar: direto.ativa,
+                       aoTranscrever: { configurarDireto = true }, aoEscolherVideo: { importar = true },
+                       aoAbrir: { selecao = $0 }, aoVerPorRever: { filtro = .porRever })
+                    .navigationSplitViewColumnWidth(min: 520, ideal: 900)
             }
         }
-        .frame(minWidth: 860, minHeight: 560)
+        // Sem mínimo, a lista do meio podia ficar com a janela toda e o Início, espremido, com uma letra por linha.
+        .frame(minWidth: 1000, minHeight: 600)
+        // "Início" fecha a aula; uma cadeira abre "Sobre a cadeira", como no design.
+        .onChange(of: filtro) { _, novo in
+            switch novo {
+            case .inicio: selecao = nil
+            case .cadeira(let pasta):
+                // Com uma aula desta cadeira aberta (por exemplo, depois de lhe mudar o nome), fica a aula.
+                if !(selecao?.path.hasPrefix(pasta.path + "/") ?? false) { selecao = FichaCadeira.url(pasta) }
+            default: break
+            }
+        }
+        // Uma aula aberta pela pesquisa ou por um link: sai do Início, e o semestre passa a ser o dela.
+        .onChange(of: selecao) { _, nova in
+            guard let nova else { return }
+            if filtro == .inicio { filtro = .todas }
+            if let cadeira = library.cadeiras.first(where: { nova.path.hasPrefix($0.pasta.path + "/") }),
+               cadeira.semestre != (semestre ?? library.semestres.first) {
+                semestre = cadeira.semestre
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if let atual = aviso.atual {
+                VistaAvisoRevista(aviso: atual) { proxima in
+                    aviso.fechar()
+                    selecao = proxima.pasta
+                } aoDesfazer: {
+                    do { try aviso.desfazer(library) } catch { erro = error.localizedDescription }
+                }
+                .frame(maxWidth: 560)
+                .padding(.bottom, 18)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .environment(aviso)
         .imagemEmGrande(navegacao)
         // Num Mac novo (ou se faltar o Claude Code ou o modelo), o assistente abre sozinho.
         .sheet(isPresented: $preparar) { PreparacaoView() }
@@ -79,15 +122,10 @@ struct ContentView: View {
             // O URL canónico da aula: o do link pode vir noutra normalização Unicode e a lista não o reconhecia.
             if let destino, !(selecao?.mesmoCaminho(destino.pasta) ?? false) { selecao = library.aula(em: destino.pasta)?.pasta ?? destino.pasta }
         }
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Menu("Adicionar", systemImage: "plus") {
-                    Button("Transcrever em direto…") { configurarDireto = true }.keyboardShortcut("l", modifiers: [.command, .shift])
-                    Button("Importar vídeo…") { importar = true }.keyboardShortcut("o")
-                    Button("Nova cadeira…") { criarCadeira = true }
-                }
-            }
-        }
+        // O menu Ficheiro: Transcrever em direto (⇧⌘L), Importar vídeo (⌘O) e Nova cadeira.
+        .onReceive(NotificationCenter.default.publisher(for: .transcreverEmDireto)) { _ in configurarDireto = true }
+        .onReceive(NotificationCenter.default.publisher(for: .importarVideo)) { _ in importar = true }
+        .onReceive(NotificationCenter.default.publisher(for: .novaCadeira)) { _ in criarCadeira = true }
         .dropDestination(for: URL.self) { urls, _ in
             receber(urls)
             return true
@@ -112,10 +150,11 @@ struct ContentView: View {
         }
         .sheet(item: $aEditarCadeira) { cadeira in
             CadeiraSheet(cadeira: cadeira) { antiga, nova in
-                // A aula aberta mudou de pasta com a cadeira: a seleção acompanha.
+                // A aula aberta e a cadeira escolhida mudaram de pasta com a cadeira: a seleção e a lista acompanham.
                 if let s = selecao, s.path.hasPrefix(antiga.path + "/") {
                     selecao = nova.appending(path: s.lastPathComponent, directoryHint: .isDirectory)
                 }
+                if case .cadeira(let pasta) = filtro, pasta.mesmoCaminho(antiga) { filtro = .cadeira(nova) }
             }
         }
         .sheet(isPresented: $criarCadeira) { CadeiraSheet(cadeira: nil) }
@@ -198,46 +237,100 @@ private struct VideoPendente: Identifiable {
     var id: URL { url }
 }
 
-/// Sem aula aberta: transcrever em direto é a ação principal; importar um vídeo fica em segundo plano
-/// (largar um vídeo em qualquer sítio da janela continua a funcionar).
-private struct EcraInicial: View {
+/// Sem aula aberta: o dia, o que falta rever, e as duas maneiras de juntar uma aula (em direto, ou largando o vídeo
+/// em qualquer sítio da janela).
+private struct Inicio: View {
+    @Environment(Library.self) private var library
+    let semestre: Semestre?
     let aCaptar: Bool
     let aoTranscrever: () -> Void
     let aoEscolherVideo: () -> Void
+    let aoAbrir: (URL) -> Void
+    let aoVerPorRever: () -> Void
 
     var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "waveform.badge.mic")
-                .font(.system(size: 52, weight: .light))
-                .foregroundStyle(.tint)
-            Text("Transcrever uma aula").font(.title.bold())
-            Text("O Recap ouve a aula enquanto dá, ao vivo ou numa gravação no browser, e escreve os apontamentos no fim.")
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 440)
-            Button(action: aoTranscrever) {
-                Label(aCaptar ? "Já há uma aula em direto" : "Transcrever em direto…", systemImage: "record.circle")
-                    .font(.title3.weight(.semibold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
+        let porRever = Revisao.porRever(library.cadeiras(no: semestre))
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                VStack(alignment: .leading, spacing: 4) {
+                    let dia = Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide).locale(Locale(identifier: "pt_PT")))
+                    Text(dia.prefix(1).uppercased() + dia.dropFirst())
+                        .font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                    Text(porRever.isEmpty ? "Está tudo revisto" : porRever.count == 1 ? "Tens 1 aula por rever" : "Tens \(porRever.count) aulas por rever")
+                        .font(.largeTitle.bold())
+                }
+                // Lado a lado: a coluna tem largura mínima, por isso cabem sempre.
+                HStack(alignment: .top, spacing: 12) { cartoes }
+                if !porRever.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text("Por rever").font(.title3.bold())
+                            Spacer()
+                            Button("Ver todas", action: aoVerPorRever).buttonStyle(.link)
+                        }
+                        VStack(spacing: 0) {
+                            ForEach(Array(porRever.prefix(5).enumerated()), id: \.element.id) { i, aula in
+                                if i > 0 { Divider().padding(.leading, 31) }
+                                Button { aoAbrir(aula.pasta) } label: {
+                                    HStack(spacing: 10) {
+                                        RoundedRectangle(cornerRadius: 2).fill(library.cor(aula.cadeira)).frame(width: 7, height: 7)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(aula.meta.titulo).lineLimit(1)
+                                            Text("\(aula.cadeira) · Aula \(library.numeroDaAula(aula)) · \(DataAula.curta(aula.meta.data))")
+                                                .font(.caption).foregroundStyle(.secondary)
+                                        }
+                                        Spacer(minLength: 0)
+                                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                                    }
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 10)
+                                    .contentShape(.rect)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 12))
+                    }
+                }
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.extraLarge)
-            .disabled(aCaptar)
-            .padding(.top, 6)
+            .padding(.horizontal, 40)
+            .padding(.vertical, 48)
+            .frame(maxWidth: 780)
+            .frame(maxWidth: .infinity)
+        }
+        // Sem botões nesta vista: o espaço fica à direita e o "Transcrever" da lista não foge para a ponta da janela.
+        .toolbar { ToolbarSpacer(.flexible) }
+    }
 
+    /// O cartão "Transcrever em direto" e o de largar o vídeo.
+    @ViewBuilder private var cartoes: some View {
+        Button(action: aoTranscrever) {
+            VStack(alignment: .leading, spacing: 6) {
+                Label(aCaptar ? "Já há uma aula em direto" : "Transcrever em direto…", systemImage: "record.circle")
+                    .font(.title3.bold())
+                Text("Ouve a aula ao vivo ou uma gravação no browser e escreve os apontamentos no fim.")
+                    .font(.callout).opacity(0.85)
+                Text("⇧⌘L").font(.caption).opacity(0.7)
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+            .padding(18)
+            .background(Color.accentColor, in: .rect(cornerRadius: 16))
+            .contentShape(.rect(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+        .disabled(aCaptar)
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Tens o vídeo da aula?").font(.title3.bold())
             HStack(spacing: 4) {
-                Text("Tens o vídeo da aula? Larga-o aqui ou")
+                Text("Larga-o aqui ou").foregroundStyle(.secondary)
                 Button("escolhe o ficheiro…", action: aoEscolherVideo).buttonStyle(.link)
             }
             .font(.callout)
-            .foregroundStyle(.secondary)
-            .padding(.top, 22)
         }
-        .padding(40)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // Sem aula aberta, a janela não se chama como a app: diz onde se está.
-        .navigationTitle("Aulas")
+        .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+        .padding(18)
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.quaternary, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])))
     }
 }
 
@@ -257,9 +350,10 @@ private struct AulaComPainel: View {
         // o inspector entrava num ciclo de layout e a app fechava. (O HSplitView abria o painel largo demais.)
         HStack(spacing: 0) {
             AulaDetailView(aula: aula).id(aula.pasta)
-                .frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
+                .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
             if mostrarEstudo {
-                let largura = aArrastar ?? larguraGuardada
+                // Com três colunas, um painel largo (até 620 antes) já não cabia e o macOS escondia a barra lateral.
+                let largura = min(aArrastar ?? larguraGuardada, DivisoriaPainel.limites.upperBound)
                 DivisoriaPainel(largura: Binding(get: { largura }, set: { aArrastar = $0 })) {
                     if let final = aArrastar { larguraGuardada = final }
                     aArrastar = nil
@@ -274,6 +368,7 @@ private struct AulaComPainel: View {
                 .id(aula.pasta)
                 .frame(width: largura)
                 .frame(maxHeight: .infinity)
+                .clipped()
             }
         }
     }
@@ -284,7 +379,7 @@ private struct DivisoriaPainel: View {
     @Binding var largura: Double
     let aoTerminar: () -> Void
     @State private var inicio: Double?
-    static let limites = 260.0...620.0
+    static let limites = 260.0...460.0
 
     var body: some View {
         Rectangle()
@@ -311,6 +406,12 @@ private struct DivisoriaPainel: View {
 extension Notification.Name {
     /// Recap → Preparar o Recap…
     static let abrirPreparacao = Notification.Name("abrirPreparacao")
+    /// Ficheiro → Transcrever em direto…, Importar vídeo…, Nova cadeira…
+    static let transcreverEmDireto = Notification.Name("transcreverEmDireto")
+    static let importarVideo = Notification.Name("importarVideo")
+    static let novaCadeira = Notification.Name("novaCadeira")
+    /// Editar → Procurar em todas as aulas (⌥⌘F): o cursor vai para o campo no topo da lista.
+    static let procurarEmTodasAsAulas = Notification.Name("procurarEmTodasAsAulas")
 }
 
 /// Os avisos do atualizador: versão nova, a instalar, já atualizado, erro.
