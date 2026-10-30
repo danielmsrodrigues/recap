@@ -15,6 +15,8 @@ struct RecapIOSApp: App {
                 ContentViewIOS(raiz: raiz)
                     .id(raiz)
                     .environment(pasta)
+            } else if pasta.aProcurar {
+                ProgressView("A abrir a pasta Recap do iCloud Drive…")
             } else {
                 EscolherPastaView()
                     .environment(pasta)
@@ -36,16 +38,20 @@ struct EscolherPastaView: View {
 
     var body: some View {
         ContentUnavailableView {
-            Label("Escolhe a pasta das aulas", systemImage: "folder")
+            Label(pasta.semICloud ? "Liga o iCloud Drive" : "Escolhe a pasta das aulas", systemImage: pasta.semICloud ? "icloud.slash" : "folder")
         } description: {
             VStack(spacing: 14) {
-                Text("A mesma pasta do iCloud Drive que o Recap usa no Mac (Definições → Aulas).")
+                if pasta.semICloud {
+                    Text("Com o iCloud Drive ligado (Definições → o teu nome → iCloud → Drive), o Recap encontra sozinho a pasta Recap com as aulas do Mac. Também podes escolher outra pasta.")
+                } else {
+                    Text("A mesma pasta do iCloud Drive que o Recap usa no Mac (Definições → Aulas).")
+                }
                 // O seletor abre em "Recentes" e o Explorar começa em "No iPhone": sem isto, ninguém dá com o iCloud Drive.
                 VStack(alignment: .leading, spacing: 6) {
                     Label("Toca em **Explorar**, em baixo.", systemImage: "1.circle")
                     Label("Se estiveres em \"No iPhone\", volta atrás com **‹**, em cima à esquerda.", systemImage: "2.circle")
-                    Label("Abre **iCloud Drive → Documents → Recap → Aulas**.", systemImage: "3.circle")
-                    Label("Dentro de Aulas, toca em **Abrir**.", systemImage: "4.circle")
+                    Label("Abre a pasta das aulas no **iCloud Drive** (por exemplo **Recap**).", systemImage: "3.circle")
+                    Label("Dentro dela, toca em **Abrir**.", systemImage: "4.circle")
                 }
                 .font(.callout)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -54,8 +60,14 @@ struct EscolherPastaView: View {
                 }
             }
         } actions: {
-            Button("Escolher pasta…") { aEscolher = true }
-                .buttonStyle(.borderedProminent)
+            if pasta.semICloud {
+                Button("Tentar outra vez") { Task { await pasta.usarPastaRecap() } }
+                    .buttonStyle(.borderedProminent)
+                Button("Escolher pasta…") { aEscolher = true }
+            } else {
+                Button("Escolher pasta…") { aEscolher = true }
+                    .buttonStyle(.borderedProminent)
+            }
         }
         .fileImporter(isPresented: $aEscolher, allowedContentTypes: [.folder]) { resultado in
             do { try pasta.escolher(resultado.get()) } catch { erro = error.localizedDescription }

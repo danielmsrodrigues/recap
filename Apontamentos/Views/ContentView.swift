@@ -297,6 +297,7 @@ private struct Inicio: View {
                     Text(porRever.isEmpty ? "Está tudo revisto" : porRever.count == 1 ? "Tens 1 aula por rever" : "Tens \(porRever.count) aulas por rever")
                         .font(.largeTitle.bold())
                 }
+                MudarParaICloud()
                 // Lado a lado: a coluna tem largura mínima, por isso cabem sempre.
                 HStack(alignment: .top, spacing: 12) { cartoes }
                 if !porRever.isEmpty {

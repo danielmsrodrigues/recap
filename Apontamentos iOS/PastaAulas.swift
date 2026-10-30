@@ -1,8 +1,9 @@
 import Foundation
 import Observation
 
-/// A pasta das aulas no iOS: escolhida no Ficheiros (normalmente a do iCloud Drive que o Mac usa) e
-/// lembrada com um bookmark, porque fora do contentor da app só se lhe chega com âmbito de segurança.
+/// A pasta das aulas no iOS: por defeito a pasta Recap do iCloud Drive (o contentor iCloud da app, a mesma que o
+/// Mac usa, ver `PastaICloud`), sem escolher nada. Pode escolher-se outra no Ficheiros, lembrada com um bookmark,
+/// porque fora do contentor da app só se lhe chega com âmbito de segurança.
 @MainActor @Observable
 final class PastaAulas {
     private static let chave = "bookmarkPastaAulas"
@@ -10,6 +11,12 @@ final class PastaAulas {
     /// A pasta escolhida, já com o acesso aberto; nil até se escolher uma.
     private(set) var url: URL?
     private(set) var erro: String?
+    /// À procura da pasta Recap do iCloud (pode demorar na primeira vez).
+    private(set) var aProcurar = false
+    /// A pasta é a pasta Recap do iCloud Drive (e não uma escolhida à mão).
+    private(set) var naPastaRecap = false
+    /// O iCloud Drive está desligado (ou sem sessão): só dá para escolher uma pasta à mão.
+    private(set) var semICloud = false
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -20,7 +27,12 @@ final class PastaAulas {
             return
         }
         #endif
-        guard let dados = defaults.data(forKey: Self.chave) else { return }
+        guard let dados = defaults.data(forKey: Self.chave) else {
+            // Já a procurar, para não aparecer "Escolhe a pasta" por um instante.
+            aProcurar = true
+            Task { await usarPastaRecap() }
+            return
+        }
         do {
             var desatualizado = false
             let url = try URL(resolvingBookmarkData: dados, bookmarkDataIsStale: &desatualizado)
@@ -48,6 +60,34 @@ final class PastaAulas {
         defaults.set(try nova.bookmarkData(), forKey: Self.chave)
         url?.stopAccessingSecurityScopedResource()
         url = nova
+        naPastaRecap = false
+        erro = nil
+    }
+
+    /// Passa a usar a pasta Recap do iCloud Drive (esquece a escolhida à mão). Sem iCloud, fica como estava.
+    func usarPastaRecap() async {
+        aProcurar = true
+        defer { aProcurar = false }
+        // Não se pede o contentor na thread principal: na primeira vez pode demorar.
+        let documentos = await Task.detached {
+            FileManager.default.url(forUbiquityContainerIdentifier: PastaICloud.contentor)?
+                .appending(path: "Documents", directoryHint: .isDirectory)
+        }.value
+        guard let documentos else {
+            semICloud = true
+            return
+        }
+        do {
+            try PastaICloud.preparar(documentos)
+        } catch {
+            erro = "Não consegui criar a pasta Recap no iCloud Drive: \(error.localizedDescription)"
+            return
+        }
+        defaults.removeObject(forKey: Self.chave)
+        url?.stopAccessingSecurityScopedResource()
+        url = documentos
+        naPastaRecap = true
+        semICloud = false
         erro = nil
     }
 }
