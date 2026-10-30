@@ -227,10 +227,8 @@ struct AulaDetailView: View {
         .help(controlador.editando ? "Conclui a edição para mudar de separador" : "")
     }
 
-    /// Aulas captadas em direto sem slides nem PDF não têm o separador Slides.
-    private var tabs: [Tab] {
-        aula.meta.origem == "direto" && slides == nil && pdfsProfessor.isEmpty ? Tab.allCases.filter { $0 != .slides } : Tab.allCases
-    }
+    /// Todos: mesmo uma aula captada em direto sem slides pode receber os PDFs e os materiais do professor.
+    private var tabs: [Tab] { Tab.allCases }
 
     private var subtitulo: String {
         var partes = [aula.cadeira, aula.meta.data.formatted(date: .long, time: .omitted)]
@@ -284,7 +282,7 @@ struct AulaDetailView: View {
             #else
             notas(nil)
             #endif
-        case .slides:
+        case .materiais:
             #if os(macOS)
             SlidesView(pasta: aula.pasta, slides: slides, pdfs: pdfsProfessor, materiais: materiais, podeExtrair: urlVideo != nil && !ocupada,
                        aoExtrair: extrairSlides, aoJuntarMateriais: { escolherMateriais = true }, aoRemoverPDF: removerPDFProfessor,
@@ -738,7 +736,7 @@ struct AulaDetailView: View {
                 materiaisJuntados = r.outros.count
                 confirmarRegenerar = true
             } else {
-                tab = .slides
+                tab = .materiais
             }
         }
     }

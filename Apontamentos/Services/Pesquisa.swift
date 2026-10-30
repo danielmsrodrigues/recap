@@ -6,7 +6,8 @@ import Synchronization
 enum SeparadorAula: String, CaseIterable, Identifiable, Sendable {
     case apontamentos = "Apontamentos"
     case transcricao = "Transcrição"
-    case slides = "Slides"
+    /// Os PDFs do professor, as capturas dos slides e os outros materiais.
+    case materiais = "Materiais"
     var id: String { rawValue }
 }
 
