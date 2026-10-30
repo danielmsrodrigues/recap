@@ -27,12 +27,15 @@ struct AulaDetailView: View {
     /// O aviso "Revista · Abrir próxima · Desfazer" (no Mac e no iPhone).
     @Environment(AvisoRevista.self) private var aviso: AvisoRevista?
     @State private var pdfsProfessor: [PDFProfessor] = []
+    /// Outros materiais do professor (ver `Materiais`).
+    @State private var materiais: [String] = []
     #if os(macOS)
-    @State private var escolherPDF = false
+    @State private var escolherMateriais = false
     @State private var estadoVideo: VideoResolver.Estado?
     @State private var confirmarRegenerar = false
-    /// PDFs dos slides acabados de juntar (muda o texto da confirmação de regenerar).
+    /// PDFs dos slides e outros materiais acabados de juntar (muda o texto da confirmação de regenerar).
     @State private var pdfsJuntados = 0
+    @State private var materiaisJuntados = 0
     @State private var estimativa: String?
     @State private var localizarVideo = false
     #endif
@@ -176,10 +179,10 @@ struct AulaDetailView: View {
             Text(avisoRegenerar)
         }
         .task(id: confirmarRegenerar) {
-            if confirmarRegenerar { await estimar() } else { pdfsJuntados = 0 }
+            if confirmarRegenerar { await estimar() } else { pdfsJuntados = 0; materiaisJuntados = 0 }
         }
-        .fileImporter(isPresented: $escolherPDF, allowedContentTypes: [.pdf], allowsMultipleSelection: true) { resultado in
-            if case .success(let urls) = resultado, !urls.isEmpty { juntarPDFsProfessor(urls) }
+        .fileImporter(isPresented: $escolherMateriais, allowedContentTypes: Anexos.tiposAceites, allowsMultipleSelection: true) { resultado in
+            if case .success(let urls) = resultado, !urls.isEmpty { juntarMateriaisProfessor(urls) }
         }
         .fileImporter(isPresented: $localizarVideo, allowedContentTypes: ContentView.tiposVideo) { resultado in
             if case .success(let url) = resultado { religarVideo(url) }
@@ -243,10 +246,8 @@ struct AulaDetailView: View {
         .help(controlador.editando ? "Conclui a edição para mudar de separador" : "")
     }
 
-    /// Aulas captadas em direto sem slides nem PDF não têm o separador Slides.
-    private var tabs: [Tab] {
-        aula.meta.origem == "direto" && slides == nil && pdfsProfessor.isEmpty ? Tab.allCases.filter { $0 != .slides } : Tab.allCases
-    }
+    /// Todos: mesmo uma aula captada em direto sem slides pode receber os PDFs e os materiais do professor.
+    private var tabs: [Tab] { Tab.allCases }
 
     private var subtitulo: String {
         var partes = [aula.cadeira, aula.meta.data.formatted(date: .long, time: .omitted)]
@@ -300,12 +301,13 @@ struct AulaDetailView: View {
             #else
             notas(nil)
             #endif
-        case .slides:
+        case .materiais:
             #if os(macOS)
-            SlidesView(pasta: aula.pasta, slides: slides, pdfs: pdfsProfessor, podeExtrair: urlVideo != nil && !ocupada,
-                       aoExtrair: extrairSlides, aoJuntarPDF: { escolherPDF = true }, aoRemoverPDF: removerPDFProfessor)
+            SlidesView(pasta: aula.pasta, slides: slides, pdfs: pdfsProfessor, materiais: materiais, podeExtrair: urlVideo != nil && !ocupada,
+                       aoExtrair: extrairSlides, aoJuntarMateriais: { escolherMateriais = true }, aoRemoverPDF: removerPDFProfessor,
+                       aoRemoverMaterial: removerMaterial)
             #else
-            SlidesView(pasta: aula.pasta, slides: slides, pdfs: pdfsProfessor)
+            SlidesView(pasta: aula.pasta, slides: slides, pdfs: pdfsProfessor, materiais: materiais)
             #endif
         case .transcricao:
             if let transcricao {
@@ -344,10 +346,12 @@ struct AulaDetailView: View {
 
     #if os(macOS)
     private var avisoRegenerar: String {
-        var t = switch pdfsJuntados {
-        case 0: ""
-        case 1: "Os apontamentos atuais foram feitos sem este PDF. Ao regenerar, os slides dados na aula entram nos tópicos certos.\n\n"
-        default: "Os apontamentos atuais foram feitos sem estes PDFs. Ao regenerar, os slides dados na aula entram nos tópicos certos.\n\n"
+        var t = switch (pdfsJuntados, materiaisJuntados) {
+        case (0, 0): ""
+        case (1, 0): "Os apontamentos atuais foram feitos sem este PDF. Ao regenerar, os slides dados na aula entram nos tópicos certos.\n\n"
+        case (_, 0): "Os apontamentos atuais foram feitos sem estes PDFs. Ao regenerar, os slides dados na aula entram nos tópicos certos.\n\n"
+        case (0, 1): "Os apontamentos atuais foram feitos sem este material. Ao regenerar, o que ele traz entra nos apontamentos.\n\n"
+        default: "Os apontamentos atuais foram feitos sem estes materiais. Ao regenerar, o que eles trazem entra nos apontamentos.\n\n"
         }
         t += "Os apontamentos atuais são substituídos e ficam guardados em \(Disco.apontamentosAnteriorMD). A transcrição e os slides são reutilizados."
         if aula.meta.temEdicoesManuais { t += "\n\nAtenção: fizeste alterações à mão depois da última geração." }
@@ -582,6 +586,7 @@ struct AulaDetailView: View {
         apontamentos = Disco.lerApontamentos(aula.pasta)
         slides = Disco.lerSlides(aula.pasta)
         pdfsProfessor = Disco.pdfsProfessor(aula.pasta, nomes: aula.meta.nomesPDFs ?? [:])
+        materiais = Materiais.nomes(em: aula.pasta)
         atualizarPDF()
         #if os(macOS)
         guard let ref = aula.meta.video else { estadoVideo = nil; return }
@@ -748,30 +753,68 @@ struct AulaDetailView: View {
     }
 
     #if os(macOS)
-    private func juntarPDFsProfessor(_ urls: [URL]) {
-        let acedeu = urls.map { $0.startAccessingSecurityScopedResource() }
-        defer { for (url, sim) in zip(urls, acedeu) where sim { url.stopAccessingSecurityScopedResource() } }
-        do {
-            let juntados = try Disco.juntarPDFsProfessor(urls, em: aula.pasta)
-            guard !juntados.isEmpty else {
-                erro = urls.count == 1 ? "Este PDF já está nesta aula." : "Estes PDFs já estão nesta aula."
+    /// Os PDFs são os slides do professor; o resto (Excel, Word…) fica nos materiais (`Materiais`).
+    /// Copiar (de um ficheiro do iCloud ainda por descarregar) e converter imagens grandes faz-se fora do fio principal.
+    private func juntarMateriaisProfessor(_ urls: [URL]) {
+        let pasta = aula.pasta
+        Task {
+            let acedeu = urls.map { $0.startAccessingSecurityScopedResource() }
+            defer { for (url, sim) in zip(urls, acedeu) where sim { url.stopAccessingSecurityScopedResource() } }
+            let r = await Task.detached { Self.copiarMateriais(urls, para: pasta) }.value
+            if !r.pdfs.isEmpty {
+                do {
+                    try library.atualizarMeta(em: pasta) { meta in
+                        var nomes = meta.nomesPDFs ?? [:]
+                        for pdf in r.pdfs { nomes[pdf.ficheiro] = pdf.nome }
+                        meta.nomesPDFs = nomes
+                    }
+                } catch {
+                    erro = error.localizedDescription
+                }
+                Task { await SlidesNosApontamentos.garantirPaginasEmFundo(em: pasta) }
+            }
+            // A aula aberta pode já ser outra.
+            guard aula.pasta.mesmoCaminho(pasta) else { return }
+            pdfsProfessor = Disco.pdfsProfessor(pasta)
+            materiais = Materiais.nomes(em: pasta)
+            if let falha = r.erro {
+                erro = falha
                 return
             }
-            try library.atualizarMeta(em: aula.pasta) { meta in
-                var nomes = meta.nomesPDFs ?? [:]
-                for pdf in juntados { nomes[pdf.ficheiro] = pdf.nome }
-                meta.nomesPDFs = nomes
+            guard !r.pdfs.isEmpty || !r.outros.isEmpty else {
+                erro = urls.count == 1 ? "Este ficheiro já está nesta aula." : "Estes ficheiros já estão nesta aula."
+                return
             }
-            pdfsProfessor = Disco.pdfsProfessor(aula.pasta)
-            let pasta = aula.pasta
-            Task { await SlidesNosApontamentos.garantirPaginasEmFundo(em: pasta) }
-            // Com apontamentos já feitos sem estes PDFs, propõe refazê-los para os slides entrarem nos tópicos.
+            // Com apontamentos já feitos sem estes materiais, propõe refazê-los para entrarem.
             if apontamentos != nil, !ocupada, definicoes.faltaParaGerar == nil, !controlador.editando {
-                pdfsJuntados = juntados.count
+                pdfsJuntados = r.pdfs.count
+                materiaisJuntados = r.outros.count
                 confirmarRegenerar = true
             } else {
-                tab = .slides
+                tab = .materiais
             }
+        }
+    }
+
+    /// Os PDFs juntados, os outros materiais juntados e, se algum foi recusado, porquê (o que entrou antes fica).
+    nonisolated private static func copiarMateriais(_ urls: [URL], para pasta: URL)
+        -> (pdfs: [PDFProfessor], outros: [String], erro: String?) {
+        var pdfs: [PDFProfessor] = [], outros: [String] = []
+        do {
+            let soPDFs = urls.filter { $0.pathExtension.lowercased() == "pdf" }
+            if !soPDFs.isEmpty { pdfs = try Disco.juntarPDFsProfessor(soPDFs, em: pasta) }
+            outros = try Materiais.juntar(urls.filter { $0.pathExtension.lowercased() != "pdf" }, em: pasta)
+            return (pdfs, outros, nil)
+        } catch {
+            return (pdfs, outros, error.localizedDescription)
+        }
+    }
+
+    /// Vai para o Lixo (recuperável).
+    private func removerMaterial(_ nome: String) {
+        do {
+            try Materiais.remover(nome, em: aula.pasta)
+            materiais = Materiais.nomes(em: aula.pasta)
         } catch {
             erro = error.localizedDescription
         }

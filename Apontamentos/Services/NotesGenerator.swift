@@ -19,6 +19,8 @@ struct ContextoAula: Sendable {
     /// Ficheiros juntados a uma pergunta no chat (ver `Anexos`), já em blocos; e os das perguntas anteriores.
     var anexos: [BlocoConteudo] = []
     var anexosAnteriores: [BlocoConteudo] = []
+    /// Outros materiais do professor juntados à aula (ver `Materiais`), já em blocos.
+    var materiaisProfessor: [BlocoConteudo] = []
 }
 
 struct PDFComDados: Sendable {
@@ -116,6 +118,16 @@ struct NotesGenerator: Sendable {
                 """
             }
         }
+        if !c.materiaisProfessor.isEmpty {
+            pedido += """
+
+
+            Outros materiais do professor:
+            - Usa-os onde a aula falou deles: os números, os exemplos e os enunciados vêm de lá.
+            - Quando uma tabela pequena ajudar a estudar (um exemplo resolvido, um quadro de valores), põe-na nos apontamentos em Markdown. Uma tabela grande não se copia inteira: resume-a, ou fica só com as linhas que a aula usou.
+            - As apresentações vêm só em texto: não há imagem dos slides delas, por isso não uses marcas de slide para eles.
+            """
+        }
         return materiais(c) + [.texto(pedido)]
     }
 
@@ -147,6 +159,12 @@ struct NotesGenerator: Sendable {
                 blocos.append(.texto("PDF \(p.pdf.numero)\(nome)\(p.paginas.map { " (\($0) páginas)" } ?? ""):"))
                 blocos.append(.documentoPDF(base64: p.base64))
             }
+        }
+        if !c.materiaisProfessor.isEmpty {
+            blocos.append(.texto("""
+            Outros materiais do professor para esta aula (folhas de cálculo, documentos, apresentações, imagens). São fonte, como os slides: dados, valores, exemplos e enunciados. As folhas de cálculo vêm em CSV, uma secção por folha; as apresentações, em texto, um slide de cada vez.
+            """))
+            blocos += c.materiaisProfessor
         }
         if let guia = c.guia {
             blocos.append(.texto(guia.blocoParaPedido()))
