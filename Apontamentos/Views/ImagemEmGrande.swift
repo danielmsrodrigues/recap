@@ -54,5 +54,10 @@ extension View {
                     .transition(.opacity)
             }
         }
+        #if os(macOS)
+        // A barra de ferramentas da janela fica sempre por cima do conteúdo: com a imagem aberta, os botões
+        // dela apareciam por cima do fundo escuro.
+        .toolbar(navegacao.imagemAberta == nil ? .automatic : .hidden, for: .windowToolbar)
+        #endif
     }
 }
