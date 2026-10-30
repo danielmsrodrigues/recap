@@ -47,6 +47,7 @@ struct PerguntasView: View {
     @Environment(Estudo.self) private var estudo
     @Environment(Definicoes.self) private var definicoes
     @Environment(Library.self) private var library
+    @Environment(Navegacao.self) private var navegacao
     let aula: Aula
     var aoClicarTimestamp: (Double) -> Void
     /// Um link para uma secção dos apontamentos numa resposta.
@@ -61,7 +62,7 @@ struct PerguntasView: View {
     #endif
     @FocusState private var focado: Bool
     @State private var escolherAnexos = false
-    /// O ficheiro juntado aberto em grande (Quick Look).
+    /// Um PDF, Excel, Word ou PowerPoint juntado, aberto no Quick Look (as imagens abrem em `ImagemEmGrande`).
     @State private var anexoAberto: URL?
     @State private var erroAnexo: String?
     #if os(macOS)
@@ -244,7 +245,9 @@ struct PerguntasView: View {
             HStack(spacing: 6) {
                 ForEach(anexos, id: \.self) { nome in
                     if Anexos.tipo(nome) == .imagem {
-                        Button { anexoAberto = Anexos.url(nome, em: aula.pasta) } label: {
+                        Button {
+                            withAnimation(.easeOut(duration: 0.15)) { navegacao.imagemAberta = Anexos.url(nome, em: aula.pasta) }
+                        } label: {
                             MiniaturaAnexo(nome: nome, pastaAula: aula.pasta)
                         }
                         .buttonStyle(.plain)

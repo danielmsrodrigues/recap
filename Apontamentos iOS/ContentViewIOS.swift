@@ -55,6 +55,7 @@ struct ContentViewIOS: View {
                                        description: Text("As aulas gravadas no Mac aparecem aqui pelo iCloud Drive."))
             }
         }
+        .imagemEmGrande(navegacao)
         .environment(library)
         .environment(definicoes)
         .environment(estudo)

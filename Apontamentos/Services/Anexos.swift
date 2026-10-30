@@ -135,8 +135,12 @@ enum Anexos {
     /// Uma miniatura de um ficheiro juntado, com no máximo `lado` píxeis, para o mostrar no campo. nil = não é
     /// uma imagem (ou não se lê).
     static func miniatura(_ nome: String, em pastaAula: URL, lado: Int) -> CGImage? {
-        guard tipo(nome) == .imagem, let nome = nomeSeguro(nome),
-              let fonte = CGImageSourceCreateWithURL(url(nome, em: pastaAula) as CFURL, nil) else { return nil }
+        guard tipo(nome) == .imagem, let nome = nomeSeguro(nome) else { return nil }
+        return miniatura(de: url(nome, em: pastaAula), lado: lado)
+    }
+
+    static func miniatura(de url: URL, lado: Int) -> CGImage? {
+        guard let fonte = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         return CGImageSourceCreateThumbnailAtIndex(fonte, 0, [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
