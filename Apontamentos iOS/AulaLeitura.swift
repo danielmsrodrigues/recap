@@ -206,7 +206,7 @@ struct AulaCompletaIOS: View {
     }
 }
 
-/// O painel Estudo (perguntas, exercícios, ligações) ao lado da aula: no iPad, uma coluna à direita; no iPhone,
+/// O painel Estudo (perguntas, exercícios, ligações) ao lado da aula: no iPad, um cartão à direita; no iPhone,
 /// onde não cabe, uma folha a meio do ecrã com a aula por cima, que continua a ler-se e a mexer-se. Um link para
 /// outra aula ou para a transcrição fecha a folha do iPhone.
 struct ComEstudo: ViewModifier {
@@ -232,9 +232,21 @@ struct ComEstudo: ViewModifier {
                     .presentationContentInteraction(.scrolls)
             }
         } else {
-            content.inspector(isPresented: $mostrar) {
-                painel.inspectorColumnWidth(min: 320, ideal: 380, max: 560)
+            // No iPad, um cartão solto ao lado da aula, com os quatro cantos arredondados e a cor da barra lateral
+            // das cadeiras. O inspector dava uma coluna do sistema com toda a altura, de vidro e de lado direito.
+            HStack(spacing: 0) {
+                content
+                if mostrar {
+                    painel
+                        .backgroundStyle(Color(uiColor: .secondarySystemBackground))
+                        .background(Color(uiColor: .secondarySystemBackground))
+                        .clipShape(.rect(cornerRadius: 26))
+                        .frame(width: 380)
+                        .padding([.trailing, .bottom], 10)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
             }
+            .animation(.snappy, value: mostrar)
         }
     }
 
