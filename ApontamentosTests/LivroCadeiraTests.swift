@@ -11,7 +11,7 @@ struct LivroCadeiraTests {
     ## Glosario
     - **Racional:** cociente de enteros.
     - **Irracional:** no periódico.
-    """)
+    """, pasta: URL(fileURLWithPath: "/tmp/aula1"))
     private let aula2 = LivroCadeira.Capitulo(numero: 2, titulo: "Clase 2 · Valor absoluto", data: Date(timeIntervalSince1970: 1_793_000_000), apontamentos: """
     # Clase 2 · Valor absoluto
     ## Resumen
@@ -19,7 +19,7 @@ struct LivroCadeiraTests {
     ## Glosario
     - **Valor absoluto:** distancia al cero.
     - **Racional:** cociente de enteros.
-    """)
+    """, pasta: URL(fileURLWithPath: "/tmp/aula2"))
 
     @Test func aCapaTemOIndiceDasAulasPorOrdem() {
         let capa = LivroCadeira.capa(cadeira: "Cálculo", capitulos: [aula2, aula1], ficha: nil)
@@ -50,7 +50,25 @@ struct LivroCadeiraTests {
     }
 
     @Test func semGlossarioNasAulasNaoHaPagina() {
-        let semNada = LivroCadeira.Capitulo(numero: 1, titulo: "A", data: .now, apontamentos: "# A\n## Resumen\nNada.")
+        let semNada = LivroCadeira.Capitulo(numero: 1, titulo: "A", data: .now, apontamentos: "# A\n## Resumen\nNada.", pasta: URL(fileURLWithPath: "/tmp/a"))
         #expect(LivroCadeira.glossario([semNada]).isEmpty)
+    }
+
+    /// Cada capítulo leva a pasta da sua aula (para os slides): uma aula cujos apontamentos não se leem
+    /// (ainda no iCloud, por exemplo) não pode empurrar as pastas das seguintes.
+    @Test @MainActor func cadaCapituloLevaAPastaDaSuaAula() throws {
+        let raiz = FileManager.default.temporaryDirectory.appending(path: "livro-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: raiz) }
+        let library = Library(raiz: raiz)
+        let semLer = try library.criarAula(cadeira: "Cálculo", titulo: "A", data: Date(timeIntervalSince1970: 0), video: nil)
+        let comNotas = try library.criarAula(cadeira: "Cálculo", titulo: "B", data: Date(timeIntervalSince1970: 86_400), video: nil)
+        try Disco.escreverApontamentos("# B\n## Resumen\nTexto.", em: comNotas)
+        library.recarregar(forcar: true)
+        var cadeira = try #require(library.cadeira(nome: "Cálculo"))
+        // A primeira diz que tem apontamentos, mas o ficheiro não se lê.
+        cadeira.aulas = cadeira.aulas.map { var a = $0; a.temApontamentos = true; return a }
+        let capitulos = LivroCadeira.capitulos(cadeira, library: library)
+        #expect(capitulos.map(\.pasta) == [comNotas])
+        #expect(!capitulos.contains { $0.pasta.mesmoCaminho(semLer) })
     }
 }

@@ -10,13 +10,15 @@ enum LivroCadeira {
         var titulo: String
         var data: Date
         var apontamentos: String
+        /// A pasta da aula (para os slides do capítulo).
+        var pasta: URL
     }
 
     /// Os capítulos de uma cadeira: as aulas com apontamentos, por data.
     @MainActor
     static func capitulos(_ cadeira: Cadeira, library: Library) -> [Capitulo] {
         cadeira.aulas.filter(\.temApontamentos).sorted { $0.meta.data < $1.meta.data }.compactMap { a in
-            Disco.lerApontamentos(a.pasta).map { Capitulo(numero: library.numeroDaAula(a), titulo: a.meta.titulo, data: a.meta.data, apontamentos: $0) }
+            Disco.lerApontamentos(a.pasta).map { Capitulo(numero: library.numeroDaAula(a), titulo: a.meta.titulo, data: a.meta.data, apontamentos: $0, pasta: a.pasta) }
         }
     }
 
@@ -73,8 +75,7 @@ enum LivroCadeira {
         try FileManager.default.createDirectory(at: temporaria, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: temporaria) }
         var partes: [(md: String, pasta: URL?)] = [(capa(cadeira: cadeira.nome, capitulos: capitulos, ficha: FichaCadeira.lerFicha(cadeira.pasta)), nil)]
-        let pastas = cadeira.aulas.filter(\.temApontamentos).sorted { $0.meta.data < $1.meta.data }.map(\.pasta)
-        for (c, pasta) in zip(capitulos, pastas) { partes.append((paraImprimir(c.apontamentos), pasta)) }
+        for c in capitulos { partes.append((paraImprimir(c.apontamentos), c.pasta)) }
         let g = glossario(capitulos)
         if !g.isEmpty { partes.append((g, nil)) }
 
