@@ -1,3 +1,4 @@
+import QuickLook
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -60,6 +61,8 @@ struct PerguntasView: View {
     #endif
     @FocusState private var focado: Bool
     @State private var escolherAnexos = false
+    /// O ficheiro juntado aberto em grande (Quick Look).
+    @State private var anexoAberto: URL?
     @State private var erroAnexo: String?
     #if os(macOS)
     /// O campo do Mac é um `NSTextView` (`CampoPergunta`): o foco chega e sai por aqui.
@@ -116,6 +119,7 @@ struct PerguntasView: View {
         #if !os(macOS)
         .sheet(item: $pdfPartilhado) { FolhaPartilha(ficheiro: $0) }
         #endif
+        .quickLookPreview($anexoAberto)
         .fileImporter(isPresented: $escolherAnexos, allowedContentTypes: Anexos.tiposAceites, allowsMultipleSelection: true) { r in
             if case .success(let urls) = r { juntar(urls) }
         }
@@ -240,16 +244,19 @@ struct PerguntasView: View {
             HStack(spacing: 6) {
                 ForEach(anexos, id: \.self) { nome in
                     if Anexos.tipo(nome) == .imagem {
-                        MiniaturaAnexo(nome: nome, pastaAula: aula.pasta)
-                            .overlay(alignment: .topTrailing) {
-                                Button("Tirar \(nome)", systemImage: "xmark.circle.fill") { estudo.tirarAnexo(nome, de: aula) }
-                                    .labelStyle(.iconOnly)
-                                    .buttonStyle(.borderless)
-                                    .font(.body)
-                                    .foregroundStyle(.white, .black.opacity(0.55))
-                                    .padding(3)
-                            }
-                            .help(nome)
+                        Button { anexoAberto = Anexos.url(nome, em: aula.pasta) } label: {
+                            MiniaturaAnexo(nome: nome, pastaAula: aula.pasta)
+                        }
+                        .buttonStyle(.plain)
+                        .overlay(alignment: .topTrailing) {
+                            Button("Tirar \(nome)", systemImage: "xmark.circle.fill") { estudo.tirarAnexo(nome, de: aula) }
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(.borderless)
+                                .font(.body)
+                                .foregroundStyle(.white, .black.opacity(0.55))
+                                .padding(3)
+                        }
+                        .help(nome)
                     } else {
                         ficha(nome)
                     }
@@ -260,8 +267,13 @@ struct PerguntasView: View {
 
     private func ficha(_ nome: String) -> some View {
         HStack(spacing: 4) {
-            Image(systemName: Self.icone(nome)).foregroundStyle(.secondary)
-            Text(nome).lineLimit(1).truncationMode(.middle)
+            Button { anexoAberto = Anexos.url(nome, em: aula.pasta) } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: Self.icone(nome)).foregroundStyle(.secondary)
+                    Text(nome).lineLimit(1).truncationMode(.middle)
+                }
+            }
+            .buttonStyle(.plain)
             Button("Tirar \(nome)", systemImage: "xmark.circle.fill") { estudo.tirarAnexo(nome, de: aula) }
                 .labelStyle(.iconOnly)
                 .buttonStyle(.borderless)
