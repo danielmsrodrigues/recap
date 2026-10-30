@@ -206,7 +206,8 @@ struct AulaDetailView: View {
             seletor
             #endif
             if !capitulos.isEmpty {
-                LinhaCapitulos(capitulos: capitulos) { irParaTranscricao($0.inicio) }
+                // Durante a edição, não muda de separador: Concluir e Descartar estão nos apontamentos.
+                LinhaCapitulos(capitulos: capitulos) { if !controlador.editando { irParaTranscricao($0.inicio) } }
             }
 
             #if os(macOS)

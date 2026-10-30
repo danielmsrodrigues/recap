@@ -60,7 +60,9 @@ struct ContentView: View {
         .onChange(of: filtro) { _, novo in
             switch novo {
             case .inicio: selecao = nil
-            case .cadeira(let pasta): selecao = FichaCadeira.url(pasta)
+            case .cadeira(let pasta):
+                // Com uma aula desta cadeira aberta (por exemplo, depois de lhe mudar o nome), fica a aula.
+                if !(selecao?.path.hasPrefix(pasta.path + "/") ?? false) { selecao = FichaCadeira.url(pasta) }
             default: break
             }
         }
@@ -120,11 +122,10 @@ struct ContentView: View {
             // O URL canónico da aula: o do link pode vir noutra normalização Unicode e a lista não o reconhecia.
             if let destino, !(selecao?.mesmoCaminho(destino.pasta) ?? false) { selecao = library.aula(em: destino.pasta)?.pasta ?? destino.pasta }
         }
-        // Os atalhos do "+" da barra lateral e do botão "Transcrever" (sem botão à vista).
-        .background {
-            Button("Transcrever em direto…") { configurarDireto = true }.keyboardShortcut("l", modifiers: [.command, .shift]).hidden()
-            Button("Importar vídeo…") { importar = true }.keyboardShortcut("o").hidden()
-        }
+        // O menu Ficheiro: Transcrever em direto (⇧⌘L), Importar vídeo (⌘O) e Nova cadeira.
+        .onReceive(NotificationCenter.default.publisher(for: .transcreverEmDireto)) { _ in configurarDireto = true }
+        .onReceive(NotificationCenter.default.publisher(for: .importarVideo)) { _ in importar = true }
+        .onReceive(NotificationCenter.default.publisher(for: .novaCadeira)) { _ in criarCadeira = true }
         .dropDestination(for: URL.self) { urls, _ in
             receber(urls)
             return true
@@ -149,10 +150,11 @@ struct ContentView: View {
         }
         .sheet(item: $aEditarCadeira) { cadeira in
             CadeiraSheet(cadeira: cadeira) { antiga, nova in
-                // A aula aberta mudou de pasta com a cadeira: a seleção acompanha.
+                // A aula aberta e a cadeira escolhida mudaram de pasta com a cadeira: a seleção e a lista acompanham.
                 if let s = selecao, s.path.hasPrefix(antiga.path + "/") {
                     selecao = nova.appending(path: s.lastPathComponent, directoryHint: .isDirectory)
                 }
+                if case .cadeira(let pasta) = filtro, pasta.mesmoCaminho(antiga) { filtro = .cadeira(nova) }
             }
         }
         .sheet(isPresented: $criarCadeira) { CadeiraSheet(cadeira: nil) }
@@ -404,6 +406,12 @@ private struct DivisoriaPainel: View {
 extension Notification.Name {
     /// Recap → Preparar o Recap…
     static let abrirPreparacao = Notification.Name("abrirPreparacao")
+    /// Ficheiro → Transcrever em direto…, Importar vídeo…, Nova cadeira…
+    static let transcreverEmDireto = Notification.Name("transcreverEmDireto")
+    static let importarVideo = Notification.Name("importarVideo")
+    static let novaCadeira = Notification.Name("novaCadeira")
+    /// Editar → Procurar em todas as aulas (⌥⌘F): o cursor vai para o campo no topo da lista.
+    static let procurarEmTodasAsAulas = Notification.Name("procurarEmTodasAsAulas")
 }
 
 /// Os avisos do atualizador: versão nova, a instalar, já atualizado, erro.

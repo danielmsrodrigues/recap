@@ -470,6 +470,9 @@ struct CampoPesquisa: NSViewRepresentable {
         let campo = Campo()
         campo.placeholderString = sugestao
         campo.delegate = context.coordinator
+        // Também pela ação: o ✕ e o Esc limpam o campo sem passar pelo `controlTextDidChange`.
+        campo.target = context.coordinator
+        campo.action = #selector(Coordenador.mudou(_:))
         campo.controlSize = .large
         campo.sendsSearchStringImmediately = true
         return campo
@@ -482,14 +485,27 @@ struct CampoPesquisa: NSViewRepresentable {
 
     func makeCoordinator() -> Coordenador { Coordenador(texto: $texto) }
 
-    /// Só fica com o cursor depois de clicado: ao abrir a janela, as setas continuam a mexer na lista.
+    /// Ao abrir a janela, larga o cursor que o macOS lhe dá (as setas continuam a mexer na lista); ⌥⌘F volta a pô-lo
+    /// cá. Chega-se a ele com o rato, com o Tab e com o VoiceOver.
     final class Campo: NSSearchField {
-        private var clicado = false
-        override var acceptsFirstResponder: Bool { clicado }
-        override func mouseDown(with event: NSEvent) {
-            clicado = true
-            window?.makeFirstResponder(self)
-            super.mouseDown(with: event)
+        private var aObservar = false
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let window else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let editor = currentEditor(), window.firstResponder === editor else { return }
+                window.makeFirstResponder(nil)
+            }
+            if !aObservar {
+                aObservar = true
+                NotificationCenter.default.addObserver(self, selector: #selector(focar), name: .procurarEmTodasAsAulas, object: nil)
+            }
+        }
+
+        @objc private func focar() {
+            guard let window, window.isKeyWindow else { return }
+            window.makeFirstResponder(self)
         }
     }
 
@@ -500,6 +516,10 @@ struct CampoPesquisa: NSViewRepresentable {
         func controlTextDidChange(_ nota: Notification) {
             guard let campo = nota.object as? NSSearchField else { return }
             texto.wrappedValue = campo.stringValue
+        }
+
+        @objc func mudou(_ campo: NSSearchField) {
+            if texto.wrappedValue != campo.stringValue { texto.wrappedValue = campo.stringValue }
         }
     }
 }
