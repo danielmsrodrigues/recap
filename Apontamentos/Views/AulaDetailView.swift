@@ -460,11 +460,13 @@ struct AulaDetailView: View {
                 }
             }
         }
+        // O ícone de painel lateral do macOS (como no Xcode e no Pages): percebe-se que abre e fecha o painel da
+        // direita, mesmo dentro do menu » com a janela estreita, onde fica o nome "Mostrar/Esconder Estudo".
         ToolbarItem {
-            Toggle(isOn: $mostrarEstudo) {
-                Label("Estudo", systemImage: "bubble.left.and.text.bubble.right")
+            Button(mostrarEstudo ? "Esconder Estudo" : "Mostrar Estudo", systemImage: "sidebar.right") {
+                withAnimation(.snappy) { mostrarEstudo.toggle() }
             }
-            .help("Perguntas, exercícios e ligações desta aula (⌥⌘P)")
+            .help(mostrarEstudo ? "Esconder o painel Estudo (⌥⌘P)" : "Mostrar o painel Estudo: perguntas, exercícios e ligações (⌥⌘P)")
         }
     }
     #endif
