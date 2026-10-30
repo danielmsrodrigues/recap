@@ -54,7 +54,8 @@ struct AulaLeitura: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if leitor.ativo { BarraLeitor(leitor: leitor) }
             }
-            .onDisappear { leitor.parar() }
+            // Ao abrir a transcrição, os slides e os materiais a leitura continua; ao sair da aula, para.
+            .onDisappear { if !verCompleta { leitor.parar() } }
             .navigationDestination(isPresented: $verCompleta) { AulaCompletaIOS(aula: aula) }
             .modifier(ComEstudo(aula: aula, mostrar: mostrarEstudo))
             .alert("Não foi possível marcar a aula", isPresented: Binding(get: { erro != nil }, set: { if !$0 { erro = nil } })) {

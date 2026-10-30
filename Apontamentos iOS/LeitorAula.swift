@@ -10,13 +10,15 @@ final class LeitorAula: NSObject {
     private(set) var aTocar = false
     var velocidade: Float = 1
 
-    @ObservationIgnored private let sintetizador = AVSpeechSynthesizer()
+    /// Só criado quando se carrega em "Ouvir" (a vista da aula é refeita muitas vezes e cria um leitor de cada vez).
+    @ObservationIgnored private lazy var sintetizador: AVSpeechSynthesizer = {
+        let s = AVSpeechSynthesizer()
+        s.delegate = self
+        return s
+    }()
     @ObservationIgnored private var idioma = "pt-PT"
-
-    override init() {
-        super.init()
-        sintetizador.delegate = self
-    }
+    /// A secção que está a ser lida: um "acabou" atrasado de outra (depois de saltar) não conta.
+    @ObservationIgnored private var falada: ObjectIdentifier?
 
     var ativo: Bool { !trechos.isEmpty }
     var tituloAtual: String { trechos.indices.contains(atual) ? (trechos[atual].titulo ?? "Início") : "" }
@@ -27,7 +29,6 @@ final class LeitorAula: NSObject {
         self.idioma = idioma
         atual = 0
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
-        try? AVAudioSession.sharedInstance().setActive(true)
         falar()
     }
 
@@ -53,9 +54,16 @@ final class LeitorAula: NSObject {
     }
 
     func parar() {
+        guard ativo else { return }
         sintetizador.stopSpeaking(at: .immediate)
         aTocar = false
+        falada = nil
         trechos = []
+        libertarAudio()
+    }
+
+    /// Devolve o áudio a quem estava a tocar antes (a música volta).
+    private func libertarAudio() {
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
@@ -73,25 +81,31 @@ final class LeitorAula: NSObject {
         u.voice = AVSpeechSynthesisVoice(language: idioma)
         u.rate = min(AVSpeechUtteranceMaximumSpeechRate, AVSpeechUtteranceDefaultSpeechRate * velocidade)
         u.postUtteranceDelay = 0.6
+        falada = ObjectIdentifier(u)
+        // Depois de chegar ao fim o áudio foi libertado: "Continuar" volta a pedi-lo.
+        try? AVAudioSession.sharedInstance().setActive(true)
         sintetizador.speak(u)
         aTocar = true
     }
 
     /// Uma secção acabou de ser lida (não interrompida): passa à seguinte, ou termina no fim.
-    private func acabou() {
-        guard aTocar else { return }
+    private func acabou(_ u: ObjectIdentifier) {
+        guard aTocar, u == falada else { return }
         if atual + 1 < trechos.count {
             atual += 1
             falar()
         } else {
             aTocar = false
+            falada = nil
+            libertarAudio()
         }
     }
 }
 
 extension LeitorAula: AVSpeechSynthesizerDelegate {
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        Task { @MainActor in self.acabou() }
+        let id = ObjectIdentifier(utterance)
+        Task { @MainActor in self.acabou(id) }
     }
 }
 
