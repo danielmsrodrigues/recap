@@ -217,6 +217,7 @@ final class Library {
             throw NSError(domain: "Recap", code: 20, userInfo: [NSLocalizedDescriptionKey: "Já existe uma cadeira chamada \"\(novoNome)\"."])
         }
         try FileManager.default.moveItem(at: cadeira.pasta, to: destino)
+        Renomear.atualizarChaves(de: cadeira.pasta, para: destino, raiz: raiz)
         recarregar()
         return destino
     }
@@ -236,10 +237,14 @@ final class Library {
         }
         let nome = Disco.nomePastaAula(titulo: titulo, data: data)
         var destino = aula.pasta
-        if aula.pasta.deletingLastPathComponent().standardizedFileURL != pastaCadeira.standardizedFileURL
-            || aula.pasta.lastPathComponent != nome {
+        // "nome (2)" também é o nome certo: outra aula tem o mesmo título no mesmo dia.
+        let atual = aula.pasta.lastPathComponent
+        let mesmoNome = atual == nome || (atual.hasPrefix(nome + " (") && atual.hasSuffix(")")
+                                          && Int(atual.dropFirst(nome.count + 2).dropLast()) != nil)
+        if aula.pasta.deletingLastPathComponent().standardizedFileURL != pastaCadeira.standardizedFileURL || !mesmoNome {
             destino = Disco.pastaLivre(nome, em: pastaCadeira)
             try FileManager.default.moveItem(at: aula.pasta, to: destino)
+            Renomear.atualizarChaves(de: aula.pasta, para: destino, raiz: raiz)
         }
         recarregar()
         return canonico(destino)

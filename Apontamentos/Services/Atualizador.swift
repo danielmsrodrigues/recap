@@ -67,8 +67,12 @@ final class Atualizador {
         guard let encontrada else { return }
         if case .aInstalar = estado { return }
         estado = .aInstalar(versao: encontrada.versao)
+        var descarregada: URL?
+        // Se falhar, a pasta temporária com o zip e a app (~26 MB) não fica esquecida.
+        func limpar() { if let d = descarregada { try? FileManager.default.removeItem(at: d.deletingLastPathComponent()) } }
         do {
             let nova = try await Self.descarregar(encontrada.zip)
+            descarregada = nova
             try Self.verificarAssinatura(nova)
             // O script fica pronto antes da troca: depois dela a app tem de fechar, mesmo que algo falhe.
             let reabrir = try Self.scriptReabrir(Bundle.main.bundleURL, descarregada: nova)
@@ -76,8 +80,10 @@ final class Atualizador {
             try? reabrir.run()
             NSApp.terminate(nil)
         } catch Erro.semPermissao {
+            limpar()
             estado = .semPermissao
         } catch {
+            limpar()
             estado = .falhou("A atualização falhou: \(error.localizedDescription)")
         }
     }

@@ -47,8 +47,7 @@ struct AudioExtractor: Sendable {
 
     /// Lê o áudio inteiro, ou só o troço `inicio..<inicio+duracao` (para transcrever por blocos sem ter tudo em memória).
     @concurrent
-    func extrair(de url: URL, inicio: Double = 0, duracao trecho: Double? = nil,
-                 progresso: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> Resultado {
+    func extrair(de url: URL, inicio: Double = 0, duracao trecho: Double? = nil) async throws -> Resultado {
         let asset = AVURLAsset(url: url)
         let legivel = (try? await asset.load(.isReadable)) ?? false
         guard legivel else { throw ErroVideo.formatoNaoSuportado(extensao: url.pathExtension.lowercased()) }
@@ -83,7 +82,6 @@ struct AudioExtractor: Sendable {
 
         var amostras = [Float]()
         if duracao.isFinite, duracao > 0 { amostras.reserveCapacity(Int(duracao * Self.taxa) + Int(Self.taxa)) }
-        var ultimoAviso = -1.0
 
         while let buffer = saida.copyNextSampleBuffer() {
             if Task.isCancelled {
@@ -102,16 +100,11 @@ struct AudioExtractor: Sendable {
             }
             guard estado == kCMBlockBufferNoErr else { throw ErroVideo.leitura("erro \(estado) ao copiar o áudio") }
 
-            if duracao > 0 {
-                let p = min(1, Double(amostras.count) / Self.taxa / duracao)
-                if p - ultimoAviso >= 0.01 { ultimoAviso = p; progresso(p) }
-            }
         }
 
         if leitor.status == .failed {
             throw ErroVideo.leitura(leitor.error?.localizedDescription ?? "erro desconhecido")
         }
-        progresso(1)
         return Resultado(amostras: amostras, duracao: duracao.isFinite ? duracao : Double(amostras.count) / Self.taxa)
     }
 }
