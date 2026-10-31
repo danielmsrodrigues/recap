@@ -16,12 +16,16 @@ struct DefinicoesIOS: View {
         NavigationStack {
             Form {
                 Section {
-                    LabeledContent("Pasta", value: library.raiz.lastPathComponent)
+                    LabeledContent("Pasta", value: pasta.naPastaRecap ? "Recap no iCloud Drive" : library.raiz.lastPathComponent)
+                    if !pasta.naPastaRecap {
+                        Button("Usar a pasta Recap do iCloud Drive") { Task { await pasta.usarPastaRecap() } }
+                    }
                     Button("Escolher outra pasta…") { mudarPasta = true }
+                    if let e = pasta.erro { Text(e).font(.footnote).foregroundStyle(.red) }
                 } header: {
                     Text("Aulas")
                 } footer: {
-                    Text("A pasta do iCloud Drive onde o Recap do Mac guarda as aulas.")
+                    Text("A pasta Recap do iCloud Drive é a mesma no Mac, no iPhone e no iPad: as aulas aparecem sozinhas em todos.")
                 }
 
                 Section {

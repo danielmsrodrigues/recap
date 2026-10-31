@@ -54,7 +54,8 @@ private struct GeralSettings: View {
                 }
                 HStack {
                     Button("Escolher…") { escolher = true }
-                    Button("Repor ~/Aulas") { pedir(Disco.raizPorDefeito) }
+                    Button("Pasta por defeito") { pedir(Disco.raizPorDefeito) }
+                        .help((Disco.raizPorDefeito.path as NSString).abbreviatingWithTildeInPath)
                         .disabled(library.raiz.mesmoCaminho(Disco.raizPorDefeito))
                     Spacer()
                     Button("Mostrar no Finder") { NSWorkspace.shared.activateFileViewerSelecting([library.raiz]) }
@@ -66,7 +67,7 @@ private struct GeralSettings: View {
             } footer: {
                 Text(ocupada
                      ? "Espera que a aula em curso acabe para mudar de pasta."
-                     : "Numa pasta do iCloud Drive (a de Documentos, se estiver sincronizada), as aulas ficam em todos os teus dispositivos. Os vídeos originais ficam onde estão.")
+                     : "Na pasta Recap do iCloud Drive, as aulas aparecem sozinhas no iPhone e no iPad. Essa pasta é criada quando abres o Recap no iPhone ou no iPad; depois, o Início do Mac propõe mudar as aulas para lá. Os vídeos originais ficam onde estão.")
             }
 
             Section {
