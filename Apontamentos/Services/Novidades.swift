@@ -11,6 +11,16 @@ enum Novidades {
     }
 
     static let todas: [Versao] = [
+        Versao(numero: "1.15", data: "31 de outubro de 2026", itens: [
+            "Transcrever em direto com metade do espaço em disco, sem guardar imagens repetidas quando a janela não muda.",
+            "Se o Recap fechar durante ou logo depois de uma aula em direto, a aula volta à fila quando o abres, em vez de se perder.",
+            "Aviso quando o disco enche durante a transcrição em direto: transcreve o que já foi captado.",
+            "PDF dos apontamentos com cerca de um terço do tamanho, com as mesmas páginas e ligações (no Mac).",
+            "Mudar o nome de uma aula ou de uma cadeira mantém as ligações entre aulas e a ficha da cadeira.",
+            "Os apontamentos e a ficha da cadeira gravam-se ao sair, mesmo a meio de uma edição.",
+            "A cadeira, o progresso do guia e as ligações abrem sem prender o ecrã.",
+            "Várias correções: \"Sai no exame\" com respostas cortadas, ouvir a aula no iPhone, e outras.",
+        ]),
         Versao(numero: "1.14", data: "30 de outubro de 2026", itens: [
             "\"Não estou a perceber\" durante a transcrição em direto (tecla N): marca o bocado até carregares em \"Já percebi\", e os apontamentos explicam essa parte com mais calma.",
             "\"Sai no exame\": o que o professor disse que entra no exame, por cadeira, com a frase e o minuto da aula.",
