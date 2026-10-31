@@ -119,7 +119,10 @@ final class PipelineRunner {
             $0.modeloWhisper = modelo.rawValue
         }
         // Não fica nenhuma gravação: o áudio captado só existia para ser transcrito.
-        if let direto = job.audioDireto { try? FileManager.default.removeItem(at: direto) }
+        if let direto = job.audioDireto {
+            try? FileManager.default.removeItem(at: direto)
+            CaptacaoGuardada.de(audio: direto)?.apagarSeAcabada()
+        }
         let demorou = Timestamp.duracao(Date.now.timeIntervalSince(inicio))
         var detalhe = "\(segmentos.count) segmentos em \(demorou)"
         if transcricao.temOradores {
@@ -159,6 +162,7 @@ final class PipelineRunner {
             var capturas = 0
             for troco in FontePasta.trocos(frames) { capturas += try await FontePasta(pasta: troco).tempos(intervalo: 0).count }
             try? FileManager.default.removeItem(at: frames)
+            if let audio = job.audioDireto { CaptacaoGuardada.de(audio: audio)?.apagarSeAcabada() }
             job.concluir(.slides, detalhe: slides.isEmpty
                          ? (capturas == 0 ? "Nenhuma imagem da janela foi captada" : "Nenhum slide em \(capturas) capturas da janela")
                          : "\(slides.count) slides das capturas")

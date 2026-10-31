@@ -26,9 +26,24 @@ struct ApontamentosApp: App {
         let ponte = PonteMac(library: library, estudo: estudo, definicoes: definicoes)
         ponte.ligar()
         _ponte = State(initialValue: ponte)
-        _fila = State(initialValue: ProcessingQueue(runner: PipelineRunner(library: library, definicoes: definicoes, fichas: fichas, estudo: estudo)))
+        let fila = ProcessingQueue(runner: PipelineRunner(library: library, definicoes: definicoes, fichas: fichas, estudo: estudo))
+        _fila = State(initialValue: fila)
+        Self.recuperarCaptacoes(fila)
         // O painel Estudo abre sempre ao arrancar; fechá-lo só vale até sair da app.
         UserDefaults.standard.set(true, forKey: "mostrarEstudo")
+    }
+
+    /// Uma aula captada em direto que ficou por transcrever (a app fechou-se antes, ou a meio) volta à fila.
+    /// Não nos testes nem com uma pasta de testes (`APONTAMENTOS_RAIZ`): as captações são as da pessoa.
+    private static func recuperarCaptacoes(_ fila: ProcessingQueue) {
+        let ambiente = ProcessInfo.processInfo.environment
+        guard ambiente["XCTestConfigurationFilePath"] == nil, ambiente["APONTAMENTOS_RAIZ"] == nil else { return }
+        CaptacaoGuardada.limparTemporariasAntigas()
+        let existe = { (u: URL) in FileManager.default.fileExists(atPath: u.path) }
+        for (c, ficha) in CaptacaoGuardada.pendentes(aulaExiste: existe) {
+            fila.adicionar(Job(pastaAula: ficha.pastaAula, titulo: ficha.titulo, video: nil, gerarApontamentos: ficha.gerarApontamentos,
+                               audioDireto: c.audio, velocidade: ficha.velocidade, framesDireto: existe(c.frames) ? c.frames : nil))
+        }
     }
 
     var body: some Scene {
