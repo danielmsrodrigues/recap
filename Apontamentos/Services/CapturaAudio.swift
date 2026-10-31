@@ -382,10 +382,23 @@ final class GravadorTemporario: @unchecked Sendable {
         trinco.withLock { Double(amostras - (ultimoSom ?? amostras)) } / AudioExtractor.taxa
     }
 
-    init() throws {
-        url = FileManager.default.temporaryDirectory.appending(path: "Recap-direto-\(UUID().uuidString).caf")
-        ficheiro = try AVAudioFile(forWriting: url, settings: formato.settings, commonFormat: .pcmFormatFloat32, interleaved: false)
+    /// O primeiro erro a gravar (disco cheio, por exemplo): a sessão avisa e termina com o que já tem.
+    var erroEscrita: String? { trinco.withLock { primeiroErro } }
+    private var primeiroErro: String?
+
+    /// `url`: onde gravar (a pasta da captação, ver `CaptacaoGuardada`); sem ela, uma pasta temporária.
+    /// No ficheiro, inteiros de 16 bits: metade do espaço do Float32 (~115 MB por hora), sem perda para o Whisper.
+    init(url: URL? = nil) throws {
+        self.url = url ?? FileManager.default.temporaryDirectory.appending(path: "Recap-direto-\(UUID().uuidString).caf")
+        let noFicheiro: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: AudioExtractor.taxa, AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false,
+        ]
+        ficheiro = try AVAudioFile(forWriting: self.url, settings: noFicheiro, commonFormat: .pcmFormatFloat32, interleaved: false)
     }
+
+    /// Fecha o ficheiro (o cabeçalho fica com o tamanho certo) antes de ser lido para transcrever.
+    func fechar() { trinco.withLock { ficheiro.close() } }
 
     var segundos: Double { trinco.withLock { Double(amostras) } / AudioExtractor.taxa }
 
@@ -417,7 +430,13 @@ final class GravadorTemporario: @unchecked Sendable {
                 return entrada
             }
             guard erro == nil, saida.frameLength > 0 else { return nil }
-            try? ficheiro.write(from: saida)
+            do {
+                try ficheiro.write(from: saida)
+            } catch {
+                // Sem isto o áudio perdia-se calado e os tempos dos slides deixavam de bater certo.
+                if primeiroErro == nil { primeiroErro = error.localizedDescription }
+                return nil
+            }
             amostras += Int64(saida.frameLength)
             nivelAtual = Self.nivel(saida)
             if nivelAtual > Self.limiarSom { ultimoSom = amostras }
@@ -458,13 +477,17 @@ final class GravadorFrames: @unchecked Sendable {
     private var gravadas = 0
     /// A última imagem gravada e o ficheiro: se não mudou, a captura seguinte é uma ligação a esse ficheiro.
     private var ultimaGravada: (CGImage, URL)?
+    /// Na fila de escrita: a grelha pequena e o ficheiro da última imagem escrita. Uma imagem nova com a mesma grelha
+    /// (o cursor mexeu, um relógio mudou) também fica uma ligação, e não mais 150 KB.
+    private var ultimaEscrita: (grelha: [Float], url: URL)?
 
-    /// `janela`: a da aula no início (o primeiro troço é a própria pasta).
-    init(janela: CGWindowID? = nil) throws {
-        pasta = FileManager.default.temporaryDirectory.appending(path: "Recap-slides-\(UUID().uuidString)", directoryHint: .isDirectory)
-        pastaAtual = pasta
-        if let janela { pastasPorJanela[janela] = pasta }
-        try FileManager.default.createDirectory(at: pasta, withIntermediateDirectories: true)
+    /// `janela`: a da aula no início (o primeiro troço é a própria pasta). `pasta`: onde gravar (a da captação, ver
+    /// `CaptacaoGuardada`); sem ela, uma pasta temporária.
+    init(janela: CGWindowID? = nil, pasta: URL? = nil) throws {
+        self.pasta = pasta ?? FileManager.default.temporaryDirectory.appending(path: "Recap-slides-\(UUID().uuidString)", directoryHint: .isDirectory)
+        pastaAtual = self.pasta
+        if let janela { pastasPorJanela[janela] = self.pasta }
+        try FileManager.default.createDirectory(at: self.pasta, withIntermediateDirectories: true)
     }
 
     /// Mudou-se de janela: as imagens seguintes vão para o troço dela (um novo, se ainda não tinha). A última
@@ -482,6 +505,7 @@ final class GravadorFrames: @unchecked Sendable {
             ultima = nil
             ultimaGravada = nil
         }
+        escrita.async { self.ultimaEscrita = nil }
     }
 
     /// A última imagem da janela (para a pré-visualização na janela "Em direto").
@@ -510,8 +534,20 @@ final class GravadorFrames: @unchecked Sendable {
         guard let (imagem, url, anterior) = pedido else { return }
         escrita.async {
             if let anterior, (try? FileManager.default.linkItem(at: anterior, to: url)) != nil { return }
-            try? SlideExtractor.gravarJPEG(imagem, em: url, qualidade: 0.6)
+            let grelha = SlideExtractor.grelha(imagem, colunas: 64, linhas: 36)
+            if let ultima = self.ultimaEscrita, Self.iguais(ultima.grelha, grelha),
+               (try? FileManager.default.linkItem(at: ultima.url, to: url)) != nil { return }
+            guard (try? SlideExtractor.gravarJPEG(imagem, em: url, qualidade: 0.6)) != nil else { return }
+            self.ultimaEscrita = (grelha, url)
         }
+    }
+
+    /// Quase iguais: nenhuma célula muda visivelmente e, em média, quase nada (um slide novo muda muito mais).
+    static func iguais(_ a: [Float], _ b: [Float]) -> Bool {
+        guard a.count == b.count, !a.isEmpty else { return false }
+        var soma: Float = 0, maior: Float = 0
+        for i in a.indices { let d = abs(a[i] - b[i]); soma += d; maior = max(maior, d) }
+        return maior < 0.08 && soma / Float(a.count) < 0.004
     }
 
     /// Espera que as imagens em escrita terminem (antes de o SlideExtractor ler a pasta).

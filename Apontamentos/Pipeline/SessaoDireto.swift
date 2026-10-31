@@ -45,6 +45,8 @@ final class SessaoDireto {
     private let criarCaptacao: (EventosCaptacao) -> any Captacao
     private var gravador: GravadorTemporario?
     private var frames: GravadorFrames?
+    /// Onde ficam o áudio e as imagens, com a ficha da aula (ver `CaptacaoGuardada`).
+    private var guardada: CaptacaoGuardada?
     private var relogio: Task<Void, Never>?
     private weak var library: Library?
     private weak var fila: ProcessingQueue?
@@ -74,8 +76,10 @@ final class SessaoDireto {
         segundos = 0; silencio = 0; houveSom = false; nivel = -120; previa = nil; pretaDesde = nil; avisoPreto = false
         naoPercebi = []
         do {
-            let g = try GravadorTemporario()
-            let f = capturarSlides ? try GravadorFrames(janela: fonte.janela) : nil
+            let c0 = try CaptacaoGuardada.criar()
+            guardada = c0
+            let g = try GravadorTemporario(url: c0.audio)
+            let f = capturarSlides ? try GravadorFrames(janela: fonte.janela, pasta: c0.frames) : nil
             var aoFrame: (@Sendable (CGImage) -> Void)?
             var aoMudarJanela: (@Sendable (CGWindowID) -> Void)?
             if let f {
@@ -92,7 +96,10 @@ final class SessaoDireto {
             frames = f
             try await c.iniciar(fonte)
             captura = c
-            pastaAula = try library.criarAula(cadeira: cadeira, titulo: titulo, data: data, video: nil)
+            let aula = try library.criarAula(cadeira: cadeira, titulo: titulo, data: data, video: nil)
+            pastaAula = aula
+            // A partir daqui, se a app fechar, a captação volta à fila ao abrir.
+            try? c0.guardar(.init(pastaAula: aula, titulo: titulo, velocidade: velocidade, gerarApontamentos: gerarApontamentos))
             estado = .aOuvir
             relogio = Task { [weak self] in
                 while !Task.isCancelled {
@@ -176,11 +183,13 @@ final class SessaoDireto {
             return
         }
         frames?.concluir()
+        gravador.fechar()
         fecharNaoPercebi()
         fila?.adicionar(Job(pastaAula: pastaAula, titulo: titulo, video: nil, gerarApontamentos: gerarApontamentos,
                             audioDireto: gravador.url, velocidade: velocidade, framesDireto: frames?.pasta))
         self.gravador = nil
         frames = nil
+        guardada = nil
         previa = nil
         captura = nil
         escolherJanela = false
@@ -200,6 +209,12 @@ final class SessaoDireto {
 
     private func atualizar() {
         guard let gravador, ativa else { return }
+        // Disco cheio (ou outro erro a gravar): termina com o que já foi captado, em vez de perder o resto calado.
+        if let erro = gravador.erroEscrita, estado == .aOuvir || estado == .emPausa {
+            aviso = "Não consegui continuar a gravar o áudio (\(erro)). O que já foi captado vai ser transcrito."
+            Task { await terminar() }
+            return
+        }
         segundos = gravador.segundos
         nivel = gravador.nivel
         houveSom = gravador.houveSom
@@ -243,6 +258,8 @@ final class SessaoDireto {
         relogio?.cancel()
         gravador?.apagar()
         frames?.apagar()
+        guardada?.apagar()
+        guardada = nil
         frames = nil
         previa = nil
         if apagarAula, let pastaAula { try? library?.moverParaLixo(pastaAula) }
