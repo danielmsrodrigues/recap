@@ -26,10 +26,11 @@ enum Disco {
     /// Sem ponto no nome: o iCloud Drive pode não sincronizar pastas escondidas.
     static let pastaSistema = "_recap"
 
-    /// No iOS só serve até se escolher a pasta do iCloud Drive (ver `PastaAulas`).
+    /// No Mac, a pasta Recap do iCloud Drive quando já existe, senão ~/Aulas (ver `PastaICloud.raizMac`).
+    /// No iOS só serve até se abrir a pasta do iCloud Drive (ver `PastaAulas`).
     static var raizPorDefeito: URL {
         #if os(macOS)
-        FileManager.default.homeDirectoryForCurrentUser.appending(path: "Aulas", directoryHint: .isDirectory)
+        PastaICloud.raizMac()
         #else
         URL.documentsDirectory.appending(path: "Aulas", directoryHint: .isDirectory)
         #endif
@@ -286,7 +287,7 @@ enum Disco {
         if let aulas = itens.first(where: { $0.lastPathComponent == "Aulas" }), problemaPastaAulas(aulas) == nil {
             return "As aulas estão dentro de \"\(nome)\": abre a pasta Aulas e escolhe-a."
         }
-        return "\"\(nome)\" não tem aulas do Recap. Escolhe a pasta que o Recap usa no Mac (Definições → Aulas), normalmente iCloud Drive → Documents → Recap → Aulas."
+        return "\"\(nome)\" não tem aulas do Recap. Escolhe a pasta que o Recap usa no Mac (Definições → Aulas), normalmente iCloud Drive → Recap."
     }
 
     static func urlSlide(_ slide: Slide, em pasta: URL) -> URL {
