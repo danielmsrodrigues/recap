@@ -63,7 +63,8 @@ struct BarraLateral: View {
                     } icon: {
                         SiglaCadeira(nome: cadeira.nome, lado: 18)
                     }
-                    .badge(cadeira.aulas.count)
+                    .badge(distintivo(cadeira))
+                    .help(ajuda(cadeira))
                     .tag(FiltroAulas.cadeira(cadeira.pasta))
                     .contextMenu { menu(cadeira) }
                 }
@@ -103,6 +104,24 @@ struct BarraLateral: View {
     }
 
     /// O semestre (a procura é em todos) e o "+".
+    /// As aulas por rever, ou um visto quando não falta nenhuma: à primeira vista, número quer dizer que há trabalho.
+    private func distintivo(_ cadeira: Cadeira) -> Text? {
+        switch Revisao.estado(cadeira) {
+        case .semNada: nil
+        case .porRever(let n): Text("\(n)")
+        case .emDia: Text(Image(systemName: "checkmark")).foregroundStyle(.green).accessibilityLabel("Tudo revisto")
+        }
+    }
+
+    private func ajuda(_ cadeira: Cadeira) -> String {
+        let total = cadeira.aulas.count == 1 ? "1 aula" : "\(cadeira.aulas.count) aulas"
+        return switch Revisao.estado(cadeira) {
+        case .semNada: total
+        case .porRever(let n): "\(total), \(n) por rever"
+        case .emDia: "\(total), tudo revisto"
+        }
+    }
+
     private var rodape: some View {
         HStack {
             if library.organizacao != .nenhuma, let atual = semestre ?? library.semestres.first {

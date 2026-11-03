@@ -25,6 +25,26 @@ struct RevisaoTests {
         #expect(Revisao.porRever(cadeiras).map(\.meta.titulo) == ["E4", "E3", "C2"])
     }
 
+    @Test func cadeiraComAulasPorReverDizQuantas() {
+        let c = cadeira("Empresas", [aula("E1", "Empresas", dia: 1, revista: true), aula("E2", "Empresas", dia: 2), aula("E3", "Empresas", dia: 3)])
+        #expect(Revisao.estado(c) == .porRever(2))
+    }
+
+    @Test func cadeiraComTudoRevistoFicaEmDia() {
+        let c = cadeira("Cálculo", [aula("C1", "Cálculo", dia: 1, revista: true), aula("C2", "Cálculo", dia: 2, revista: true)])
+        #expect(Revisao.estado(c) == .emDia)
+    }
+
+    @Test func aulaSemApontamentosNaoContaComoPorRever() {
+        let c = cadeira("Cálculo", [aula("C1", "Cálculo", dia: 1, revista: true), aula("C2", "Cálculo", dia: 2, apontamentos: false)])
+        #expect(Revisao.estado(c) == .emDia)
+    }
+
+    @Test func cadeiraSemNadaParaReverNaoFicaEmDia() {
+        #expect(Revisao.estado(cadeira("Nova", [])) == .semNada)
+        #expect(Revisao.estado(cadeira("Nova", [aula("N1", "Nova", dia: 1, apontamentos: false)])) == .semNada)
+    }
+
     @Test func aProximaEAMaisRecenteDasOutrasPorRever() {
         let c = cadeiras
         let e4 = c[1].aulas[1]

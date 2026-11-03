@@ -8,6 +8,21 @@ enum Revisao {
         cadeiras.flatMap(\.aulas).filter { $0.temApontamentos && !$0.meta.revista }.sorted { $0.meta.data > $1.meta.data }
     }
 
+    enum Estado: Equatable {
+        /// Ainda sem apontamentos: não há o que rever nem o que dar por revisto.
+        case semNada
+        case porRever(Int)
+        case emDia
+    }
+
+    /// Tudo o que tem apontamentos revisto é `emDia`, mesmo com uma aula ainda sem apontamentos (não há o que rever nela).
+    static func estado(_ cadeira: Cadeira) -> Estado {
+        let comApontamentos = cadeira.aulas.filter(\.temApontamentos)
+        guard !comApontamentos.isEmpty else { return .semNada }
+        let porRever = comApontamentos.filter { !$0.meta.revista }.count
+        return porRever > 0 ? .porRever(porRever) : .emDia
+    }
+
     /// Depois de marcar `aula` como revista: a mais recente das outras por rever.
     static func proxima(depoisDe aula: Aula, em cadeiras: [Cadeira]) -> Aula? {
         porRever(cadeiras).first { $0.pasta != aula.pasta }
