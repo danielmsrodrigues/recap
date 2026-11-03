@@ -141,6 +141,12 @@ struct ClaudeCodeTests {
         #expect(ClaudeCodeClient.erro(mensagem: "boom", status: 500, reinicio: nil) == .falhou("boom"))
     }
 
+    /// A mensagem real de uma sessão expirada não diz "login".
+    @Test func sessaoExpiradaESemSessao() {
+        let m = "Failed to authenticate: OAuth session expired and could not be refreshed"
+        #expect(ClaudeCodeClient.erro(mensagem: m, status: nil, reinicio: nil) == .semSessao(m))
+    }
+
     @Test func ambienteSemVariaveisDeSessaoNemChaves() {
         let env = ClaudeCodeClient.ambiente()
         #expect(!env.keys.contains { $0.hasPrefix("ANTHROPIC_") || $0 == "CLAUDECODE" })

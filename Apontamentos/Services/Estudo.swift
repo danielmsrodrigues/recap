@@ -380,8 +380,8 @@ final class Estudo {
         aulas.filter { $0.temTranscricao && Disco.lerPistasExame($0.pasta) == nil }
     }
 
-    /// Procura, aula a aula, o que sai no exame nas aulas anteriores. Continua quando se muda de vista; uma aula que
-    /// falhe fica por procurar e as outras seguem.
+    /// Procura, aula a aula, o que sai no exame nas aulas anteriores. Continua quando se muda de vista; o que acontece
+    /// quando uma aula falha está em `porCadaAula`.
     func procurarPistasExame(_ aulas: [Aula]) {
         guard tarefaExame == nil else { return }
         let porVer = aulasSemPistasExame(aulas)
@@ -396,27 +396,42 @@ final class Estudo {
                 erroExame = error.localizedDescription
                 return
             }
-            var falhas = 0
-            for (i, aula) in porVer.enumerated() {
-                if Task.isCancelled { return }
-                if let t = Disco.lerTranscricao(aula.pasta) {
-                    do {
-                        let r = try await PistasExame.procurar(t, lingua: definicoes.linguaApontamentos, gerador: gerador)
-                        try Disco.escreverPistasExame(r.pistas, em: aula.pasta)
-                        versao += 1
-                    } catch is CancellationError {
-                        return
-                    } catch {
-                        falhas += 1
-                    }
-                }
-                procuraExame = (i + 1, porVer.count)
+            erroExame = await porCadaAula(porVer) { feitas in
+                procuraExame = (feitas, porVer.count)
+            } ver: { aula in
+                guard let t = Disco.lerTranscricao(aula.pasta) else { return }
+                let r = try await PistasExame.procurar(t, lingua: definicoes.linguaApontamentos, gerador: gerador)
+                try Disco.escreverPistasExame(r.pistas, em: aula.pasta)
+                versao += 1
             }
-            if falhas > 0 { erroExame = "\(falhas) \(falhas == 1 ? "aula ficou" : "aulas ficaram") por ver: tenta outra vez mais tarde." }
         }
     }
 
     func cancelarPistasExame() { tarefaExame?.cancel() }
+
+    /// Vê as aulas uma a uma e devolve o aviso a mostrar no fim (nil se correu tudo bem ou foi cancelado).
+    /// Uma aula que falhe fica por ver e as outras seguem. Se o erro afetar também as seguintes (a sessão expirou,
+    /// por exemplo), para logo e devolve-o tal como é: dizer "tenta mais tarde" escondia o que há a fazer.
+    private func porCadaAula(_ aulas: [Aula], aoAvancar: (Int) -> Void, ver: (Aula) async throws -> Void) async -> String? {
+        var falhas = 0
+        var ultimoErro = ""
+        for (i, aula) in aulas.enumerated() {
+            if Task.isCancelled { return nil }
+            do {
+                try await ver(aula)
+            } catch is CancellationError {
+                return nil
+            } catch let erro as any ErroDeMotor where erro.afetaOsProximosPedidos {
+                return erro.localizedDescription
+            } catch {
+                falhas += 1
+                ultimoErro = error.localizedDescription
+            }
+            aoAvancar(i + 1)
+        }
+        guard falhas > 0 else { return nil }
+        return "\(falhas) \(falhas == 1 ? "aula ficou" : "aulas ficaram") por ver: tenta outra vez mais tarde. Último erro: \(ultimoErro)"
+    }
 
     // MARK: Progresso do programa
 
@@ -426,7 +441,7 @@ final class Estudo {
     }
 
     /// Vê, aula a aula, que secções da guia foram dadas nas aulas anteriores (um pedido curto por aula). Continua
-    /// quando se muda de vista; uma aula que falhe fica por ver e as outras seguem.
+    /// quando se muda de vista; o que acontece quando uma aula falha está em `porCadaAula`.
     func procurarSeccoesGuia(_ cadeira: Cadeira) {
         let chave = cadeira.pasta
         guard procuraGuia[chave] == nil else { return }
@@ -446,23 +461,14 @@ final class Estudo {
                 erroGuia[chave] = error.localizedDescription
                 return
             }
-            var falhas = 0
-            for (i, aula) in porVer.enumerated() {
-                if Task.isCancelled { return }
-                if let t = Disco.lerTranscricao(aula.pasta) {
-                    do {
-                        let r = try await SeccoesDaAula.escolher(indice, transcricao: t, gerador: gerador)
-                        try Disco.escreverSeccoesGuia(SeccoesGuardadas(r.selecao, indice: indice), em: aula.pasta)
-                        versao += 1
-                    } catch is CancellationError {
-                        return
-                    } catch {
-                        falhas += 1
-                    }
-                }
-                procuraGuia[chave] = (i + 1, porVer.count)
+            erroGuia[chave] = await porCadaAula(porVer) { feitas in
+                procuraGuia[chave] = (feitas, porVer.count)
+            } ver: { aula in
+                guard let t = Disco.lerTranscricao(aula.pasta) else { return }
+                let r = try await SeccoesDaAula.escolher(indice, transcricao: t, gerador: gerador)
+                try Disco.escreverSeccoesGuia(SeccoesGuardadas(r.selecao, indice: indice), em: aula.pasta)
+                versao += 1
             }
-            if falhas > 0 { erroGuia[chave] = "\(falhas) \(falhas == 1 ? "aula ficou" : "aulas ficaram") por ver: tenta outra vez mais tarde." }
         }
     }
 
