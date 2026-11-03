@@ -16,11 +16,24 @@ final class Library {
     /// Muda quando uma leitura do disco encontra algo diferente; as vistas usam-no para recarregar ficheiros.
     private(set) var versao = 0
     private(set) var erro: String?
+    /// Aulas que existem mas cujo `aula.json` está só no iCloud: ainda não se sabe o título nem a data, por isso não
+    /// entram em `cadeiras`. Vêm sozinhas (ver `trazerAulasDaNuvem`); até lá a barra lateral avisa.
+    private(set) var aulasNaNuvem = 0
+    private let porDescarregar: @Sendable (URL) -> Bool
+    private let trazer: @Sendable (URL) throws -> Void
+    private let esperaAoFalhar: Duration
+    @ObservationIgnored private var aTrazer: Task<Void, Never>?
     /// Avisa quando outro dispositivo (pelo iCloud Drive) ou outra app muda a pasta. Só depois de `vigiar()`.
     @ObservationIgnored private var observador: ObservadorPasta?
 
     init(raiz: URL = Disco.raizPorDefeito, organizacao: OrganizacaoCurso = .anoESemestre,
-         iniciosPeriodos: [Int] = CalendarioLetivo.porDefeito, duracaoCurso: Int = 4) {
+         iniciosPeriodos: [Int] = CalendarioLetivo.porDefeito, duracaoCurso: Int = 4,
+         porDescarregar: @escaping @Sendable (URL) -> Bool = { Disco.porDescarregar($0) },
+         trazer: @escaping @Sendable (URL) throws -> Void = { try Disco.trazer($0) },
+         esperaAoFalhar: Duration = .seconds(30)) {
+        self.porDescarregar = porDescarregar
+        self.trazer = trazer
+        self.esperaAoFalhar = esperaAoFalhar
         self.raiz = raiz
         self.organizacao = organizacao
         self.iniciosPeriodos = iniciosPeriodos
@@ -45,6 +58,38 @@ final class Library {
             erro = "Não foi possível ler \(raiz.path): \(error.localizedDescription)"
             versao += 1
         }
+        trazerAulasDaNuvem()
+    }
+
+    /// Traz os `aula.json` que estão só no iCloud e volta a ler a pasta. Sem internet, tenta outra vez mais tarde.
+    private func trazerAulasDaNuvem() {
+        let faltam = Self.metasNaNuvem(raiz: raiz, porDescarregar: porDescarregar)
+        aulasNaNuvem = faltam.count
+        guard !faltam.isEmpty, aTrazer == nil else { return }
+        aTrazer = Task { [weak self, porDescarregar = self.porDescarregar, trazer = self.trazer, espera = esperaAoFalhar] in
+            let ficaramPorTrazer = await Task.detached(priority: .utility) {
+                for url in faltam { try? trazer(url) }
+                return faltam.contains(where: porDescarregar)
+            }.value
+            if ficaramPorTrazer { try? await Task.sleep(for: espera) }
+            guard let self else { return }
+            aTrazer = nil
+            recarregar(forcar: true)
+        }
+    }
+
+    /// O `aula.json` de cada pasta de aula que está só na nuvem.
+    nonisolated static func metasNaNuvem(raiz: URL, porDescarregar: (URL) -> Bool) -> [URL] {
+        let fm = FileManager.default
+        func pastas(em pai: URL) -> [URL] {
+            ((try? fm.contentsOfDirectory(at: pai, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles)) ?? [])
+                .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+        }
+        return pastas(em: raiz)
+            .filter { $0.lastPathComponent != Disco.pastaSistema }
+            .flatMap(pastas(em:))
+            .map { $0.appending(path: Disco.aulaJSON) }
+            .filter(porDescarregar)
     }
 
     /// Passa a ler outra pasta. Com `mover`, as cadeiras da pasta atual vão para lá primeiro.
