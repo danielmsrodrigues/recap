@@ -80,7 +80,14 @@ struct RespostaFinal: Sendable {
     var houveFallback: Bool
 }
 
-enum ErroClaude: LocalizedError, Equatable {
+/// Um erro de um dos motores que chegam ao Claude.
+protocol ErroDeMotor: LocalizedError {
+    /// O erro não tem a ver com este pedido (sem sessão, sem chave, sem créditos, no limite…): os seguintes
+    /// falhariam igual. Numa procura por várias aulas, para logo e mostra-o em vez de gastar pedidos.
+    var afetaOsProximosPedidos: Bool { get }
+}
+
+enum ErroClaude: ErroDeMotor, Equatable {
     case semChave
     case http(status: Int, tipo: String?, mensagem: String?, retryAfter: Double?)
     case rede(String)
@@ -133,6 +140,16 @@ enum ErroClaude: LocalizedError, Equatable {
     var esperaSugerida: Double? {
         if case .http(_, _, _, let retryAfter) = self { return retryAfter }
         return nil
+    }
+
+    var afetaOsProximosPedidos: Bool {
+        switch self {
+        case .semChave: true
+        case .http(let status, let tipo, let mensagem, _):
+            [401, 403, 404, 429].contains(status)
+                || (tipo == "invalid_request_error" && mensagem?.localizedCaseInsensitiveContains("credit") == true)
+        default: false
+        }
     }
 }
 

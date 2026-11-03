@@ -1,7 +1,7 @@
 import Foundation
 import Synchronization
 
-enum ErroClaudeCode: LocalizedError, Equatable {
+enum ErroClaudeCode: ErroDeMotor, Equatable {
     case naoEncontrado
     case semSessao(String)
     case limite(reiniciaEm: Date?)
@@ -25,6 +25,10 @@ enum ErroClaudeCode: LocalizedError, Equatable {
         case .falhou(let detalhe):
             "O Claude Code falhou: \(detalhe)"
         }
+    }
+
+    var afetaOsProximosPedidos: Bool {
+        if case .falhou = self { false } else { true }
     }
 }
 
@@ -229,7 +233,8 @@ struct ClaudeCodeClient: Sendable {
     static func erro(mensagem: String, status: Int?, reinicio: Date?) -> ErroClaudeCode {
         let m = mensagem.trimmingCharacters(in: .whitespacesAndNewlines)
         let minusculas = m.lowercased()
-        if status == 401 || minusculas.contains("login") || minusculas.contains("not logged in") || minusculas.contains("invalid api key") {
+        if status == 401 || minusculas.contains("login") || minusculas.contains("not logged in") || minusculas.contains("invalid api key")
+            || minusculas.contains("authenticat") || minusculas.contains("oauth") {
             return .semSessao(m)
         }
         if status == 429 || minusculas.contains("usage limit") || minusculas.contains("rate limit") {
