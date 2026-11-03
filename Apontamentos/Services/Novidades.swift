@@ -11,6 +11,13 @@ enum Novidades {
     }
 
     static let todas: [Versao] = [
+        Versao(numero: "1.16", data: "3 de novembro de 2026", itens: [
+            "Na barra lateral, cada cadeira mostra quantas aulas faltam rever, ou um visto quando já não falta nenhuma (no Mac).",
+            "As aulas que o iCloud tira do Mac para poupar espaço voltam sozinhas à lista, em vez de desaparecerem, com um aviso enquanto chegam.",
+            "Ao abrir uma aula no Mac, o que estiver só no iCloud é trazido, para ela não abrir sem apontamentos nem transcrição.",
+            "\"Sai no exame\" e o progresso do programa mostram o erro verdadeiro e param logo quando não adianta continuar, por exemplo com a sessão do Claude expirada.",
+            "Pasta Recap no iCloud Drive: o iPhone e o iPad encontram as aulas sozinhos, e o Mac propõe mudar as aulas para lá quando a pasta existir.",
+        ]),
         Versao(numero: "1.15", data: "31 de outubro de 2026", itens: [
             "Transcrever em direto com metade do espaço em disco, sem guardar imagens repetidas quando a janela não muda.",
             "Se o Recap fechar durante ou logo depois de uma aula em direto, a aula volta à fila quando o abres, em vez de se perder.",
