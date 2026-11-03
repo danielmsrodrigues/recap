@@ -95,6 +95,11 @@ struct AulaDetailView: View {
         .task(id: aula) {
             carregar()
             #if os(macOS)
+            // O iCloud pode ter tirado os ficheiros do Mac: sem isto, a aula abria sem apontamentos nem transcrição.
+            let pasta = aula.pasta
+            let trazidos = await Task.detached(priority: .userInitiated) { Disco.trazerPasta(pasta) }.value
+            guard !Task.isCancelled else { return }
+            if trazidos > 0, !controlador.editando, !aGerar { carregar() }
             estudo.gerarLigacoesSePreciso(aula)
             #else
             // Os slides e os PDFs só vêm do iCloud quando a aula abre (com a API, as ligações pedem-se no painel).

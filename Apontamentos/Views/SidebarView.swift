@@ -79,6 +79,11 @@ struct BarraLateral: View {
             if let erro = library.erro {
                 Text(erro).foregroundStyle(.red).font(.caption)
             }
+            if library.aulasNaNuvem > 0 {
+                Label(library.aulasNaNuvem == 1 ? "1 aula a chegar do iCloud…" : "\(library.aulasNaNuvem) aulas a chegar do iCloud…", systemImage: "icloud.and.arrow.down")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
         }
         // Sem o fundo da lista, vê-se o cartão (em ContentView).
         .scrollContentBackground(.hidden)

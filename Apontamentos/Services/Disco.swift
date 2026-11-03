@@ -132,6 +132,9 @@ enum Disco {
 
     /// Está no iCloud Drive, mas ainda não neste dispositivo.
     static func porDescarregar(_ url: URL) -> Bool {
+        // O URL guarda os valores já lidos: sem isto, um ficheiro que entretanto chegou continuava "por descarregar".
+        var url = url
+        url.removeAllCachedResourceValues()
         let estado = try? url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey]).ubiquitousItemDownloadingStatus
         return estado == .notDownloaded
     }
@@ -148,6 +151,23 @@ enum Disco {
             faltam += 1
         }
         return faltam
+    }
+
+    /// Traz um ficheiro da nuvem e só volta quando ele chegar (fora do fio principal). Lê-o em vez de só pedir o download:
+    /// no Recap a 3 nov 2026 vimos pedidos sem erro que nunca trouxeram nada, e a leitura trouxe sempre.
+    static func trazer(_ url: URL) throws {
+        _ = try lerDados(url, esperar: true)
+    }
+
+    /// Traz tudo o que falta numa pasta (fora do fio principal). Devolve quantos ficheiros faltavam.
+    @discardableResult
+    static func trazerPasta(_ pasta: URL, porDescarregar: (URL) -> Bool = Disco.porDescarregar,
+                            trazer: (URL) throws -> Void = Disco.trazer) -> Int {
+        guard let itens = FileManager.default.enumerator(at: pasta, includingPropertiesForKeys: [.ubiquitousItemDownloadingStatusKey])
+        else { return 0 }
+        let faltam = itens.compactMap { $0 as? URL }.filter(porDescarregar)
+        for url in faltam { try? trazer(url) }
+        return faltam.count
     }
 
     /// Quando gravámos cada ficheiro (caminho → data), para o `ObservadorPasta` ignorar o eco das nossas escritas.
