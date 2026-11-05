@@ -135,11 +135,7 @@ struct PerguntasView: View {
         }
         // `library.versao`: uma resposta pode chegar pelo iCloud (dada no Mac, ou pedida aqui ao Mac).
         .task(id: [estudo.versao, library.versao]) { perguntas = Disco.lerPerguntas(aula.pasta) }
-        .task(id: aula.pasta) {
-            // Sem saber que anexos as perguntas usam (o ficheiro ainda não se lê), não se apaga nenhum.
-            guard let perguntas = Disco.lerPerguntasSePossivel(aula.pasta) else { return }
-            Anexos.limparOrfaos(em: aula.pasta, usados: Set(perguntas.flatMap { $0.anexos ?? [] } + anexos))
-        }
+        .task(id: aula.pasta) { Anexos.limparOrfaosAoAbrir(em: aula.pasta, porEnviar: anexos) }
         // Um trecho escolhido (ou o painel aberto por causa dele): o cursor vai para o campo.
         .task(id: estudo.pedidosCitacao) {
             guard citacao != nil, estudo.consumirFoco() else { return }

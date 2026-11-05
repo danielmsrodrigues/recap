@@ -259,6 +259,51 @@ struct AnexosTests {
         #expect(restam == [usado, novo].sorted())
     }
 
+    /// Um anexo com mais de um dia, numa aula por limpar ao abrir. Devolve a pasta da aula e o nome do anexo.
+    private func aulaComAnexoAntigo() throws -> (pasta: URL, anexo: String) {
+        let pasta = try pastaTemporaria()
+        let origem = pasta.appending(path: "x.csv")
+        try "1".write(to: origem, atomically: true, encoding: .utf8)
+        let anexo = try Anexos.juntar(origem, em: pasta)
+        try FileManager.default.setAttributes([.modificationDate: Date.now.addingTimeInterval(-2 * 86_400)],
+                                              ofItemAtPath: Anexos.url(anexo, em: pasta).path)
+        return (pasta, anexo)
+    }
+
+    /// Sem o `perguntas.json` (ainda a caminho pelo iCloud) não se sabe que anexos as perguntas usam: não se apaga nenhum.
+    @Test func semPerguntasJSONOsAnexosFicamAoAbrir() throws {
+        let (pasta, anexo) = try aulaComAnexoAntigo()
+        defer { try? FileManager.default.removeItem(at: pasta) }
+        Anexos.limparOrfaosAoAbrir(em: pasta, porEnviar: [])
+        #expect(FileManager.default.fileExists(atPath: Anexos.url(anexo, em: pasta).path))
+    }
+
+    @Test func comPerguntasJSONIlegivelOsAnexosFicamAoAbrir() throws {
+        let (pasta, anexo) = try aulaComAnexoAntigo()
+        defer { try? FileManager.default.removeItem(at: pasta) }
+        try Data("não é JSON".utf8).write(to: pasta.appending(path: Disco.perguntasJSON))
+        Anexos.limparOrfaosAoAbrir(em: pasta, porEnviar: [])
+        #expect(FileManager.default.fileExists(atPath: Anexos.url(anexo, em: pasta).path))
+    }
+
+    @Test func comPerguntasJSONOsOrfaosVaoSeAoAbrir() throws {
+        let (pasta, orfao) = try aulaComAnexoAntigo()
+        defer { try? FileManager.default.removeItem(at: pasta) }
+        let origem = pasta.appending(path: "y.csv")
+        try "2".write(to: origem, atomically: true, encoding: .utf8)
+        let usado = try Anexos.juntar(origem, em: pasta), porEnviar = try Anexos.juntar(origem, em: pasta)
+        for nome in [usado, porEnviar] {
+            try FileManager.default.setAttributes([.modificationDate: Date.now.addingTimeInterval(-2 * 86_400)],
+                                                  ofItemAtPath: Anexos.url(nome, em: pasta).path)
+        }
+        try Disco.escreverPerguntas([PerguntaAula(pergunta: "?", resposta: "!", anexos: [usado])], em: pasta)
+
+        Anexos.limparOrfaosAoAbrir(em: pasta, porEnviar: [porEnviar])
+        #expect(!FileManager.default.fileExists(atPath: Anexos.url(orfao, em: pasta).path))
+        #expect(FileManager.default.fileExists(atPath: Anexos.url(usado, em: pasta).path))
+        #expect(FileManager.default.fileExists(atPath: Anexos.url(porEnviar, em: pasta).path))
+    }
+
     @Test func seAPerguntaFalhaOsFicheirosVoltamAoCampo() throws {
         let raiz = try pastaTemporaria()
         defer { try? FileManager.default.removeItem(at: raiz) }

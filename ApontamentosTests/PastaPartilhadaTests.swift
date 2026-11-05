@@ -58,6 +58,67 @@ struct PastaPartilhadaTests {
         #expect(try modificado() != antiga)
     }
 
+    /// Um ficheiro ainda por descarregar lê-se como nil: não pode parecer diferente e ser substituído.
+    @Test func naoSubstituiUmFicheiroPorDescarregar() throws {
+        let raiz = try pasta()
+        defer { try? FileManager.default.removeItem(at: raiz) }
+        let d = definicoes()
+        d.contextoCurso = "O que vem a caminho"
+        try DefinicoesPartilhadas.escrever(d.partilhadas, raiz: raiz)
+
+        let outro = definicoes()
+        outro.contextoCurso = "Valores deste aparelho"
+        try DefinicoesPartilhadas.escrever(outro.partilhadas, raiz: raiz) { _ in true }
+        #expect(DefinicoesPartilhadas.ler(raiz: raiz)?.contextoCurso == "O que vem a caminho")
+
+        // Já descarregado, escreve-se como sempre.
+        try DefinicoesPartilhadas.escrever(outro.partilhadas, raiz: raiz) { _ in false }
+        #expect(DefinicoesPartilhadas.ler(raiz: raiz)?.contextoCurso == "Valores deste aparelho")
+    }
+
+    /// Um campo em falta não invalida o ficheiro nem leva o resto das preferências atrás.
+    @Test func umCampoEmFaltaNaoInvalidaOFicheiro() throws {
+        let raiz = try pasta()
+        defer { try? FileManager.default.removeItem(at: raiz) }
+        let url = DefinicoesPartilhadas.url(raiz: raiz)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(#"{"contextoCurso":"Mestrado em Gestão","duracaoCurso":1}"#.utf8).write(to: url)
+
+        let lidas = try #require(DefinicoesPartilhadas.ler(raiz: raiz))
+        #expect(lidas.contextoCurso == "Mestrado em Gestão")
+        #expect(lidas.duracaoCurso == 1)
+
+        // Os outros ficam como numa instalação nova.
+        let novo = definicoes().partilhadas
+        #expect(lidas.linguaApontamentos == novo.linguaApontamentos)
+        #expect(lidas.idiomaAulas == novo.idiomaAulas)
+        #expect(lidas.organizacao == novo.organizacao)
+        #expect(lidas.iniciosPeriodos == novo.iniciosPeriodos)
+    }
+
+    /// Um campo que esta versão não conhece (escrito por uma versão mais recente) é ignorado.
+    @Test func umCampoDesconhecidoEIgnorado() throws {
+        let raiz = try pasta()
+        defer { try? FileManager.default.removeItem(at: raiz) }
+        let url = DefinicoesPartilhadas.url(raiz: raiz)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(#"{"contextoCurso":"Fintech360","campoDoFuturo":true}"#.utf8).write(to: url)
+        #expect(DefinicoesPartilhadas.ler(raiz: raiz)?.contextoCurso == "Fintech360")
+    }
+
+    /// O que se escreve lê-se igual: a leitura tolerante não perde nada.
+    @Test func escreverELerDaOMesmo() throws {
+        let raiz = try pasta()
+        defer { try? FileManager.default.removeItem(at: raiz) }
+        let d = definicoes()
+        d.contextoCurso = "Licenciatura"
+        d.duracaoCurso = 3
+        d.iniciosPeriodos = try #require(CalendarioLetivo.opcoes.last?.inicios)
+        d.organizacao = try #require(OrganizacaoCurso.allCases.last)
+        try DefinicoesPartilhadas.escrever(d.partilhadas, raiz: raiz)
+        #expect(DefinicoesPartilhadas.ler(raiz: raiz) == d.partilhadas)
+    }
+
     @Test func valoresDesconhecidosNaoEstragamAsDefinicoes() throws {
         let d = definicoes()
         let antes = d.partilhadas
