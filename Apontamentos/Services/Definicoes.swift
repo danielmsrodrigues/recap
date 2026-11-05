@@ -175,7 +175,7 @@ final class Definicoes {
     var slidesIntervalo: Double { didSet { defaults.set(slidesIntervalo, forKey: "slidesIntervalo") } }
     var slidesMaximo: Int { didSet { defaults.set(slidesMaximo, forKey: "slidesMaximo") } }
     #endif
-    /// Vazio = `~/Aulas`.
+    /// A pasta das aulas, com todos os cursos. Vazio = a de `Disco.raizPorDefeito`.
     var pastaAulas: String { didSet { defaults.set(pastaAulas, forKey: "pastaAulas") } }
     var precosPersonalizados: [String: Preco] {
         didSet { defaults.set(try? JSONEncoder().encode(precosPersonalizados), forKey: "precosPersonalizados") }
