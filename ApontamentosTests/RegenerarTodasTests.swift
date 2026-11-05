@@ -11,8 +11,7 @@ struct RegenerarTodasTests {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["APONTAMENTOS_REGENERAR"] != nil), .timeLimit(.minutes(180)))
     func regeneraTodas() async throws {
         let definicoes = Definicoes()
-        let library = Library(raiz: definicoes.raizAulas, organizacao: definicoes.organizacao,
-                              iniciosPeriodos: definicoes.iniciosPeriodos, duracaoCurso: definicoes.duracaoCurso)
+        let library = Library(raiz: definicoes.raizAulas, preferenciasDeRecurso: definicoes.preferenciasAntigas)
         library.recarregar()
         let fichas = Fichas(library: library, definicoes: definicoes)
         let estudo = Estudo(library: library, definicoes: definicoes)

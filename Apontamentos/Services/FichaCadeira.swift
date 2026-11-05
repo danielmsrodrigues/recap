@@ -299,6 +299,8 @@ final class Fichas {
     /// Junta à ficha as aulas pendentes da cadeira. Se já estiver a correr, volta a ver no fim.
     func atualizar(nomeCadeira: String) {
         guard let cadeira = library.cadeira(nome: nomeCadeira) else { return }
+        // A ficha fica escrita na língua das preferências: sem elas lidas, seria a errada. Junta-se da próxima vez.
+        guard !library.preferenciasPorLer else { return }
         let chave = Self.chave(cadeira.pasta)
         guard emCurso[chave] == nil else { repetir.insert(chave); return }
         // Com o registo por ler, nada: todas as aulas pareceriam por juntar (um pedido ao Claude por aula).
@@ -362,10 +364,10 @@ final class Fichas {
         // Se a ficha mudar enquanto o Claude escreve (editada à mão), junta-se outra vez sobre a versão nova.
         for _ in 0..<3 {
             let base = FichaCadeira.lerFicha(cadeira.pasta)
-            let r = try await gerador.gerar(sistema: definicoes.prompt(FichaCadeira.sistema), conteudo: conteudo(base),
+            let r = try await gerador.gerar(sistema: library.prompt(FichaCadeira.sistema), conteudo: conteudo(base),
                                             aoRecomecar: {}, aoReceber: { _ in }, aoRepetir: { _, _, _ in })
             guard FichaCadeira.lerFicha(cadeira.pasta) == base else { continue }
-            let titulo = RotulosApontamentos.rotulo(FichaCadeira.tituloSeccao, definicoes.linguaApontamentos)
+            let titulo = RotulosApontamentos.rotulo(FichaCadeira.tituloSeccao, library.linguaApontamentos)
             try FichaCadeira.escreverFicha(FichaCadeira.limpar(r.markdown, titulo: titulo), em: cadeira.pasta)
             var registo = try FichaCadeira.registoParaAlterar(cadeira.pasta)
             registo.aulas[chave] = hash

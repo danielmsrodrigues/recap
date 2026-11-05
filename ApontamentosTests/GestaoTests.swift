@@ -91,7 +91,7 @@ struct GestaoTests {
         #expect(try semestres(.ano)["Álgebra"] == Semestre(ano: 2, numero: 0))
         #expect(try semestres(.anoESemestre)["Álgebra"] == Semestre(ano: 2, numero: 2))
 
-        lib.organizacao = .nenhuma
+        try lib.alterarPreferencias { $0.organizacaoCurso = .nenhuma }
         #expect(lib.semestres == [.todas])
         #expect(OrganizacaoCurso.nenhuma.opcoes(ate: 1).isEmpty)
         #expect(OrganizacaoCurso.ano.opcoes(ate: 1).count == 1)
@@ -118,17 +118,17 @@ struct GestaoTests {
 
         _ = try lib.criarAula(cadeira: "Contabilidade", titulo: "A", data: data("2027-03-02"), video: nil)
         _ = try lib.criarAula(cadeira: "Estratégia", titulo: "A", data: data("2027-09-20"), video: nil)
-        lib.iniciosPeriodos = [2, 8]
+        try lib.alterarPreferencias { $0.inicios = [2, 8] }
         #expect(lib.cadeira(nome: "Contabilidade")?.semestre == Semestre(ano: 1, numero: 1))
         #expect(lib.cadeira(nome: "Estratégia")?.semestre == Semestre(ano: 1, numero: 2))
 
-        lib.iniciosPeriodos = [9, 1, 4]
+        try lib.alterarPreferencias { $0.inicios = [9, 1, 4] }
         let estrategia = try #require(lib.cadeira(nome: "Estratégia"))
         #expect(lib.nome(estrategia.semestre) == "2.º ano · 1.º trimestre")
         #expect(lib.rotuloPeriodo == "Trimestre")
         #expect(lib.opcoesSemestre(estrategia).count == 12)
         // Um mestrado de um ano: as escolhas acabam no 2.º ano (o desta cadeira), não no 4.º.
-        lib.duracaoCurso = 1
+        try lib.alterarPreferencias { $0.duracao = 1 }
         #expect(lib.opcoesSemestre(estrategia).count == 6)
 
         #expect(CalendarioLetivo.descricao([9, 2]) == "1.º semestre de setembro a janeiro, 2.º de fevereiro a agosto")

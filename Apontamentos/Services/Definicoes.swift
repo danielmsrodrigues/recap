@@ -44,9 +44,9 @@ enum MotorTipo: String, CaseIterable, Identifiable, Sendable {
     #endif
 }
 
-/// As preferências de que o estudo precisa (os prompts das perguntas, exercícios e ligações, e a barra lateral),
-/// escritas pelo Mac em `_recap/definicoes.json`: o `UserDefaults` não passa para o iPad e o iPhone.
-/// As línguas e a organização vão pelo `rawValue`: um valor que a outra versão não conheça é ignorado.
+/// As preferências de um curso (para quem o Claude escreve, as línguas e a barra lateral), em `_recap/definicoes.json`:
+/// é daí que todos os aparelhos as leem, e só se grava quando alguém as muda (ver `Library.alterarPreferencias`).
+/// As línguas e a organização vão pelo `rawValue`: um valor que a outra versão não conheça é ignorado, mas não se perde.
 struct DefinicoesPartilhadas: Codable, Equatable, Sendable {
     var contextoCurso: String
     var linguaApontamentos: String
@@ -56,6 +56,40 @@ struct DefinicoesPartilhadas: Codable, Equatable, Sendable {
     var duracaoCurso: Int
 
     static let ficheiro = "definicoes.json"
+
+    /// Como numa instalação nova: espanhol e 4 anos, como até aqui.
+    static let porDefeito = DefinicoesPartilhadas(
+        contextoCurso: "", linguaApontamentos: LinguaApontamentos.ptPT.rawValue, idiomaAulas: IdiomaAula.espanhol.rawValue,
+        organizacao: OrganizacaoCurso.anoESemestre.rawValue, iniciosPeriodos: CalendarioLetivo.porDefeito, duracaoCurso: 4)
+
+    /// A língua em que o Claude escreve.
+    var lingua: LinguaApontamentos {
+        get { LinguaApontamentos(rawValue: linguaApontamentos) ?? .ptPT }
+        set { linguaApontamentos = newValue.rawValue }
+    }
+
+    /// A língua em que as aulas são dadas (o Whisper transcreve nela).
+    var idioma: IdiomaAula {
+        get { IdiomaAula(rawValue: idiomaAulas) ?? .espanhol }
+        set { idiomaAulas = newValue.rawValue }
+    }
+
+    var organizacaoCurso: OrganizacaoCurso {
+        get { OrganizacaoCurso(rawValue: organizacao) ?? .anoESemestre }
+        set { organizacao = newValue.rawValue }
+    }
+
+    /// Os meses em que começa cada período do ano letivo (`CalendarioLetivo`).
+    var inicios: [Int] {
+        get { CalendarioLetivo.valido(iniciosPeriodos) ? iniciosPeriodos : CalendarioLetivo.porDefeito }
+        set { iniciosPeriodos = newValue }
+    }
+
+    /// Anos do curso, para as escolhas manuais de ano de cada cadeira.
+    var duracao: Int {
+        get { max(1, duracaoCurso) }
+        set { duracaoCurso = newValue }
+    }
 
     static func url(raiz: URL) -> URL {
         raiz.appending(path: Disco.pastaSistema).appending(path: ficheiro)
@@ -78,19 +112,30 @@ struct DefinicoesPartilhadas: Codable, Equatable, Sendable {
 
 extension DefinicoesPartilhadas {
     /// Um campo em falta não invalida o ficheiro: sem isto, um campo novo fazia as versões anteriores lerem nil e
-    /// escreverem por cima. Na falta de um campo, os mesmos valores por defeito de `Definicoes`.
+    /// escreverem por cima. Na falta de um campo, o de `porDefeito`.
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        contextoCurso = try c.decodeIfPresent(String.self, forKey: .contextoCurso) ?? ""
-        linguaApontamentos = try c.decodeIfPresent(String.self, forKey: .linguaApontamentos) ?? LinguaApontamentos.ptPT.rawValue
-        idiomaAulas = try c.decodeIfPresent(String.self, forKey: .idiomaAulas) ?? IdiomaAula.espanhol.rawValue
-        organizacao = try c.decodeIfPresent(String.self, forKey: .organizacao) ?? OrganizacaoCurso.anoESemestre.rawValue
-        iniciosPeriodos = try c.decodeIfPresent([Int].self, forKey: .iniciosPeriodos) ?? CalendarioLetivo.porDefeito
-        duracaoCurso = try c.decodeIfPresent(Int.self, forKey: .duracaoCurso) ?? 4
+        let p = Self.porDefeito
+        contextoCurso = try c.decodeIfPresent(String.self, forKey: .contextoCurso) ?? p.contextoCurso
+        linguaApontamentos = try c.decodeIfPresent(String.self, forKey: .linguaApontamentos) ?? p.linguaApontamentos
+        idiomaAulas = try c.decodeIfPresent(String.self, forKey: .idiomaAulas) ?? p.idiomaAulas
+        organizacao = try c.decodeIfPresent(String.self, forKey: .organizacao) ?? p.organizacao
+        iniciosPeriodos = try c.decodeIfPresent([Int].self, forKey: .iniciosPeriodos) ?? p.iniciosPeriodos
+        duracaoCurso = try c.decodeIfPresent(Int.self, forKey: .duracaoCurso) ?? p.duracaoCurso
     }
 }
 
-/// Preferências da app em `UserDefaults`. A chave API fica na Keychain e o prompt num ficheiro.
+/// O ficheiro das preferências do curso existe mas ainda não se leu.
+enum ErroPreferencias: LocalizedError {
+    case porLer
+
+    var errorDescription: String? {
+        "As definições deste curso ainda não se leram: estão a chegar do iCloud, ou não se consegue ler o ficheiro _recap/definicoes.json. Tenta daqui a pouco."
+    }
+}
+
+/// As preferências deste aparelho em `UserDefaults`. A chave API fica na Keychain e o prompt num ficheiro.
+/// As de cada curso estão na `Library`.
 @MainActor @Observable
 final class Definicoes {
     static let modeloClaudePorDefeito = "claude-sonnet-5-5"
@@ -123,17 +168,6 @@ final class Definicoes {
     #endif
     /// Vazio = `~/Aulas`.
     var pastaAulas: String { didSet { defaults.set(pastaAulas, forKey: "pastaAulas") } }
-    var organizacao: OrganizacaoCurso { didSet { defaults.set(organizacao.rawValue, forKey: "organizacao") } }
-    /// Os meses em que começa cada período do ano letivo (`CalendarioLetivo`). Setembro e fevereiro por defeito.
-    var iniciosPeriodos: [Int] { didSet { defaults.set(iniciosPeriodos, forKey: "iniciosPeriodos") } }
-    /// Anos do curso, para as escolhas manuais de ano de cada cadeira. 4 por defeito, como até aqui.
-    var duracaoCurso: Int { didSet { defaults.set(duracaoCurso, forKey: "duracaoCurso") } }
-    /// A língua em que as aulas são dadas (o Whisper transcreve nela). Espanhol por defeito, como até aqui.
-    var idiomaAulas: IdiomaAula { didSet { defaults.set(idiomaAulas.rawValue, forKey: "idiomaAulas") } }
-    /// O curso, para o Claude saber para quem escreve: "licenciatura em X, 1.º ano, universidade Y". Vazio = genérico.
-    var contextoCurso: String { didSet { defaults.set(contextoCurso, forKey: "contextoCurso") } }
-    /// A língua em que o Claude escreve. Português de Portugal por defeito, como até aqui.
-    var linguaApontamentos: LinguaApontamentos { didSet { defaults.set(linguaApontamentos.rawValue, forKey: "linguaApontamentos") } }
     var precosPersonalizados: [String: Preco] {
         didSet { defaults.set(try? JSONEncoder().encode(precosPersonalizados), forKey: "precosPersonalizados") }
     }
@@ -153,13 +187,6 @@ final class Definicoes {
         modeloWhisper = defaults.string(forKey: "modeloWhisper").flatMap(WhisperModelo.init) ?? .largeV3Turbo
         #endif
         pastaAulas = defaults.string(forKey: "pastaAulas") ?? ""
-        organizacao = defaults.string(forKey: "organizacao").flatMap(OrganizacaoCurso.init) ?? .anoESemestre
-        iniciosPeriodos = (defaults.array(forKey: "iniciosPeriodos") as? [Int]).flatMap { CalendarioLetivo.valido($0) ? $0 : nil }
-            ?? CalendarioLetivo.porDefeito
-        duracaoCurso = max(1, defaults.object(forKey: "duracaoCurso") as? Int ?? 4)
-        idiomaAulas = defaults.string(forKey: "idiomaAulas").flatMap(IdiomaAula.init) ?? .espanhol
-        contextoCurso = defaults.string(forKey: "contextoCurso") ?? ""
-        linguaApontamentos = defaults.string(forKey: "linguaApontamentos").flatMap(LinguaApontamentos.init) ?? .ptPT
         #if os(macOS)
         let padrao = ConfigSlides()
         slidesLimiar = defaults.object(forKey: "slidesLimiar") as? Double ?? padrao.limiar
@@ -181,35 +208,18 @@ final class Definicoes {
 
     var tabelaPrecos: TabelaPrecos { TabelaPrecos(personalizados: precosPersonalizados) }
 
-    var partilhadas: DefinicoesPartilhadas {
-        DefinicoesPartilhadas(contextoCurso: contextoCurso, linguaApontamentos: linguaApontamentos.rawValue,
-                              idiomaAulas: idiomaAulas.rawValue, organizacao: organizacao.rawValue,
-                              iniciosPeriodos: iniciosPeriodos, duracaoCurso: duracaoCurso)
+    /// O que as versões anteriores guardavam neste aparelho. Só serve de recurso a uma pasta sem `definicoes.json`
+    /// (ver `Library`); as chaves ficam, para a app poder voltar a uma versão anterior.
+    var preferenciasAntigas: DefinicoesPartilhadas {
+        var p = DefinicoesPartilhadas.porDefeito
+        if let c = defaults.string(forKey: "contextoCurso") { p.contextoCurso = c }
+        if let l = defaults.string(forKey: "linguaApontamentos").flatMap(LinguaApontamentos.init) { p.lingua = l }
+        if let i = defaults.string(forKey: "idiomaAulas").flatMap(IdiomaAula.init) { p.idioma = i }
+        if let o = defaults.string(forKey: "organizacao").flatMap(OrganizacaoCurso.init) { p.organizacaoCurso = o }
+        if let m = defaults.array(forKey: "iniciosPeriodos") as? [Int], CalendarioLetivo.valido(m) { p.inicios = m }
+        if let d = defaults.object(forKey: "duracaoCurso") as? Int { p.duracao = max(1, d) }
+        return p
     }
-
-    /// Passa a usar as preferências escritas pelo Mac (no iPad e no iPhone, ao abrir a pasta).
-    func aplicar(_ p: DefinicoesPartilhadas) {
-        contextoCurso = p.contextoCurso
-        duracaoCurso = max(1, p.duracaoCurso)
-        if let l = LinguaApontamentos(rawValue: p.linguaApontamentos) { linguaApontamentos = l }
-        if let i = IdiomaAula(rawValue: p.idiomaAulas) { idiomaAulas = i }
-        if let o = OrganizacaoCurso(rawValue: p.organizacao) { organizacao = o }
-        if CalendarioLetivo.valido(p.iniciosPeriodos) { iniciosPeriodos = p.iniciosPeriodos }
-    }
-
-    /// Um prompt com os marcadores (`{{contexto}}`, `{{idioma}}`…) já substituídos pelo curso e pelas línguas escolhidos.
-    /// `idioma` é o da aula, quando não é o das Definições (uma cadeira dada noutra língua).
-    func prompt(_ texto: String, idioma: IdiomaAula? = nil) -> String {
-        ContextoCurso.aplicar(texto, idioma: idioma ?? idiomaAulas, contexto: contextoCurso, apontamentos: linguaApontamentos)
-    }
-
-    /// A língua em que a cadeira é dada: a dela, se a tiver, ou a das Definições.
-    func idioma(da cadeira: Cadeira?) -> IdiomaAula {
-        cadeira?.meta.idioma ?? idiomaAulas
-    }
-
-    /// O prompt de sistema dos apontamentos de uma aula transcrita em `idioma`, pronto a enviar.
-    func promptApontamentos(idioma: IdiomaAula) -> String { prompt(PromptStore.ler(), idioma: idioma) }
 
     #if os(macOS)
     func configSlides(regiao: RegiaoIgnorar) -> ConfigSlides {

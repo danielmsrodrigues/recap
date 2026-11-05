@@ -8,7 +8,6 @@ struct AulaLeitura: View {
     @Environment(Library.self) private var library
     @Environment(Navegacao.self) private var navegacao
     @Environment(Estudo.self) private var estudo
-    @Environment(Definicoes.self) private var definicoes
     @Environment(\.horizontalSizeClass) private var largura
     /// Só no iPhone: marcar dentro da aula mostra o aviso com a próxima.
     @Environment(AvisoRevista.self) private var aviso: AvisoRevista?
@@ -171,7 +170,7 @@ struct AulaLeitura: View {
         ToolbarItem(placement: .primaryAction) {
             Menu("Mais", systemImage: "ellipsis") {
                 Button("Ouvir a aula", systemImage: "headphones") {
-                    if let markdown { leitor.comecar(markdown, idioma: TextoFalado.idiomaVoz(definicoes.linguaApontamentos)) }
+                    if let markdown { leitor.comecar(markdown, idioma: TextoFalado.idiomaVoz(library.linguaApontamentos)) }
                 }
                 .disabled(markdown == nil)
                 Button("Transcrição, slides e materiais", systemImage: "doc.text.magnifyingglass") { verCompleta = true }
