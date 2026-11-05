@@ -11,6 +11,9 @@ enum Novidades {
     }
 
     static let todas: [Versao] = [
+        Versao(numero: "1.18", data: "5 de novembro de 2026", itens: [
+            "Em Definições → Transcrição escolhes ao fim de quanto tempo de silêncio uma aula em direto termina sozinha, de 1 minuto a 1 hora. Numa aula com intervalos, escolhe mais tempo do que o intervalo mais longo. Vale também para a aula em curso.",
+        ]),
         Versao(numero: "1.17", data: "5 de novembro de 2026", itens: [
             "Vários cursos ao mesmo tempo: cada um com as suas cadeiras, aulas e definições, sem nunca se misturarem. Cria-se em Ficheiro → Novo curso…, e as aulas que já tens ficam onde estão.",
             "Muda-se de curso no topo da barra lateral, e em Ficheiro → Cursos… estão todos, a decorrer e concluídos. Uma aula a processar continua no curso dela.",
