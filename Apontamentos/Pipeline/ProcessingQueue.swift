@@ -47,6 +47,12 @@ final class ProcessingQueue {
         jobs.removeAll { $0.id == job.id }
     }
 
+    /// Tira os jobs parados (acabados ou falhados) cuja aula já não está naquele caminho: `Job.pastaAula` não muda, e
+    /// "Repetir" transcrevia e só falhava ao gravar. Uma captação por transcrever volta à fila ao abrir a app.
+    func removerSemPasta() {
+        jobs.removeAll { !$0.ativo && !FileManager.default.fileExists(atPath: $0.pastaAula.path) }
+    }
+
     private func avancar() {
         guard !aCorrer, !emEspera, let proximo = jobs.first(where: { $0.estado == .emEspera }) else {
             if !aCorrer, !jobs.contains(where: \.ativo) { runner.filaVazia() }

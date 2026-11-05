@@ -36,12 +36,14 @@ enum ErroCurso: LocalizedError, Equatable {
     case semNome
     case jaExiste(String)
     case aChegar(String)
+    case ocupado
 
     var errorDescription: String? {
         switch self {
         case .semNome: "O curso precisa de um nome."
         case .jaExiste(let nome): "Já existe um curso chamado \"\(nome)\"."
         case .aChegar(let nome): "\"\(nome)\" ainda está a chegar do iCloud. Tenta daqui a pouco."
+        case .ocupado: "Há trabalho em curso neste curso (uma resposta, a ficha da cadeira ou um pedido do iPhone). Tenta daqui a pouco."
         }
     }
 }
@@ -59,6 +61,8 @@ final class Biblioteca {
     private(set) var cursoEmFalta: String?
     /// Por id de curso. Só para o catálogo: enche-se com `atualizarResumos()`.
     private(set) var resumos: [String: ResumoCurso] = [:]
+    /// A converter o curso da raiz: as vistas fecham-se e a ponte com o iPhone para, para ninguém escrever no caminho antigo.
+    private(set) var aConverter = false
 
     @ObservationIgnored private let definicoes: Definicoes
     @ObservationIgnored private var servicosPorCurso: [String: ServicosCurso] = [:]
@@ -219,6 +223,53 @@ final class Biblioteca {
         recarregarCursos()
     }
 
+    #if os(macOS)
+    // MARK: Converter o curso da raiz
+
+    /// A conversão que ficou a meio, se houver.
+    var conversaoPorAcabar: ConversorCurso.Registo? { ConversorCurso.registo(raiz: raiz) }
+
+    /// Passa o curso da raiz para a sua pasta, ao lado dos outros (ver `ConversorCurso`), e abre-o. Quem chama garante
+    /// que não há aulas a processar nem captações. Devolve o que ficou por mudar: se não for vazio, fica por acabar.
+    func converterCursoDaRaiz(nome: String, captacoes: URL = CaptacaoGuardada.raizPorDefeito) async throws -> [String] {
+        let registo = conversaoPorAcabar
+        let nome = (registo?.nome ?? nome).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !nome.isEmpty else { throw ErroCurso.semNome }
+        let daRaiz = servicos(do: Self.cursoDaRaiz(raiz))
+        guard !daRaiz.estudo.temTrabalho, !daRaiz.fichas.temTrabalho, CaixaPedidos.porTratar(raiz).isEmpty else { throw ErroCurso.ocupado }
+        daRaiz.library.recarregar()
+        guard !daRaiz.library.preferenciasPorLer else { throw ErroPreferencias.porLer }
+        if registo == nil { try verificarNomeLivre(nome, exceto: Curso.idDaRaiz) }
+
+        aConverter = true
+        defer { aConverter = false }
+        // Dá tempo a fechar a aula aberta: o que se escreveu ainda vai para o caminho antigo, antes de ele mudar.
+        try? await Task.sleep(for: .milliseconds(200))
+        observador = nil
+        ativo.library.deixarDeVigiar()
+        let (pasta, preferencias) = (raiz, daRaiz.library.preferencias)
+        do {
+            let ficaram = try await Task.detached(priority: .userInitiated) {
+                try ConversorCurso.converter(raiz: pasta, nome: nome, preferencias: preferencias, captacoes: captacoes)
+            }.value
+            let id = registo?.destino ?? Disco.nomeDePasta(nome)
+            if ficaram.isEmpty { servicosPorCurso.removeValue(forKey: Curso.idDaRaiz) }
+            recarregarCursos()
+            if ficaram.isEmpty, let novo = cursos.first(where: { $0.id == id }) { abrir(novo) }
+            ativo.library.recarregar(forcar: true)
+            ativo.library.vigiar()
+            vigiar()
+            return ficaram
+        } catch {
+            recarregarCursos()
+            ativo.library.recarregar(forcar: true)
+            ativo.library.vigiar()
+            vigiar()
+            throw error
+        }
+    }
+    #endif
+
     // MARK: Abrir um curso
 
     /// Abre o curso e lembra-se dele neste aparelho.
@@ -257,8 +308,8 @@ final class Biblioteca {
     // MARK: A que curso pertence
 
     /// As pastas dos cursos, para quem tem de ver todos (os pedidos do iPad e do iPhone). A raiz vai sempre: um aparelho
-    /// com uma versão anterior pede por lá.
-    var raizesDosCursos: [URL] { [raiz] + cursos.filter { !$0.naRaiz }.map(\.pasta) }
+    /// com uma versão anterior pede por lá. Nenhuma durante uma conversão: as aulas estão a mudar de sítio.
+    var raizesDosCursos: [URL] { aConverter ? [] : [raiz] + cursos.filter { !$0.naRaiz }.map(\.pasta) }
 
     /// O curso a que pertence um caminho (a pasta de uma aula, ou a do próprio curso), pelo prefixo mais longo:
     /// a raiz contém os cursos novos. nil se não for de nenhum, em vez de um curso errado.

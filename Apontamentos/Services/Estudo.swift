@@ -342,6 +342,9 @@ final class Estudo {
 
     static func chave(_ aula: Aula, _ tipo: Tipo) -> Chave { Chave(pasta: aula.pasta.standardizedFileURL.path, tipo: tipo) }
 
+    /// Há algo a meio, que vai escrever nas pastas das aulas.
+    var temTrabalho: Bool { !emCurso.isEmpty || tarefaExame != nil || !tarefasGuia.isEmpty }
+
     func emCurso(_ aula: Aula, _ tipo: Tipo) -> EmCurso? { emCurso[Self.chave(aula, tipo)] }
     func erro(_ aula: Aula, _ tipo: Tipo) -> String? { erros[Self.chave(aula, tipo)] }
 

@@ -288,6 +288,9 @@ final class Fichas {
 
     static func chave(_ cadeira: URL) -> String { cadeira.standardizedFileURL.path }
 
+    /// Há uma ficha a meio, que vai ser escrita na pasta da cadeira.
+    var temTrabalho: Bool { !emCurso.isEmpty }
+
     func aAtualizar(_ cadeira: Cadeira) -> String? { emCurso[Self.chave(cadeira.pasta)] }
     func erro(_ cadeira: Cadeira) -> String? { erros[Self.chave(cadeira.pasta)] }
 
