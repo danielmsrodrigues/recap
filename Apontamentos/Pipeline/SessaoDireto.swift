@@ -39,7 +39,7 @@ final class SessaoDireto {
     var escolherJanela = false
     private var aMudarJanela = false
 
-    private var pastaAula: URL?
+    private(set) var pastaAula: URL?
     private var gerarApontamentos = true
     private var captura: (any Captacao)?
     private let criarCaptacao: (EventosCaptacao) -> any Captacao

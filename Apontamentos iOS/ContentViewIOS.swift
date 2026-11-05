@@ -6,6 +6,7 @@ struct ContentViewIOS: View {
     @State private var biblioteca: Biblioteca
     @State private var definicoes: Definicoes
     @State private var verDefinicoes = false
+    @State private var verCursos = false
     @Environment(\.scenePhase) private var fase
 
     init(raiz: URL) {
@@ -20,18 +21,29 @@ struct ContentViewIOS: View {
             .id(curso.id)
             // Depois de uma atualização pelo TestFlight, uma vez: o que há de novo.
             .modifier(ComNovidades())
+            .environment(biblioteca)
             .environment(curso.library)
             .environment(definicoes)
             .environment(curso.estudo)
             .environment(curso.fichas)
+            .task { biblioteca.vigiar() }
             .task(id: curso.id) { curso.library.vigiar() }
-            // A pasta e as preferências do curso podem ter mudado no Mac desde a última vez.
-            .onChange(of: fase) { if fase == .active { curso.library.recarregar(forcar: true) } }
+            // Os cursos, a pasta e as preferências do curso podem ter mudado no Mac desde a última vez.
+            .onChange(of: fase) {
+                guard fase == .active else { return }
+                biblioteca.recarregarCursos()
+                biblioteca.ativo.library.recarregar(forcar: true)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .abrirDefinicoes)) { _ in verDefinicoes = true }
+            .onReceive(NotificationCenter.default.publisher(for: .abrirCursos)) { _ in verCursos = true }
             .sheet(isPresented: $verDefinicoes) {
                 DefinicoesIOS()
                     .environment(biblioteca)
                     .environment(definicoes)
+            }
+            .sheet(isPresented: $verCursos) {
+                CatalogoCursosView()
+                    .environment(biblioteca)
             }
     }
 }

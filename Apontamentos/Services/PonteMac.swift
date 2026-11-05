@@ -55,6 +55,8 @@ final class PonteMac {
         func estado(_ fase: EstadoPedidoMac.Fase, texto: String? = nil, erro: String? = nil) {
             try? CaixaPedidos.escreverEstado(EstadoPedidoMac(fase: fase, texto: texto, erro: erro), id: pedido.id, raiz: raiz)
         }
+        // Um curso que não está aberto não vigia a pasta: o que foi feito no iPhone só se vê relendo.
+        curso.library.recarregar()
         guard let aula = CaixaPedidos.aula(pedido, em: curso.library) else {
             estado(.erro, erro: "Esta aula não está no Mac (ou ainda não chegou pelo iCloud).")
             return

@@ -3,6 +3,7 @@ import SwiftUI
 /// O iPad: as três colunas do Mac. À esquerda, Por rever, Todas as aulas e as cadeiras; ao meio, as aulas; à
 /// direita, a aula para ler (ou "Sobre a cadeira").
 struct TabletView: View {
+    @Environment(Biblioteca.self) private var biblioteca
     @Environment(Library.self) private var library
     @Environment(Navegacao.self) private var navegacao
     var inicial: URL?
@@ -97,12 +98,13 @@ struct TabletView: View {
             }
         }
         .refreshable { library.recarregar(forcar: true) }
-        .navigationTitle("Recap")
+        .navigationTitle(biblioteca.cursos.count > 1 ? biblioteca.cursoAtivo.nome : "Recap")
         .searchable(text: $termo, placement: .sidebar, prompt: "Procurar")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button("Definições", systemImage: "gearshape") { NotificationCenter.default.post(name: .abrirDefinicoes, object: nil) }
             }
+            ToolbarItem(placement: .topBarLeading) { SeletorCurso() }
             ToolbarItem(placement: .topBarTrailing) { SeletorSemestre(semestre: $semestre) }
         }
     }

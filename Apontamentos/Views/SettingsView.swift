@@ -2,9 +2,12 @@ import SwiftUI
 
 /// Geral (pasta, organização, curso e língua) · Claude (motor, modelo, prompt) · Transcrição · Slides.
 struct SettingsView: View {
+    @Environment(Library.self) private var library
+
     var body: some View {
         TabView {
-            Tab("Geral", systemImage: "gearshape") { GeralSettings() }
+            // Com o `.id`, mudar de curso com as Definições abertas não leva um texto a meio para o curso novo.
+            Tab("Geral", systemImage: "gearshape") { GeralSettings().id(ObjectIdentifier(library)) }
             Tab("Claude", systemImage: "sparkles") { ClaudeSettings() }
             Tab("Transcrição", systemImage: "waveform") { TranscricaoSettings() }
             Tab("Slides", systemImage: "rectangle.on.rectangle") { SlidesSettings() }
@@ -118,13 +121,13 @@ private struct GeralSettings: View {
             Button("Usar a pasta sem mover") { mudar(para: url, mover: false) }
             Button("Cancelar", role: .cancel) {}
         } message: { url in
-            Text("As \(library.cadeiras.count) cadeiras de \((biblioteca.raiz.path as NSString).abbreviatingWithTildeInPath) passam para \((url.path as NSString).abbreviatingWithTildeInPath). Sem mover, o Recap passa a ler só a pasta nova e as aulas atuais ficam onde estão.")
+            Text("\(biblioteca.cursos.count > 1 ? "Os \(biblioteca.cursos.count) cursos" : "As \(library.cadeiras.count) cadeiras") de \((biblioteca.raiz.path as NSString).abbreviatingWithTildeInPath) passam para \((url.path as NSString).abbreviatingWithTildeInPath). Sem mover, o Recap passa a ler só a pasta nova e as aulas atuais ficam onde estão.")
         }
     }
 
     private func pedir(_ url: URL) {
         guard !url.mesmoCaminho(biblioteca.raiz) else { return }
-        if library.cadeiras.isEmpty { mudar(para: url, mover: false) } else { nova = url }
+        if biblioteca.cursos.count == 1, library.cadeiras.isEmpty { mudar(para: url, mover: false) } else { nova = url }
     }
 
     private func mudar(para url: URL, mover: Bool) {

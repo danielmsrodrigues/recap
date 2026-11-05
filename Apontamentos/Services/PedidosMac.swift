@@ -35,7 +35,9 @@ enum CaixaPedidos {
     static func url(_ id: UUID, raiz: URL) -> URL { pasta(raiz).appending(path: "\(id.uuidString).json") }
     static func urlEstado(_ id: UUID, raiz: URL) -> URL { pasta(raiz).appending(path: "\(id.uuidString).estado.json") }
 
+    /// Num curso que foi apagado noutro aparelho falha: criar a pasta dos pedidos trazia o curso de volta, vazio.
     static func enviar(_ pedido: PedidoMac, raiz: URL) throws {
+        guard FileManager.default.fileExists(atPath: raiz.path) else { throw CocoaError(.fileNoSuchFile) }
         try FileManager.default.createDirectory(at: pasta(raiz), withIntermediateDirectories: true)
         try Disco.escrever(pedido, em: url(pedido.id, raiz: raiz))
     }

@@ -149,7 +149,7 @@ final class Definicoes {
         ("claude-haiku-5-5", "Haiku 5.5 (rápido e barato)"),
     ]
 
-    private let defaults: UserDefaults
+    let defaults: UserDefaults
 
     var motor: MotorTipo { didSet { defaults.set(motor.rawValue, forKey: "motor") } }
     #if os(macOS)

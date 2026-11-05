@@ -14,4 +14,6 @@ struct LigacaoDefinicoes: View {
 extension Notification.Name {
     /// Pedido para abrir as Definições (no iOS não há `SettingsLink`).
     static let abrirDefinicoes = Notification.Name("abrirDefinicoes")
+    /// Pedido para abrir o catálogo dos cursos.
+    static let abrirCursos = Notification.Name("abrirCursos")
 }

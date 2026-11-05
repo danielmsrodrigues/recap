@@ -20,6 +20,8 @@ final class Library {
     /// Aulas que existem mas cujo `aula.json` está só no iCloud: ainda não se sabe o título nem a data, por isso não
     /// entram em `cadeiras`. Vêm sozinhas (ver `trazerAulasDaNuvem`); até lá a barra lateral avisa.
     private(set) var aulasNaNuvem = 0
+    /// Criar a pasta se ela faltar. Não num curso que pode ter sido apagado noutro aparelho: voltava como curso fantasma.
+    private let criarRaiz: Bool
     private let porDescarregar: @Sendable (URL) -> Bool
     private let trazer: @Sendable (URL) throws -> Void
     private let esperaAoFalhar: Duration
@@ -27,10 +29,11 @@ final class Library {
     /// Avisa quando outro dispositivo (pelo iCloud Drive) ou outra app muda a pasta. Só depois de `vigiar()`.
     @ObservationIgnored private var observador: ObservadorPasta?
 
-    init(raiz: URL = Disco.raizPorDefeito, preferenciasDeRecurso: DefinicoesPartilhadas = .porDefeito,
+    init(raiz: URL = Disco.raizPorDefeito, criarRaiz: Bool = true, preferenciasDeRecurso: DefinicoesPartilhadas = .porDefeito,
          porDescarregar: @escaping @Sendable (URL) -> Bool = { Disco.porDescarregar($0) },
          trazer: @escaping @Sendable (URL) throws -> Void = { try Disco.trazer($0) },
          esperaAoFalhar: Duration = .seconds(30)) {
+        self.criarRaiz = criarRaiz
         self.porDescarregar = porDescarregar
         self.trazer = trazer
         self.esperaAoFalhar = esperaAoFalhar
@@ -106,7 +109,7 @@ final class Library {
     func recarregar(forcar: Bool = false) {
         lerPreferencias()
         do {
-            try FileManager.default.createDirectory(at: raiz, withIntermediateDirectories: true)
+            if criarRaiz { try FileManager.default.createDirectory(at: raiz, withIntermediateDirectories: true) }
             let novas = try Self.ler(raiz: raiz, organizacao: organizacao, inicios: iniciosPeriodos)
             let mudou = novas != cadeiras || erro != nil
             cadeiras = novas
@@ -172,6 +175,11 @@ final class Library {
     /// Passa a reler sozinha quando a pasta muda fora da app (por exemplo o iCloud a trazer o que se fez no iPad).
     func vigiar() {
         observador = ObservadorPasta(raiz) { [weak self] in self?.recarregar(forcar: true) }
+    }
+
+    /// Um curso que deixou de estar aberto não precisa de reler a pasta a cada mudança: relê-se quando volta a abrir.
+    func deixarDeVigiar() {
+        observador = nil
     }
 
     /// Move cada pasta de `origem` para `destino`. Recusa antes de mexer em nada se uma já existir lá

@@ -12,6 +12,7 @@ import CoreServices
 final class ObservadorPasta {
     private let aoMudar: @MainActor () -> Void
     private let raiz: URL
+    private let aIgnorar: @Sendable (String, URL) -> Bool
     private var pendente: Task<Void, Never>?
     #if os(macOS)
     private var stream: FSEventStreamRef?
@@ -20,15 +21,26 @@ final class ObservadorPasta {
     #endif
 
     /// Os pedidos entre o iPhone e o Mac mudam a cada poucos segundos enquanto o Mac responde, e cada lado já os vigia
-    /// sozinho (`PonteMac`, `Estudo`): não obrigam a reler a biblioteca toda.
+    /// sozinho (`PonteMac`, `Estudo`): não obrigam a reler a biblioteca toda. Os outros cursos também não: estão dentro
+    /// de `_recap` da pasta das aulas, mas cada um é vigiado quando está aberto.
     nonisolated static func ignorar(_ caminho: String, raiz: URL) -> Bool {
-        let pedidos = raiz.appending(path: Disco.pastaSistema).appending(path: "pedidos").standardizedFileURL.path
-        return caminho == pedidos || caminho.hasPrefix(pedidos + "/")
+        let sistema = raiz.appending(path: Disco.pastaSistema)
+        return ["pedidos", Disco.pastaCursos].contains { nome in
+            let pasta = sistema.appending(path: nome).standardizedFileURL.path
+            return caminho == pasta || caminho.hasPrefix(pasta + "/")
+        }
     }
 
-    init(_ raiz: URL, aoMudar: @escaping @MainActor () -> Void) {
+    /// Para o catálogo dos cursos, que vigia a pasta das aulas toda: só os pedidos, de qualquer curso, não contam.
+    nonisolated static func ignorarNoCatalogo(_ caminho: String, raiz: URL) -> Bool {
+        caminho.hasSuffix("/\(Disco.pastaSistema)/pedidos") || caminho.contains("/\(Disco.pastaSistema)/pedidos/")
+    }
+
+    init(_ raiz: URL, ignorar: @escaping @Sendable (String, URL) -> Bool = ObservadorPasta.ignorar,
+         aoMudar: @escaping @MainActor () -> Void) {
         self.aoMudar = aoMudar
         self.raiz = raiz
+        aIgnorar = ignorar
         #if os(macOS)
         var contexto = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
         let chamada: FSEventStreamCallback = { _, info, _, caminhos, _, _ in
@@ -36,7 +48,7 @@ final class ObservadorPasta {
             let observador = Unmanaged<ObservadorPasta>.fromOpaque(info).takeUnretainedValue()
             let lista = (Unmanaged<CFArray>.fromOpaque(caminhos).takeUnretainedValue() as? [String]) ?? []
             MainActor.assumeIsolated {
-                guard lista.isEmpty || lista.contains(where: { !ObservadorPasta.ignorar($0, raiz: observador.raiz) }) else { return }
+                guard lista.isEmpty || lista.contains(where: { !observador.aIgnorar($0, observador.raiz) }) else { return }
                 observador.mudou()
             }
         }
@@ -48,7 +60,7 @@ final class ObservadorPasta {
         }
         #else
         let p = Presenter(raiz) { [weak self] url in
-            guard !Disco.gravadoHaPouco(url), !Self.ignorar(url.standardizedFileURL.path, raiz: raiz) else { return }
+            guard !Disco.gravadoHaPouco(url), !ignorar(url.standardizedFileURL.path, raiz) else { return }
             self?.mudou()
         }
         NSFileCoordinator.addFilePresenter(p)

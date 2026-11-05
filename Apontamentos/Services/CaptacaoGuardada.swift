@@ -74,6 +74,21 @@ struct CaptacaoGuardada: Sendable {
         }
     }
 
+    /// Uma captação cuja aula mudou de sítio passa a apontar para onde ela está agora (`procurar`, com o caminho antigo).
+    /// Corre antes de `pendentes`, para ela voltar à fila em vez de ficar à espera dos 30 dias.
+    static func realojar(em raiz: URL = raizPorDefeito, procurar: (URL) -> URL?) {
+        let pastas = (try? FileManager.default.contentsOfDirectory(at: raiz, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
+        for pasta in pastas {
+            let c = CaptacaoGuardada(pasta: pasta)
+            guard let dados = try? Data(contentsOf: c.urlFicha), var ficha = try? JSONDecoder().decode(Ficha.self, from: dados),
+                  FileManager.default.fileExists(atPath: c.audio.path),
+                  !FileManager.default.fileExists(atPath: ficha.pastaAula.path),
+                  let nova = procurar(ficha.pastaAula) else { continue }
+            ficha.pastaAula = nova
+            try? c.guardar(ficha)
+        }
+    }
+
     /// Lida do disco, não do `URL`, que guarda em cache a data.
     private var dataDoAudio: Date? {
         (try? FileManager.default.attributesOfItem(atPath: audio.path))?[.modificationDate] as? Date

@@ -11,6 +11,7 @@ enum FiltroAulas: Hashable {
 /// A barra lateral: as listas (Início, Todas as aulas, Por rever, Esta semana), as cadeiras do semestre com a sua
 /// cor e a fila de processamento. Em baixo, o semestre e o "+".
 struct BarraLateral: View {
+    @Environment(Biblioteca.self) private var biblioteca
     @Environment(Library.self) private var library
     @Environment(ProcessingQueue.self) private var fila
     @Environment(Fichas.self) private var fichas
@@ -31,8 +32,16 @@ struct BarraLateral: View {
         fila.jobs.filter { $0.estado != .concluido && $0.estado != .cancelado }
     }
 
+    /// A fila é uma só, mas a vista é de um curso: os outros só contam.
+    private var jobsDoCurso: [Job] {
+        jobsPorAcabar.filter { biblioteca.curso(de: $0.pastaAula)?.id == biblioteca.cursoAtivo.id }
+    }
+
     var body: some View {
         List(selection: Binding<FiltroAulas?>(get: { filtro }, set: { if let f = $0 { filtro = f } })) {
+            if biblioteca.cursos.count > 1 {
+                Section { SeletorCurso() }
+            }
             Section {
                 Label("Início", systemImage: "house").tag(FiltroAulas.inicio)
                 Label("Calendário", systemImage: "calendar").tag(FiltroAulas.calendario)
@@ -70,15 +79,27 @@ struct BarraLateral: View {
                 }
             }
             if !jobsPorAcabar.isEmpty {
+                let doCurso = jobsDoCurso
+                let noutros = jobsPorAcabar.count - doCurso.count
                 Section("Fila") {
-                    ForEach(jobsPorAcabar) { job in
+                    ForEach(doCurso) { job in
                         Button { aoAbrirAula(job.pastaAula) } label: { LinhaJob(job: job).contentShape(.rect) }
                             .buttonStyle(.plain)
+                    }
+                    if noutros > 0 {
+                        Label(noutros == 1 ? "1 aula noutro curso" : "\(noutros) aulas noutros cursos", systemImage: "arrow.triangle.2.circlepath")
+                            .foregroundStyle(.secondary)
+                            .font(.caption)
                     }
                 }
             }
             if let erro = library.erro {
                 Text(erro).foregroundStyle(.red).font(.caption)
+            }
+            if let falta = biblioteca.cursoEmFalta {
+                Label("\"\(falta)\" ainda não chegou a este Mac", systemImage: "icloud.and.arrow.down")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
             }
             if library.aulasNaNuvem > 0 {
                 Label(library.aulasNaNuvem == 1 ? "1 aula a chegar do iCloud…" : "\(library.aulasNaNuvem) aulas a chegar do iCloud…", systemImage: "icloud.and.arrow.down")
