@@ -23,6 +23,7 @@ if [[ -n "${RECAP_ASC_CHAVE:-}" ]]; then
                 -authenticationKeyIssuerID "${RECAP_ASC_EMISSOR:?falta RECAP_ASC_EMISSOR}")
 fi
 
+mkdir -p build
 arquivo=build/RecapIOS.xcarchive
 rm -rf "$arquivo" build/RecapIOS-envio
 registo=build/RecapIOS.log
