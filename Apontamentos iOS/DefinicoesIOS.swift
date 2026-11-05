@@ -8,6 +8,7 @@ struct DefinicoesIOS: View {
     @Environment(PastaAulas.self) private var pasta
     @Environment(\.dismiss) private var dismiss
     @State private var mudarPasta = false
+    @State private var verCursos = false
     @State private var chave = ""
     @State private var erro: String?
 
@@ -26,6 +27,12 @@ struct DefinicoesIOS: View {
                     Text("Aulas")
                 } footer: {
                     Text("A pasta Recap do iCloud Drive é a mesma no Mac, no iPhone e no iPad: as aulas aparecem sozinhas em todos.")
+                }
+
+                Section {
+                    Button("Cursos…") { verCursos = true }
+                } footer: {
+                    Text("Cada aparelho abre o seu curso. Os cursos criam-se no Recap do Mac.")
                 }
 
                 Section {
@@ -86,6 +93,10 @@ struct DefinicoesIOS: View {
             }
             .fileImporter(isPresented: $mudarPasta, allowedContentTypes: [.folder]) { resultado in
                 do { try pasta.escolher(resultado.get()) } catch { erro = error.localizedDescription }
+            }
+            .sheet(isPresented: $verCursos) {
+                CatalogoCursosView()
+                    .environment(biblioteca)
             }
         }
     }

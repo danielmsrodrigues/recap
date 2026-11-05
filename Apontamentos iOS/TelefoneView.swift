@@ -109,6 +109,7 @@ struct TelefoneView: View {
 
 /// Hoje: continuar a ler, as aulas por rever e as mais recentes, do semestre escolhido.
 private struct HojeView: View {
+    @Environment(Biblioteca.self) private var biblioteca
     @Environment(Library.self) private var library
     @AppStorage("ultimaAulaLida") private var ultimaLida = ""
     @Binding var semestre: Semestre?
@@ -116,6 +117,12 @@ private struct HojeView: View {
 
     private var cadeiras: [Cadeira] { library.cadeiras(no: semestre) }
     private var porRever: [Aula] { Revisao.porRever(cadeiras) }
+
+    /// O dia e, com mais de um curso, de qual: no iPhone o seletor é só um ícone.
+    private var subtitulo: String {
+        let dia = Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide).locale(Locale(identifier: "pt_PT")))
+        return biblioteca.cursos.count > 1 ? "\(biblioteca.cursoAtivo.nome) · \(dia)" : dia
+    }
 
     /// A última aula aberta, se ainda estiver por rever; senão, a mais recente por rever.
     private var continuar: Aula? {
@@ -175,11 +182,12 @@ private struct HojeView: View {
         }
         .refreshable { library.recarregar(forcar: true) }
         .navigationTitle("Hoje")
-        .navigationSubtitle(Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide).locale(Locale(identifier: "pt_PT"))))
+        .navigationSubtitle(subtitulo)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button("Definições", systemImage: "gearshape") { NotificationCenter.default.post(name: .abrirDefinicoes, object: nil) }
             }
+            ToolbarItem(placement: .topBarLeading) { SeletorCurso().labelStyle(.iconOnly) }
             ToolbarItem(placement: .topBarTrailing) { SeletorSemestre(semestre: $semestre) }
         }
     }

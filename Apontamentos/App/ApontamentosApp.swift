@@ -20,17 +20,18 @@ struct ApontamentosApp: App {
         _ponte = State(initialValue: ponte)
         let fila = ProcessingQueue(runner: PipelineRunner(biblioteca: biblioteca, definicoes: definicoes))
         _fila = State(initialValue: fila)
-        Self.recuperarCaptacoes(fila)
+        Self.recuperarCaptacoes(fila, biblioteca: biblioteca)
         // O painel Estudo abre sempre ao arrancar; fechá-lo só vale até sair da app.
         UserDefaults.standard.set(true, forKey: "mostrarEstudo")
     }
 
     /// Uma aula captada em direto que ficou por transcrever (a app fechou-se antes, ou a meio) volta à fila.
     /// Não nos testes nem com uma pasta de testes (`APONTAMENTOS_RAIZ`): as captações são as da pessoa.
-    private static func recuperarCaptacoes(_ fila: ProcessingQueue) {
+    private static func recuperarCaptacoes(_ fila: ProcessingQueue, biblioteca: Biblioteca) {
         let ambiente = ProcessInfo.processInfo.environment
         guard ambiente["XCTestConfigurationFilePath"] == nil, ambiente["APONTAMENTOS_RAIZ"] == nil else { return }
         CaptacaoGuardada.limparTemporariasAntigas()
+        CaptacaoGuardada.realojar { biblioteca.procurarAula($0) }
         let existe = { (u: URL) in FileManager.default.fileExists(atPath: u.path) }
         for (c, ficha) in CaptacaoGuardada.pendentes(aulaExiste: existe) {
             fila.adicionar(Job(pastaAula: ficha.pastaAula, titulo: ficha.titulo, video: nil, gerarApontamentos: ficha.gerarApontamentos,
@@ -58,6 +59,7 @@ struct ApontamentosApp: App {
         Window("Em direto", id: "direto") {
             DiretoView()
                 .environment(direto)
+                .environment(biblioteca)
         }
         .windowResizability(.contentSize)
         .windowLevel(.floating)
@@ -81,6 +83,8 @@ struct ApontamentosApp: App {
                     .keyboardShortcut("o")
                 Divider()
                 Button("Nova cadeira…") { NotificationCenter.default.post(name: .novaCadeira, object: nil) }
+                Divider()
+                Button("Cursos…") { NotificationCenter.default.post(name: .abrirCursos, object: nil) }
             }
             CommandGroup(after: .textEditing) {
                 ComandoProcurar()

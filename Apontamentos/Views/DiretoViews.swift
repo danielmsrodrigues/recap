@@ -160,6 +160,7 @@ struct ConfigDiretoSheet: View {
 /// Janela pequena que fica por cima enquanto a aula está a ser captada.
 struct DiretoView: View {
     @Environment(SessaoDireto.self) private var sessao
+    @Environment(Biblioteca.self) private var biblioteca
     @Environment(\.dismissWindow) private var dismissWindow
     @State private var confirmarDescarte = false
 
@@ -181,6 +182,10 @@ struct DiretoView: View {
                     .frame(width: 10, height: 10)
                 Text(titulo).font(.headline).lineLimit(1)
                 Spacer()
+            }
+            // Pode-se mudar de curso a meio de uma aula: esta continua a ser deste.
+            if biblioteca.cursos.count > 1, let pasta = sessao.pastaAula, let curso = biblioteca.curso(de: pasta) {
+                Label(curso.nome, systemImage: "graduationcap").font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
 
             switch sessao.estado {
