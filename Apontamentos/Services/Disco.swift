@@ -1,14 +1,16 @@
 import Foundation
 import Synchronization
 
-/// Leitura e escrita dos ficheiros de uma aula. `~/Aulas` é a fonte de verdade:
+/// Leitura e escrita dos ficheiros de uma aula. As pastas são a fonte de verdade. Dentro de um curso:
 ///
-///     ~/Aulas/<cadeira>/cadeira.json
-///     ~/Aulas/<cadeira>/<aaaa-mm-dd>_<título>/aula.json
-///                                             transcricao.json
-///                                             transcricao.txt
-///                                             apontamentos.md
-///                                             slides/
+///     <cadeira>/cadeira.json
+///     <cadeira>/<aaaa-mm-dd>_<título>/aula.json
+///                                     transcricao.json
+///                                     transcricao.txt
+///                                     apontamentos.md
+///                                     slides/
+///
+/// O curso é a pasta das aulas (o formato antigo) ou uma pasta em `<pasta das aulas>/_recap/cursos/` (ver `Curso`).
 enum Disco {
     static let aulaJSON = "aula.json"
     static let cadeiraJSON = "cadeira.json"
@@ -22,7 +24,8 @@ enum Disco {
     /// Acima disto (somando os PDFs do professor) o pedido ao Claude fica demasiado grande (o limite é ~32 MB no total).
     static let tamanhoMaximoPDF = 24 * 1_048_576
     static let pastaSlides = "slides"
-    /// Na raiz, ao lado das cadeiras: o que o Mac e o iPad/iPhone trocam (definições, pedidos ao Claude). Não é uma cadeira.
+    /// Em cada curso, ao lado das cadeiras: o que o Mac e o iPad/iPhone trocam (definições, pedidos ao Claude). Não é uma
+    /// cadeira. Na pasta das aulas, tem também os cursos novos, que assim as versões anteriores ignoram.
     /// Sem ponto no nome: o iCloud Drive pode não sincronizar pastas escondidas.
     static let pastaSistema = "_recap"
 

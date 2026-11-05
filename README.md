@@ -11,8 +11,9 @@ App para Mac que transforma aulas em apontamentos de estudo em português (PT-PT
   - procura em todas as aulas.
 - **Exportação:** apontamentos em PDF (para o Freeform, iPad…) ou em Markdown.
 - **iPad e iPhone:** tudo o que é estudo, com as aulas sincronizadas pelo iCloud Drive (ver abaixo). A gravação e a transcrição ficam no Mac.
+- **Vários cursos:** cada um com as suas cadeiras, aulas e definições, sem nunca se misturarem (ver abaixo).
 
-As aulas ficam em `~/Aulas/<cadeira>/<data>_<título>/`, em ficheiros normais. A pasta muda-se em Definições → Aulas (por exemplo para o iCloud Drive). Nada é enviado para lado nenhum além do pedido ao Claude.
+As aulas ficam em `~/Aulas/<cadeira>/<data>_<título>/`, ou na pasta Recap do iCloud Drive, em ficheiros normais. A pasta muda-se em Definições → Geral. Nada é enviado para lado nenhum além do pedido ao Claude.
 
 ## Requisitos
 
@@ -56,6 +57,28 @@ Na primeira abertura, a janela **Preparar o Recap** guia os três passos que fal
 - **Sobre a cadeira:** a primeira linha de cada cadeira na barra lateral. Junta numa ficha a avaliação, as datas, o programa e os avisos de todas as aulas, e vai crescendo a cada aula. Para começar já com o essencial, junta o programa da cadeira em PDF no menu **Programa**.
 - **Revisão:** o ponto azul na barra lateral marca as aulas por rever. Marca-as como revistas no botão do canto superior direito.
 
+## Vários cursos
+
+Se estás a fazer mais do que um curso, por exemplo um mestrado e uma especialização, cada um tem as suas cadeiras, aulas e definições. A vista é sempre de um curso: a procura, o calendário e os anos nunca misturam os dois.
+
+- **Criar um curso:** **Ficheiro → Novo curso…**. As aulas que já tens ficam onde estão.
+- **Mudar de curso:** o menu no topo da barra lateral, que só aparece com mais de um curso. Uma aula a processar continua no curso dela.
+- **Ver todos:** **Ficheiro → Cursos…**, com os cursos a decorrer e os concluídos. É aí que lhes mudas o nome e os marcas como concluídos.
+- **No iPad e no iPhone:** escolhes o curso e vês o catálogo; cada aparelho abre o seu. Criar e mudar o nome é só no Mac.
+
+Um curso é uma pasta com o formato de sempre:
+
+```
+<pasta das aulas>/
+  Finanças/                      ← um curso antigo: cadeiras diretamente na pasta
+  _recap/
+    cursos/
+      Fintech360/                ← um curso novo
+        Módulo 1/<data>_<título>/
+```
+
+O curso que já tinhas fica como está e continua a funcionar. Se preferires todos no mesmo formato, usa **Converter…** no catálogo, que só muda quando carregas no botão. Antes de converter, deixa o iCloud acabar de sincronizar e fecha o Recap no iPhone e no iPad. Se parar a meio, nada se perde e podes continuar.
+
 ## No iPad e no iPhone
 
 No iPad e no iPhone fazes tudo o que é estudo:
@@ -68,9 +91,9 @@ No iPad e no iPhone fazes tudo o que é estudo:
 
 Gravar e transcrever continua a ser só no Mac.
 
-1. **No Mac, põe as aulas no iCloud Drive:** em Definições → Aulas, escolhe uma pasta do iCloud Drive (por exemplo `iCloud Drive/Aulas`) e deixa o Recap movê-las.
-2. **Instala o Recap no iPad ou no iPhone pelo TestFlight:** pede o convite a quem publica.
-3. **Na primeira abertura, escolhe essa mesma pasta:** o Recap lembra-se dela.
+1. **Instala o Recap no iPad ou no iPhone pelo TestFlight:** pede o convite a quem publica.
+2. **Abre-o uma vez:** cria sozinho a pasta Recap no iCloud Drive.
+3. **No Mac, muda as aulas para lá:** o Início propõe-no com um botão. Também podes escolher outra pasta em Definições → Geral.
 
 As perguntas à aula, os exercícios e as ligações vão para o **Recap do Mac**, que responde com o Claude Code e a tua subscrição, sem custos extra:
 

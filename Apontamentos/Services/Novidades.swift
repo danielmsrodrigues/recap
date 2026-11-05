@@ -11,6 +11,12 @@ enum Novidades {
     }
 
     static let todas: [Versao] = [
+        Versao(numero: "1.17", data: "5 de novembro de 2026", itens: [
+            "Vários cursos ao mesmo tempo: cada um com as suas cadeiras, aulas e definições, sem nunca se misturarem. Cria-se em Ficheiro → Novo curso…, e as aulas que já tens ficam onde estão.",
+            "Muda-se de curso no topo da barra lateral, e em Ficheiro → Cursos… estão todos, a decorrer e concluídos. Uma aula a processar continua no curso dela.",
+            "No iPhone e no iPad, escolhes o curso e vês o catálogo. Cada aparelho abre o seu, e o Mac responde às perguntas em qualquer curso.",
+            "O áudio de uma aula por transcrever já não se perde se a cadeira mudar de nome: a aula é encontrada e volta à fila.",
+        ]),
         Versao(numero: "1.16", data: "3 de novembro de 2026", itens: [
             "Na barra lateral, cada cadeira mostra quantas aulas faltam rever, ou um visto quando já não falta nenhuma (no Mac).",
             "As aulas que o iCloud tira do Mac para poupar espaço voltam sozinhas à lista, em vez de desaparecerem, com um aviso enquanto chegam.",

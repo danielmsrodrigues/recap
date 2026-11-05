@@ -2,7 +2,7 @@ import Foundation
 import Observation
 import Synchronization
 
-/// Cadeiras, aulas e preferências lidas da pasta das aulas (`~/Aulas` por defeito). Não há base de dados: cada `recarregar()` volta a ler o disco.
+/// As cadeiras, as aulas e as preferências de um curso, lidas da pasta dele (ver `Biblioteca`). Não há base de dados: cada `recarregar()` volta a ler o disco.
 @MainActor @Observable
 final class Library {
     private(set) var raiz: URL
