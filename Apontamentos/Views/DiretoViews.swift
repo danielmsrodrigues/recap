@@ -97,7 +97,7 @@ struct ConfigDiretoSheet: View {
                     Toggle("Capturar os slides", isOn: $capturarSlides)
                     Toggle("Gerar apontamentos no fim", isOn: $gerarApontamentos)
                 } footer: {
-                    Text("Numa gravação, põe o leitor à velocidade escolhida aqui: assim os [mm:ss] batem com o minuto da aula. O Recap termina sozinho ao fim de 3 minutos de silêncio.")
+                    Text("Numa gravação, põe o leitor à velocidade escolhida aqui: assim os [mm:ss] batem com o minuto da aula. O Recap termina sozinho ao fim de \(Definicoes.nomeMinutos(Int(sessao.limiteSilencio / 60))) de silêncio (muda-se em Definições → Transcrição).")
                 }
             }
             .formStyle(.grouped)
@@ -254,7 +254,7 @@ struct DiretoView: View {
             Text(estadoSom).font(.callout).foregroundStyle(.secondary)
         }
         if sessao.estado == .aOuvir, sessao.silencio > 20 {
-            let resta = max(0, SessaoDireto.limiteSilencio - sessao.silencio)
+            let resta = max(0, sessao.limiteSilencio - sessao.silencio)
             Text("Em silêncio: termina sozinho daqui a \(Timestamp.format(resta)).")
                 .font(.caption).foregroundStyle(.orange)
         }

@@ -174,6 +174,8 @@ final class Definicoes {
     var slidesLimiar: Double { didSet { defaults.set(slidesLimiar, forKey: "slidesLimiar") } }
     var slidesIntervalo: Double { didSet { defaults.set(slidesIntervalo, forKey: "slidesIntervalo") } }
     var slidesMaximo: Int { didSet { defaults.set(slidesMaximo, forKey: "slidesMaximo") } }
+    /// Ao fim destes minutos de silêncio, uma aula em direto termina sozinha.
+    var minutosSilencio: Int { didSet { defaults.set(minutosSilencio, forKey: "minutosSilencio") } }
     #endif
     /// A pasta das aulas, com todos os cursos. Vazio = a de `Disco.raizPorDefeito`.
     var pastaAulas: String { didSet { defaults.set(pastaAulas, forKey: "pastaAulas") } }
@@ -201,6 +203,8 @@ final class Definicoes {
         slidesLimiar = defaults.object(forKey: "slidesLimiar") as? Double ?? padrao.limiar
         slidesIntervalo = defaults.object(forKey: "slidesIntervalo") as? Double ?? padrao.intervalo
         slidesMaximo = defaults.object(forKey: "slidesMaximo") as? Int ?? padrao.maximo
+        minutosSilencio = (defaults.object(forKey: "minutosSilencio") as? Int).flatMap { Self.opcoesMinutosSilencio.contains($0) ? $0 : nil }
+            ?? Self.minutosSilencioPorDefeito
         #endif
         precosPersonalizados = defaults.data(forKey: "precosPersonalizados")
             .flatMap { try? JSONDecoder().decode([String: Preco].self, from: $0) } ?? [:]
@@ -231,6 +235,21 @@ final class Definicoes {
     }
 
     #if os(macOS)
+    /// 3 por defeito, como até aqui.
+    static let minutosSilencioPorDefeito = 3
+    static let opcoesMinutosSilencio = [1, 3, 5, 10, 15, 30, 60]
+
+    /// "1 minuto", "5 minutos", "1 hora".
+    static func nomeMinutos(_ minutos: Int) -> String {
+        switch minutos {
+        case 1: "1 minuto"
+        case 60: "1 hora"
+        default: "\(minutos) minutos"
+        }
+    }
+
+    var limiteSilencio: Double { Double(minutosSilencio) * 60 }
+
     func configSlides(regiao: RegiaoIgnorar) -> ConfigSlides {
         ConfigSlides(intervalo: slidesIntervalo, limiar: slidesLimiar, maximo: slidesMaximo, regiao: regiao)
     }

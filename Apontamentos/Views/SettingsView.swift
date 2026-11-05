@@ -398,6 +398,16 @@ private struct TranscricaoSettings: View {
             } footer: {
                 Text("O modelo é descarregado na primeira transcrição, se ainda não estiver aqui. Fica em \(store.base.path). A língua das aulas escolhe-se em Geral.")
             }
+
+            Section {
+                Picker("Terminar ao fim de", selection: $definicoes.minutosSilencio) {
+                    ForEach(Definicoes.opcoesMinutosSilencio, id: \.self) { Text(Definicoes.nomeMinutos($0)).tag($0) }
+                }
+            } header: {
+                Text("Silêncio numa aula em direto")
+            } footer: {
+                Text("Se deixar de se ouvir som durante este tempo, a captação termina sozinha e a aula entra na fila. Numa aula com intervalos, escolhe mais tempo do que o intervalo mais longo. Vale também para a aula em curso.")
+            }
         }
         .formStyle(.grouped)
         .onAppear(perform: atualizar)
