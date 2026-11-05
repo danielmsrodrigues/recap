@@ -15,8 +15,15 @@ struct JanelaPrincipal: View {
 
     var body: some View {
         let curso = biblioteca.ativo
-        ContentView()
-            .id(curso.id)
+        Group {
+            // A converter, a aula aberta fecha-se: o que se escreveu grava-se no caminho antigo, antes de ele mudar.
+            if biblioteca.aConverter {
+                ProgressView("A converter o curso…")
+                    .frame(minWidth: 1000, maxWidth: .infinity, minHeight: 600, maxHeight: .infinity)
+            } else {
+                ContentView().id(curso.id)
+            }
+        }
             .sheet(isPresented: $verCursos) { CatalogoCursosView() }
             .sheet(isPresented: $verNovoCurso) { NovoCursoSheet() }
             .onReceive(NotificationCenter.default.publisher(for: .abrirCursos)) { _ in verCursos = true }

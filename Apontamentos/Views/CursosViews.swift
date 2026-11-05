@@ -43,6 +43,7 @@ struct CatalogoCursosView: View {
     @Environment(\.dismiss) private var dismiss
     #if os(macOS)
     @State private var verNovo = false
+    @State private var verConverter = false
     @State private var aRenomear: Curso?
     @State private var novoNome = ""
     @State private var erro: String?
@@ -75,6 +76,7 @@ struct CatalogoCursosView: View {
         #if os(macOS)
         .frame(width: 520, height: 420)
         .sheet(isPresented: $verNovo) { NovoCursoSheet { dismiss() } }
+        .sheet(isPresented: $verConverter) { ConverterCursoSheet { dismiss() } }
         .alert("Mudar o nome do curso", isPresented: Binding(get: { aRenomear != nil }, set: { if !$0 { aRenomear = nil } }), presenting: aRenomear) { curso in
             TextField("Nome", text: $novoNome)
             Button("Guardar") { tentar { try biblioteca.renomear(curso, para: novoNome) } }
@@ -114,6 +116,10 @@ struct CatalogoCursosView: View {
             }
             .buttonStyle(.plain)
             #if os(macOS)
+            if curso.naRaiz {
+                Button(biblioteca.conversaoPorAcabar == nil ? "Converter…" : "Continuar a conversão…") { verConverter = true }
+                    .help("Passa as cadeiras para a pasta do curso, ao lado dos outros. Na app, fica tudo igual.")
+            }
             Menu {
                 acoes(curso)
             } label: {

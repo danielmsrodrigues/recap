@@ -66,7 +66,9 @@ enum Revisao {
         var livres = paleta.indices.filter { !resultado.values.contains(paleta[$0]) }
         for nome in Set(cadeiras.filter { resultado[$0.nome] == nil }.map(\.nome)).sorted() {
             var h: UInt64 = 5381
-            for u in nome.lowercased().unicodeScalars { h = (h &* 33) &+ UInt64(u.value) }
+            // Decomposto, como a app cria as pastas: o mesmo nome criado no Finder, ou depois de mudar de sítio, vem
+            // noutra forma Unicode, e a cor não pode mudar por isso.
+            for u in nome.lowercased().decomposedStringWithCanonicalMapping.unicodeScalars { h = (h &* 33) &+ UInt64(u.value) }
             let preferido = Int(h % UInt64(paleta.count))
             // Mais de 8 cadeiras: as cores repetem-se a partir daqui.
             if livres.isEmpty { resultado[nome] = paleta[preferido]; continue }

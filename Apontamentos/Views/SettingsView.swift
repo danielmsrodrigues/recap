@@ -57,6 +57,7 @@ private struct GeralSettings: View {
     @State private var nova: URL?
     @State private var erro: String?
     @State private var erroCurso: String?
+    @State private var verConverter = false
 
     /// Uma aula a processar ou em direto escreve na pasta atual: não se troca a meio.
     private var ocupada: Bool { fila.jobs.contains(where: \.ativo) || direto.ativa }
@@ -88,6 +89,12 @@ private struct GeralSettings: View {
                     Text(ErroPreferencias.porLer.localizedDescription).foregroundStyle(.orange).font(.callout)
                 } else if let erroCurso {
                     Text(erroCurso).foregroundStyle(.red).font(.callout)
+                }
+                if biblioteca.cursoAtivo.naRaiz {
+                    LabeledContent("Formato das pastas") {
+                        Button(biblioteca.conversaoPorAcabar == nil ? "Converter…" : "Continuar a conversão…") { verConverter = true }
+                    }
+                    .help("Passa as cadeiras para a pasta do curso, ao lado dos outros. Na app, fica tudo igual.")
                 }
             } header: {
                 Text(biblioteca.cursos.count > 1 ? "O curso \"\(biblioteca.cursoAtivo.nome)\"" : "O teu curso")
@@ -124,6 +131,7 @@ private struct GeralSettings: View {
                 .disabled(library.preferenciasPorLer)
         }
         .formStyle(.grouped)
+        .sheet(isPresented: $verConverter) { ConverterCursoSheet() }
         .fileImporter(isPresented: $escolher, allowedContentTypes: [.folder]) { resultado in
             if case .success(let url) = resultado { pedir(url) }
         }
