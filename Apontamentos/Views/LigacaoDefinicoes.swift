@@ -16,4 +16,6 @@ extension Notification.Name {
     static let abrirDefinicoes = Notification.Name("abrirDefinicoes")
     /// Pedido para abrir o catálogo dos cursos.
     static let abrirCursos = Notification.Name("abrirCursos")
+    /// Ficheiro → Novo curso… (só no Mac).
+    static let novoCurso = Notification.Name("novoCurso")
 }

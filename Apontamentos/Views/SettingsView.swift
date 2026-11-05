@@ -18,6 +18,33 @@ struct SettingsView: View {
 
 // MARK: Geral
 
+/// Como se agrupam as cadeiras de um curso: nas Definições e ao criar um curso.
+struct CamposOrganizacao: View {
+    let organizacao: Binding<OrganizacaoCurso>
+    let inicios: Binding<[Int]>
+    let duracao: Binding<Int>
+
+    var body: some View {
+        let periodo = CalendarioLetivo.nomePeriodo(inicios.wrappedValue)
+        Section {
+            Picker("Organização", selection: organizacao) {
+                ForEach(OrganizacaoCurso.allCases) { o in
+                    Text(o == .anoESemestre ? "Por ano e \(periodo)" : o.nome).tag(o)
+                }
+            }
+            .pickerStyle(.radioGroup)
+            Picker("Calendário", selection: inicios) {
+                ForEach(CalendarioLetivo.opcoes, id: \.self) { Text($0.nome).tag($0.inicios) }
+            }
+            Stepper("Duração do curso: \(duracao.wrappedValue) \(duracao.wrappedValue == 1 ? "ano" : "anos")", value: duracao, in: 1...8)
+        } header: {
+            Text("Barra lateral")
+        } footer: {
+            Text("Por defeito, o ano e o \(periodo) vêm das datas das aulas (\(CalendarioLetivo.descricao(inicios.wrappedValue))). Num curso de um ano ou sem semestres, escolhe \"Só por ano\" ou \"Sem divisão\". Os semestres escolhidos à mão em cada cadeira não se perdem.")
+        }
+    }
+}
+
 private struct GeralSettings: View {
     @Environment(Definicoes.self) private var definicoes
     /// A pasta das aulas é da biblioteca; o resto desta página é do curso aberto.
@@ -63,7 +90,7 @@ private struct GeralSettings: View {
                     Text(erroCurso).foregroundStyle(.red).font(.callout)
                 }
             } header: {
-                Text("O teu curso")
+                Text(biblioteca.cursos.count > 1 ? "O curso \"\(biblioteca.cursoAtivo.nome)\"" : "O teu curso")
             } footer: {
                 Text("O curso diz ao Claude para quem escreve. A língua das aulas é a em que o professor fala: o Whisper transcreve nela. Os apontamentos, as respostas, os exercícios e a ficha da cadeira saem na língua dos apontamentos.")
             }
@@ -86,31 +113,15 @@ private struct GeralSettings: View {
                 .disabled(ocupada)
                 if let erro { Text(erro).foregroundStyle(.red).font(.callout) }
             } header: {
-                Text("Pasta das aulas")
+                Text(biblioteca.cursos.count > 1 ? "Pasta das aulas (de todos os cursos)" : "Pasta das aulas")
             } footer: {
                 Text(ocupada
                      ? "Espera que a aula em curso acabe para mudar de pasta."
                      : "Na pasta Recap do iCloud Drive, as aulas aparecem sozinhas no iPhone e no iPad. Essa pasta é criada quando abres o Recap no iPhone ou no iPad; depois, o Início do Mac propõe mudar as aulas para lá. Os vídeos originais ficam onde estão.")
             }
 
-            Section {
-                Picker("Organização", selection: doCurso(\.organizacaoCurso)) {
-                    ForEach(OrganizacaoCurso.allCases) { o in
-                        Text(o == .anoESemestre ? "Por ano e \(library.nomePeriodo)" : o.nome).tag(o)
-                    }
-                }
-                .pickerStyle(.radioGroup)
-                Picker("Calendário", selection: doCurso(\.inicios)) {
-                    ForEach(CalendarioLetivo.opcoes, id: \.self) { Text($0.nome).tag($0.inicios) }
-                }
-                Stepper("Duração do curso: \(library.duracaoCurso) \(library.duracaoCurso == 1 ? "ano" : "anos")",
-                        value: doCurso(\.duracao), in: 1...8)
-            } header: {
-                Text("Barra lateral")
-            } footer: {
-                Text("Por defeito, o ano e o \(library.nomePeriodo) vêm das datas das aulas (\(CalendarioLetivo.descricao(library.iniciosPeriodos))). Num curso de um ano ou sem semestres, escolhe \"Só por ano\" ou \"Sem divisão\". Os semestres escolhidos à mão em cada cadeira não se perdem.")
-            }
-            .disabled(library.preferenciasPorLer)
+            CamposOrganizacao(organizacao: doCurso(\.organizacaoCurso), inicios: doCurso(\.inicios), duracao: doCurso(\.duracao))
+                .disabled(library.preferenciasPorLer)
         }
         .formStyle(.grouped)
         .fileImporter(isPresented: $escolher, allowedContentTypes: [.folder]) { resultado in

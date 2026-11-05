@@ -84,6 +84,7 @@ struct ApontamentosApp: App {
                 Divider()
                 Button("Nova cadeira…") { NotificationCenter.default.post(name: .novaCadeira, object: nil) }
                 Divider()
+                Button("Novo curso…") { NotificationCenter.default.post(name: .novoCurso, object: nil) }
                 Button("Cursos…") { NotificationCenter.default.post(name: .abrirCursos, object: nil) }
             }
             CommandGroup(after: .textEditing) {
