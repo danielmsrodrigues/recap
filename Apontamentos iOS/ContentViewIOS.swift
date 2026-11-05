@@ -1,25 +1,49 @@
 import SwiftUI
 
-/// A janela do iPad e do iPhone: só leitura dos apontamentos, com o painel Estudo ao lado. No iPhone, separadores
-/// (`TelefoneView`); no iPad, as três colunas do Mac (`TabletView`).
+/// A janela do iPad e do iPhone: o que não depende do curso, à volta do curso aberto. O `.id` refaz só o conteúdo ao
+/// trocar de curso, e o que estiver a caminho do Mac continua a ser seguido.
 struct ContentViewIOS: View {
-    @State private var library: Library
+    @State private var biblioteca: Biblioteca
     @State private var definicoes: Definicoes
-    @State private var estudo: Estudo
-    @State private var fichas: Fichas
-    @State private var navegacao = Navegacao()
     @State private var verDefinicoes = false
-    /// `APONTAMENTOS_SELECIONAR="<título>"` (só em DEBUG): abre essa aula, para capturas e testes.
-    @State private var inicial: URL?
     @Environment(\.scenePhase) private var fase
 
     init(raiz: URL) {
         let definicoes = Definicoes()
-        let library = Library(raiz: raiz, preferenciasDeRecurso: definicoes.preferenciasAntigas)
         _definicoes = State(initialValue: definicoes)
-        _library = State(initialValue: library)
-        _estudo = State(initialValue: Estudo(library: library, definicoes: definicoes))
-        _fichas = State(initialValue: Fichas(library: library, definicoes: definicoes))
+        _biblioteca = State(initialValue: Biblioteca(raiz: raiz, definicoes: definicoes))
+    }
+
+    var body: some View {
+        let curso = biblioteca.ativo
+        ConteudoCursoIOS(library: curso.library)
+            .id(curso.id)
+            // Depois de uma atualização pelo TestFlight, uma vez: o que há de novo.
+            .modifier(ComNovidades())
+            .environment(curso.library)
+            .environment(definicoes)
+            .environment(curso.estudo)
+            .environment(curso.fichas)
+            .task(id: curso.id) { curso.library.vigiar() }
+            // A pasta e as preferências do curso podem ter mudado no Mac desde a última vez.
+            .onChange(of: fase) { if fase == .active { curso.library.recarregar(forcar: true) } }
+            .onReceive(NotificationCenter.default.publisher(for: .abrirDefinicoes)) { _ in verDefinicoes = true }
+            .sheet(isPresented: $verDefinicoes) {
+                DefinicoesIOS()
+                    .environment(biblioteca)
+                    .environment(definicoes)
+            }
+    }
+}
+
+/// O curso aberto: só leitura dos apontamentos, com o painel Estudo ao lado. No iPhone, separadores (`TelefoneView`);
+/// no iPad, as três colunas do Mac (`TabletView`).
+private struct ConteudoCursoIOS: View {
+    @State private var navegacao = Navegacao()
+    /// `APONTAMENTOS_SELECIONAR="<título>"` (só em DEBUG): abre essa aula, para capturas e testes.
+    @State private var inicial: URL?
+
+    init(library: Library) {
         #if DEBUG
         if let titulo = ProcessInfo.processInfo.environment["APONTAMENTOS_SELECIONAR"] {
             _inicial = State(initialValue: library.cadeiras.flatMap(\.aulas).first { $0.meta.titulo == titulo }?.pasta)
@@ -38,21 +62,6 @@ struct ContentViewIOS: View {
             }
         }
         .imagemEmGrande(navegacao)
-        // Depois de uma atualização pelo TestFlight, uma vez: o que há de novo.
-        .modifier(ComNovidades())
-        .environment(library)
-        .environment(definicoes)
-        .environment(estudo)
-        .environment(fichas)
         .environment(navegacao)
-        .task { library.vigiar() }
-        // A pasta e as preferências do curso podem ter mudado no Mac desde a última vez.
-        .onChange(of: fase) { if fase == .active { library.recarregar(forcar: true) } }
-        .onReceive(NotificationCenter.default.publisher(for: .abrirDefinicoes)) { _ in verDefinicoes = true }
-        .sheet(isPresented: $verDefinicoes) {
-            DefinicoesIOS()
-                .environment(library)
-                .environment(definicoes)
-        }
     }
 }

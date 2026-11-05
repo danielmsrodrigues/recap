@@ -2,30 +2,23 @@ import SwiftUI
 
 @main
 struct ApontamentosApp: App {
-    @State private var library: Library
+    @State private var biblioteca: Biblioteca
     @State private var definicoes: Definicoes
     @State private var fila: ProcessingQueue
     @State private var direto = SessaoDireto()
-    @State private var estudo: Estudo
-    @State private var fichas: Fichas
-    @State private var navegacao = Navegacao()
     @State private var atualizador = Atualizador()
     /// Responde às perguntas feitas no iPad e no iPhone (pela pasta das aulas no iCloud Drive).
     @State private var ponte: PonteMac
 
     init() {
         let definicoes = Definicoes()
-        let library = Library(raiz: definicoes.raizAulas, preferenciasDeRecurso: definicoes.preferenciasAntigas)
-        _library = State(initialValue: library)
+        let biblioteca = Biblioteca(raiz: definicoes.raizAulas, definicoes: definicoes)
+        _biblioteca = State(initialValue: biblioteca)
         _definicoes = State(initialValue: definicoes)
-        let fichas = Fichas(library: library, definicoes: definicoes)
-        _fichas = State(initialValue: fichas)
-        let estudo = Estudo(library: library, definicoes: definicoes)
-        _estudo = State(initialValue: estudo)
-        let ponte = PonteMac(library: library, estudo: estudo, definicoes: definicoes)
+        let ponte = PonteMac(biblioteca: biblioteca, definicoes: definicoes)
         ponte.ligar()
         _ponte = State(initialValue: ponte)
-        let fila = ProcessingQueue(runner: PipelineRunner(library: library, definicoes: definicoes, fichas: fichas, estudo: estudo))
+        let fila = ProcessingQueue(runner: PipelineRunner(biblioteca: biblioteca, definicoes: definicoes))
         _fila = State(initialValue: fila)
         Self.recuperarCaptacoes(fila)
         // O painel Estudo abre sempre ao arrancar; fechá-lo só vale até sair da app.
@@ -47,16 +40,13 @@ struct ApontamentosApp: App {
 
     var body: some Scene {
         Window("Recap", id: "principal") {
-            ContentView()
+            JanelaPrincipal()
                 // Em ecrã inteiro, a barra de ferramentas fica sempre visível (por defeito só aparecia ao passar o rato no topo).
                 .windowToolbarFullScreenVisibility(.visible)
-                .environment(library)
+                .environment(biblioteca)
                 .environment(definicoes)
                 .environment(fila)
                 .environment(direto)
-                .environment(estudo)
-                .environment(fichas)
-                .environment(navegacao)
                 .environment(atualizador)
         }
 
@@ -108,7 +98,8 @@ struct ApontamentosApp: App {
         Settings {
             SettingsView()
                 .environment(definicoes)
-                .environment(library)
+                .environment(biblioteca)
+                .environment(biblioteca.ativo.library)
                 .environment(fila)
                 .environment(direto)
         }

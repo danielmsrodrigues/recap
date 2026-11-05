@@ -6,16 +6,25 @@ import Foundation
 /// (o iCloud demora mais do que isso a trazê-los) e vai escrevendo o estado, com o texto que já chegou.
 @MainActor
 final class PonteMac {
-    private let library: Library
-    private let estudo: Estudo
+    /// As pastas dos cursos, cada uma com a sua caixa de pedidos: o iPhone pode estar noutro curso que não o aberto aqui.
+    private let raizes: @MainActor () -> [URL]
+    private let servicos: @MainActor (URL) -> ServicosCurso?
     private let definicoes: Definicoes
     private var ciclo: Task<Void, Never>?
     /// Pedidos já entregues ao `Estudo` nesta sessão (o estado pode ainda não estar no disco).
     private var tratados: Set<UUID> = []
 
+    init(biblioteca: Biblioteca, definicoes: Definicoes) {
+        raizes = { biblioteca.raizesDosCursos }
+        servicos = { biblioteca.servicos(de: $0) }
+        self.definicoes = definicoes
+    }
+
+    /// Com um só curso.
     init(library: Library, estudo: Estudo, definicoes: Definicoes) {
-        self.library = library
-        self.estudo = estudo
+        let curso = ServicosCurso(library: library, fichas: Fichas(library: library, definicoes: definicoes), estudo: estudo)
+        raizes = { [library.raiz] }
+        servicos = { _ in curso }
         self.definicoes = definicoes
     }
 
@@ -31,19 +40,22 @@ final class PonteMac {
 
     func verificar() {
         guard definicoes.responderPedidos else { return }
-        let raiz = library.raiz
-        CaixaPedidos.limparAntigos(raiz)
-        for pedido in CaixaPedidos.porTratar(raiz) where !tratados.contains(pedido.id) {
-            tratar(pedido, raiz: raiz)
+        for raiz in raizes() {
+            CaixaPedidos.limparAntigos(raiz)
+            for pedido in CaixaPedidos.porTratar(raiz) where !tratados.contains(pedido.id) {
+                guard let curso = servicos(raiz) else { continue }
+                tratar(pedido, raiz: raiz, curso)
+            }
         }
     }
 
-    private func tratar(_ pedido: PedidoMac, raiz: URL) {
+    private func tratar(_ pedido: PedidoMac, raiz: URL, _ curso: ServicosCurso) {
         tratados.insert(pedido.id)
+        let estudo = curso.estudo
         func estado(_ fase: EstadoPedidoMac.Fase, texto: String? = nil, erro: String? = nil) {
             try? CaixaPedidos.escreverEstado(EstadoPedidoMac(fase: fase, texto: texto, erro: erro), id: pedido.id, raiz: raiz)
         }
-        guard let aula = CaixaPedidos.aula(pedido, em: library) else {
+        guard let aula = CaixaPedidos.aula(pedido, em: curso.library) else {
             estado(.erro, erro: "Esta aula não está no Mac (ou ainda não chegou pelo iCloud).")
             return
         }
@@ -52,17 +64,17 @@ final class PonteMac {
             return
         }
         estado(.recebido)
-        Task { [weak self] in
+        Task {
             // Os ficheiros juntados no iPhone podem chegar pelo iCloud depois do pedido.
             await Self.esperarAnexos(pedido.anexos ?? [], em: aula.pasta)
             switch pedido.tipo {
-            case .pergunta: self?.estudo.perguntar(pedido.pergunta ?? "", sobre: aula, citacao: pedido.citacao, anexos: pedido.anexos ?? [])
-            case .exercicios: self?.estudo.gerarExercicios(aula)
-            case .ligacoes: self?.estudo.gerarLigacoes(aula)
+            case .pergunta: estudo.perguntar(pedido.pergunta ?? "", sobre: aula, citacao: pedido.citacao, anexos: pedido.anexos ?? [])
+            case .exercicios: estudo.gerarExercicios(aula)
+            case .ligacoes: estudo.gerarLigacoes(aula)
             }
             var escrito: String?
             var ultimaEscrita = Date.now
-            while let self, let emCurso = self.estudo.emCurso(aula, pedido.tipo) {
+            while let emCurso = estudo.emCurso(aula, pedido.tipo) {
                 // Cada escrita vai ao iCloud: só quando há texto novo, ou de 20 em 20 s para o iOS saber que o Mac continua.
                 if emCurso.texto != escrito || Date.now.timeIntervalSince(ultimaEscrita) > 20 {
                     estado(.aGerar, texto: emCurso.texto)
@@ -71,7 +83,7 @@ final class PonteMac {
                 }
                 try? await Task.sleep(for: .seconds(2))
             }
-            if let erro = self?.estudo.erro(aula, pedido.tipo) {
+            if let erro = estudo.erro(aula, pedido.tipo) {
                 estado(.erro, erro: erro)
             } else {
                 // O último pedaço pode ter chegado entre duas voltas: o texto final é o que ficou gravado.

@@ -4,10 +4,9 @@ import Foundation
 /// Transcrição e slides já guardados são reutilizados; só se refazem apagando `transcricao.json` ou `slides.json`.
 @MainActor
 final class PipelineRunner {
-    private let library: Library
+    /// O curso de cada aula: a fila é uma só, e um job pode ser de outro curso que não o aberto.
+    private let servicos: @MainActor (URL) -> ServicosCurso?
     private let definicoes: Definicoes
-    private let fichas: Fichas
-    private let estudo: Estudo
     private let transcriber = Transcriber()
     private let modelos = ModelStore()
     /// Libertação do modelo do Whisper agendada para quando a fila esvazia (cancelada se entrar outro job).
@@ -15,27 +14,38 @@ final class PipelineRunner {
     /// Quanto tempo o modelo fica em memória depois do último job: voltar a carregá-lo custa 5–20 s.
     static let esperaAteLibertar: Duration = .seconds(300)
 
-    init(library: Library, definicoes: Definicoes, fichas: Fichas, estudo: Estudo) {
-        self.library = library
+    init(biblioteca: Biblioteca, definicoes: Definicoes) {
+        servicos = { biblioteca.servicos(de: $0) }
         self.definicoes = definicoes
-        self.fichas = fichas
-        self.estudo = estudo
+    }
+
+    /// Com um só curso, sem ver a que curso pertence a aula.
+    init(library: Library, definicoes: Definicoes, fichas: Fichas, estudo: Estudo) {
+        let curso = ServicosCurso(library: library, fichas: fichas, estudo: estudo)
+        servicos = { _ in curso }
+        self.definicoes = definicoes
     }
 
     func executar(_ job: Job) async {
         libertacao?.cancel()
         libertacao = nil
+        // Sem saber de que curso é, não se começa: com o de outro, o glossário e a língua sairiam errados sem erro nenhum.
+        guard let curso = servicos(job.pastaAula) else {
+            job.falhar("Esta aula já não está na pasta das aulas.")
+            return
+        }
+        let library = curso.library
         do {
             // Sem as preferências do curso, a língua e o contexto seriam os errados, e uma transcrição fica para sempre.
             if library.preferenciasPorLer { library.recarregar() }
             guard !library.preferenciasPorLer else { throw ErroPreferencias.porLer }
             // A transcrição (Whisper) e os slides (Vision) não dependem um do outro: correm ao mesmo tempo.
-            async let transcricaoEmCurso = obterTranscricao(job)
-            async let slidesEmCurso = obterSlides(job)
+            async let transcricaoEmCurso = obterTranscricao(job, library)
+            async let slidesEmCurso = obterSlides(job, library)
             let transcricao = try await transcricaoEmCurso
             _ = try await slidesEmCurso
             if job.gerarApontamentos {
-                try await gerarApontamentos(job, transcricao: transcricao)
+                try await gerarApontamentos(job, transcricao: transcricao, curso)
             }
             job.estado = .concluido
         } catch is CancellationError {
@@ -58,7 +68,7 @@ final class PipelineRunner {
 
     // MARK: Transcrição
 
-    private func obterTranscricao(_ job: Job) async throws -> Transcricao {
+    private func obterTranscricao(_ job: Job, _ library: Library) async throws -> Transcricao {
         if let existente = Disco.lerTranscricao(job.pastaAula) {
             job.saltar(.audio, detalhe: "Transcrição já existente")
             job.saltar(.transcricao, detalhe: "Reutilizada de transcricao.json")
@@ -152,7 +162,7 @@ final class PipelineRunner {
         return frames
     }
 
-    private func obterSlides(_ job: Job) async throws -> [Slide] {
+    private func obterSlides(_ job: Job, _ library: Library) async throws -> [Slide] {
         if let frames = Self.capturasPorAnalisar(job.framesDireto) {
             let cadeira = library.cadeira(nome: library.aula(em: job.pastaAula)?.cadeira ?? "")
             var config = definicoes.configSlides(regiao: cadeira?.meta.regiaoIgnorar ?? .automatica)
@@ -194,7 +204,8 @@ final class PipelineRunner {
 
     // MARK: Apontamentos
 
-    private func gerarApontamentos(_ job: Job, transcricao: Transcricao) async throws {
+    private func gerarApontamentos(_ job: Job, transcricao: Transcricao, _ curso: ServicosCurso) async throws {
+        let library = curso.library
         let gerador: NotesGenerator
         do { gerador = try definicoes.gerador() } catch {
             job.iniciar(.apontamentos)
@@ -327,9 +338,9 @@ final class PipelineRunner {
         var resumo = g.resumo
         if g.modeloServido != g.modeloPedido { resumo += " · servido por \(g.modeloServido) (fallback)" }
         job.concluir(.apontamentos, detalhe: resumo)
-        if sobre != nil { fichas.atualizar(nomeCadeira: aula.cadeira) }
+        if sobre != nil { curso.fichas.atualizar(nomeCadeira: aula.cadeira) }
         // As ligações com as outras aulas da cadeira fazem-se logo, sem ter de as pedir.
-        if let nova = library.aula(em: job.pastaAula) { estudo.aposApontamentos(nova) }
+        if let nova = library.aula(em: job.pastaAula) { curso.estudo.aposApontamentos(nova) }
         job.textoEmCurso = ""
     }
 }
