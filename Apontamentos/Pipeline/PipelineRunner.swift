@@ -26,6 +26,9 @@ final class PipelineRunner {
         libertacao?.cancel()
         libertacao = nil
         do {
+            // Sem as preferências do curso, a língua e o contexto seriam os errados, e uma transcrição fica para sempre.
+            if library.preferenciasPorLer { library.recarregar() }
+            guard !library.preferenciasPorLer else { throw ErroPreferencias.porLer }
             // A transcrição (Whisper) e os slides (Vision) não dependem um do outro: correm ao mesmo tempo.
             async let transcricaoEmCurso = obterTranscricao(job)
             async let slidesEmCurso = obterSlides(job)
@@ -101,7 +104,7 @@ final class PipelineRunner {
         job.atualizar(.transcricao, progresso: 0, detalhe: "A transcrever…")
         let cadeira = library.cadeira(nome: library.aula(em: job.pastaAula)?.cadeira ?? "")
         let glossario = cadeira?.meta.glossario ?? ""
-        let idioma = definicoes.idioma(da: cadeira)
+        let idioma = library.idioma(da: cadeira)
         let inicio = Date.now
         let captados = try await VideoResolver.comAcesso(fonte) {
             try await transcriber.transcrever(ficheiro: fonte, duracao: duracaoAudio, glossario: glossario, idioma: idioma) { p in
@@ -205,7 +208,7 @@ final class PipelineRunner {
         let paginasPDF = await SlidesNosApontamentos.garantirPaginasEmFundo(em: job.pastaAula)
         let cadeira = library.cadeira(nome: aula.cadeira)
         var contexto = await ContextoAula.carregar(aula, cadeira: cadeira, transcricao: transcricao)
-        let prompt = definicoes.promptApontamentos(idioma: IdiomaAula(codigo: transcricao.idioma))
+        let prompt = library.promptApontamentos(idioma: IdiomaAula(codigo: transcricao.idioma))
 
         job.iniciar(.apontamentos, detalhe: "A preparar o pedido…")
 
@@ -258,7 +261,7 @@ final class PipelineRunner {
         let tituloManual = (try? Disco.lerMeta(job.pastaAula))?.tituloManual ?? aula.meta.tituloManual
         if tituloManual != true, let tema = TituloAula.tema(markdown) {
             titulo = TituloAula.titulo(numero: library.numeroDaAula(aula), tema: tema,
-                                       aula: RotulosApontamentos.rotulo("Aula", definicoes.linguaApontamentos))
+                                       aula: RotulosApontamentos.rotulo("Aula", library.linguaApontamentos))
             markdown = TituloAula.trocarCabecalho(markdown, por: titulo!)
         }
 
@@ -274,7 +277,7 @@ final class PipelineRunner {
         var revisor = gerador
         revisor.esforco = .medium
         do {
-            let r = try await ExplicacoesExtra.rever(semSobre, lingua: definicoes.linguaApontamentos, guia: contexto.guia, gerador: revisor)
+            let r = try await ExplicacoesExtra.rever(semSobre, lingua: library.linguaApontamentos, guia: contexto.guia, gerador: revisor)
             semSobre = r.markdown
             geracao.somar(r.geracao)
         } catch is CancellationError {
@@ -287,7 +290,7 @@ final class PipelineRunner {
         job.atualizar(.apontamentos, progresso: nil, detalhe: "A procurar o que sai no exame…")
         var pistasExame: [PistasExame.Pista]?
         do {
-            let r = try await PistasExame.procurar(transcricao, lingua: definicoes.linguaApontamentos, gerador: revisor)
+            let r = try await PistasExame.procurar(transcricao, lingua: library.linguaApontamentos, gerador: revisor)
             pistasExame = r.pistas
             geracao.somar(r.geracao)
         } catch is CancellationError {

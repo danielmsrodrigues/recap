@@ -3,7 +3,6 @@ import SwiftUI
 /// Editar uma cadeira (nome, semestre, língua, glossário e câmara do professor), ou criar uma nova (`cadeira` nil).
 struct CadeiraSheet: View {
     @Environment(Library.self) private var library
-    @Environment(Definicoes.self) private var definicoes
     @Environment(\.dismiss) private var dismiss
     let cadeira: Cadeira?
     /// A pasta mudou de nome: quem tem a aula aberta acerta a seleção.
@@ -62,7 +61,7 @@ struct CadeiraSheet: View {
                     }
                 }
                 Picker("Língua das aulas", selection: $idioma) {
-                    Text("A das Definições (\(definicoes.idiomaAulas.nome))").tag(IdiomaAula?.none)
+                    Text("A das Definições (\(library.idiomaAulas.nome))").tag(IdiomaAula?.none)
                     Divider()
                     ForEach(IdiomaAula.allCases) { Text($0.nome).tag(Optional($0)) }
                 }
@@ -77,7 +76,7 @@ struct CadeiraSheet: View {
             .scrollDisabled(true)
             .fixedSize(horizontal: false, vertical: true)
             Text("Glossário").font(.headline)
-            Text("Um termo por linha, em \((idioma ?? definicoes.idiomaAulas).nomeNoPrompt), como o professor o diz. Podes acrescentar a tradução: `autovalor = valor próprio`. Os termos ajudam o Whisper a reconhecê-los (só cabem cerca de 30) e o Claude a traduzi-los.")
+            Text("Um termo por linha, em \((idioma ?? library.idiomaAulas).nomeNoPrompt), como o professor o diz. Podes acrescentar a tradução: `autovalor = valor próprio`. Os termos ajudam o Whisper a reconhecê-los (só cabem cerca de 30) e o Claude a traduzi-los.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

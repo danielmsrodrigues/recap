@@ -2,16 +2,17 @@ import Foundation
 import Observation
 import Synchronization
 
-/// Cadeiras e aulas lidas da pasta das aulas (`~/Aulas` por defeito). Não há base de dados: cada `recarregar()` volta a ler o disco.
+/// Cadeiras, aulas e preferências lidas da pasta das aulas (`~/Aulas` por defeito). Não há base de dados: cada `recarregar()` volta a ler o disco.
 @MainActor @Observable
 final class Library {
     private(set) var raiz: URL
-    /// Muda os grupos da barra lateral; o que está em `cadeira.json` não é tocado.
-    var organizacao: OrganizacaoCurso { didSet { if organizacao != oldValue { recarregar() } } }
-    /// Os meses em que começa cada período do ano letivo (ver `CalendarioLetivo`).
-    var iniciosPeriodos: [Int] { didSet { if iniciosPeriodos != oldValue { recarregar() } } }
-    /// Até onde vão as escolhas manuais de ano de uma cadeira.
-    var duracaoCurso: Int
+    /// As preferências deste curso, em `_recap/definicoes.json`. Só mudam por `alterarPreferencias` ou por vir outro ficheiro.
+    private(set) var preferencias: DefinicoesPartilhadas
+    /// O ficheiro das preferências existe mas ainda não se leu (por descarregar, ou ilegível): `preferencias` são as que
+    /// já se tinham ou as de recurso. Não se grava por cima e o que ficaria para sempre com elas não começa.
+    private(set) var preferenciasPorLer = false
+    /// Para uma pasta sem `definicoes.json`.
+    private var preferenciasDeRecurso: DefinicoesPartilhadas
     private(set) var cadeiras: [Cadeira] = []
     /// Muda quando uma leitura do disco encontra algo diferente; as vistas usam-no para recarregar ficheiros.
     private(set) var versao = 0
@@ -26,8 +27,7 @@ final class Library {
     /// Avisa quando outro dispositivo (pelo iCloud Drive) ou outra app muda a pasta. Só depois de `vigiar()`.
     @ObservationIgnored private var observador: ObservadorPasta?
 
-    init(raiz: URL = Disco.raizPorDefeito, organizacao: OrganizacaoCurso = .anoESemestre,
-         iniciosPeriodos: [Int] = CalendarioLetivo.porDefeito, duracaoCurso: Int = 4,
+    init(raiz: URL = Disco.raizPorDefeito, preferenciasDeRecurso: DefinicoesPartilhadas = .porDefeito,
          porDescarregar: @escaping @Sendable (URL) -> Bool = { Disco.porDescarregar($0) },
          trazer: @escaping @Sendable (URL) throws -> Void = { try Disco.trazer($0) },
          esperaAoFalhar: Duration = .seconds(30)) {
@@ -35,10 +35,67 @@ final class Library {
         self.trazer = trazer
         self.esperaAoFalhar = esperaAoFalhar
         self.raiz = raiz
-        self.organizacao = organizacao
-        self.iniciosPeriodos = iniciosPeriodos
-        self.duracaoCurso = duracaoCurso
+        self.preferencias = preferenciasDeRecurso
+        self.preferenciasDeRecurso = preferenciasDeRecurso
         recarregar()
+    }
+
+    // MARK: Preferências do curso
+
+    /// Muda os grupos da barra lateral; o que está em `cadeira.json` não é tocado.
+    var organizacao: OrganizacaoCurso { preferencias.organizacaoCurso }
+    /// Os meses em que começa cada período do ano letivo (ver `CalendarioLetivo`).
+    var iniciosPeriodos: [Int] { preferencias.inicios }
+    /// Até onde vão as escolhas manuais de ano de uma cadeira.
+    var duracaoCurso: Int { preferencias.duracao }
+    /// A língua em que as aulas são dadas (o Whisper transcreve nela).
+    var idiomaAulas: IdiomaAula { preferencias.idioma }
+    /// A língua em que o Claude escreve.
+    var linguaApontamentos: LinguaApontamentos { preferencias.lingua }
+    /// O curso, para o Claude saber para quem escreve: "licenciatura em X, 1.º ano, universidade Y". Vazio = genérico.
+    var contextoCurso: String { preferencias.contextoCurso }
+
+    /// Um prompt com os marcadores (`{{contexto}}`, `{{idioma}}`…) já substituídos pelo curso e pelas línguas escolhidos.
+    /// `idioma` é o da aula, quando não é o das Definições (uma cadeira dada noutra língua).
+    func prompt(_ texto: String, idioma: IdiomaAula? = nil) -> String {
+        ContextoCurso.aplicar(texto, idioma: idioma ?? idiomaAulas, contexto: contextoCurso, apontamentos: linguaApontamentos)
+    }
+
+    /// A língua em que a cadeira é dada: a dela, se a tiver, ou a das Definições.
+    func idioma(da cadeira: Cadeira?) -> IdiomaAula {
+        cadeira?.meta.idioma ?? idiomaAulas
+    }
+
+    /// O prompt de sistema dos apontamentos de uma aula transcrita em `idioma`, pronto a enviar.
+    func promptApontamentos(idioma: IdiomaAula) -> String { prompt(PromptStore.ler(), idioma: idioma) }
+
+    /// Muda as preferências do curso e grava-as. É a única escrita de `definicoes.json`: ler nunca escreve, e assim um
+    /// aparelho não leva as suas por cima das de outro. Recusa enquanto o ficheiro não se ler.
+    func alterarPreferencias(_ alterar: (inout DefinicoesPartilhadas) -> Void) throws {
+        lerPreferencias()
+        guard !preferenciasPorLer else { throw ErroPreferencias.porLer }
+        var novas = preferencias
+        alterar(&novas)
+        guard novas != preferencias else { return }
+        try DefinicoesPartilhadas.escrever(novas, raiz: raiz, porDescarregar: porDescarregar)
+        let mudamOsGrupos = novas.organizacaoCurso != organizacao || novas.inicios != iniciosPeriodos
+        preferencias = novas
+        if mudamOsGrupos { recarregar() }
+    }
+
+    /// Só atribui o que mudou: o `@Observable` avisa as vistas a cada atribuição, mesmo de um valor igual.
+    private func lerPreferencias() {
+        let url = DefinicoesPartilhadas.url(raiz: raiz)
+        let aChegar = porDescarregar(url)
+        var porLer = false
+        if !aChegar, let lidas = DefinicoesPartilhadas.ler(raiz: raiz) {
+            if lidas != preferencias { preferencias = lidas }
+        } else if aChegar || FileManager.default.fileExists(atPath: url.path) {
+            porLer = true
+        } else if preferencias != preferenciasDeRecurso {
+            preferencias = preferenciasDeRecurso
+        }
+        if porLer != preferenciasPorLer { preferenciasPorLer = porLer }
     }
 
     /// Volta a ler o disco. Só avisa as vistas (`versao`) se algo mudou: cada ação pequena chamava aqui e todas as
@@ -47,6 +104,7 @@ final class Library {
     /// Com `forcar`, avisa sempre: uma mudança vinda de fora (apontamentos editados no iPad, uma resposta nova)
     /// pode não mexer na lista de cadeiras e aulas, mas as vistas abertas têm de reler os ficheiros.
     func recarregar(forcar: Bool = false) {
+        lerPreferencias()
         do {
             try FileManager.default.createDirectory(at: raiz, withIntermediateDirectories: true)
             let novas = try Self.ler(raiz: raiz, organizacao: organizacao, inicios: iniciosPeriodos)
@@ -61,10 +119,13 @@ final class Library {
         trazerAulasDaNuvem()
     }
 
-    /// Traz os `aula.json` que estão só no iCloud e volta a ler a pasta. Sem internet, tenta outra vez mais tarde.
+    /// Traz os `aula.json` e as preferências do curso que estão só no iCloud e volta a ler a pasta.
+    /// Sem internet, tenta outra vez mais tarde.
     private func trazerAulasDaNuvem() {
-        let faltam = Self.metasNaNuvem(raiz: raiz, porDescarregar: porDescarregar)
-        aulasNaNuvem = faltam.count
+        let metas = Self.metasNaNuvem(raiz: raiz, porDescarregar: porDescarregar)
+        aulasNaNuvem = metas.count
+        let preferencias = DefinicoesPartilhadas.url(raiz: raiz)
+        let faltam = metas + (porDescarregar(preferencias) ? [preferencias] : [])
         guard !faltam.isEmpty, aTrazer == nil else { return }
         aTrazer = Task { [weak self, porDescarregar = self.porDescarregar, trazer = self.trazer, espera = esperaAoFalhar] in
             let ficaramPorTrazer = await Task.detached(priority: .utility) {
@@ -93,10 +154,16 @@ final class Library {
     }
 
     /// Passa a ler outra pasta. Com `mover`, as cadeiras da pasta atual vão para lá primeiro.
+    /// Uma pasta que já tenha preferências fica com as dela; uma sem elas fica com as atuais.
     func mudarRaiz(para nova: URL, mover: Bool) throws {
         let nova = nova.standardizedFileURL
         guard !nova.mesmoCaminho(raiz) else { return }
         if mover { try Self.moverCadeiras(de: raiz, para: nova) }
+        let urlNova = DefinicoesPartilhadas.url(raiz: nova)
+        if !preferenciasPorLer, !porDescarregar(urlNova), !FileManager.default.fileExists(atPath: urlNova.path) {
+            preferenciasDeRecurso = preferencias
+            try? DefinicoesPartilhadas.escrever(preferencias, raiz: nova, porDescarregar: porDescarregar)
+        }
         raiz = nova
         recarregar()
         if observador != nil { vigiar() }

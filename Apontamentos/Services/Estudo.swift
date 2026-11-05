@@ -386,6 +386,11 @@ final class Estudo {
         guard tarefaExame == nil else { return }
         let porVer = aulasSemPistasExame(aulas)
         guard !porVer.isEmpty else { return }
+        // O que encontrar fica guardado, na língua das preferências: sem elas lidas, seria a errada.
+        guard !library.preferenciasPorLer else {
+            erroExame = ErroPreferencias.porLer.localizedDescription
+            return
+        }
         erroExame = nil
         procuraExame = (0, porVer.count)
         tarefaExame = Task { [weak self] in
@@ -400,7 +405,7 @@ final class Estudo {
                 procuraExame = (feitas, porVer.count)
             } ver: { aula in
                 guard let t = Disco.lerTranscricao(aula.pasta) else { return }
-                let r = try await PistasExame.procurar(t, lingua: definicoes.linguaApontamentos, gerador: gerador)
+                let r = try await PistasExame.procurar(t, lingua: library.linguaApontamentos, gerador: gerador)
                 try Disco.escreverPistasExame(r.pistas, em: aula.pasta)
                 versao += 1
             }
@@ -505,7 +510,7 @@ final class Estudo {
         let anexosAnteriores = escolhidos.anteriores
         executar(aula, .pergunta, pergunta: pergunta, citacao: citacao, anexos: anexos, anexosAnteriores: anexosAnteriores,
                  esforco: .medium, motor: motor,
-                 sistema: definicoes.prompt(Self.sistemaPerguntas, idioma: definicoes.idioma(da: library.cadeira(nome: aula.cadeira)))) { contexto in
+                 sistema: library.prompt(Self.sistemaPerguntas, idioma: library.idioma(da: library.cadeira(nome: aula.cadeira)))) { contexto in
             var blocos = contexto.map(NotesGenerator.materiais) ?? []
             if let notas = Disco.lerApontamentos(aula.pasta) {
                 blocos.append(.texto("Apontamentos já feitos desta aula:\n\n<apontamentos>\n\(notas)\n</apontamentos>"))
@@ -572,7 +577,7 @@ final class Estudo {
         #if !os(macOS)
         if (motor ?? definicoes.motor) == .mac { return pedirAoMac(.exercicios, aula) }
         #endif
-        executar(aula, .exercicios, motor: motor, sistema: definicoes.prompt(Self.sistemaExercicios, idioma: definicoes.idioma(da: library.cadeira(nome: aula.cadeira)))) { contexto in
+        executar(aula, .exercicios, motor: motor, sistema: library.prompt(Self.sistemaExercicios, idioma: library.idioma(da: library.cadeira(nome: aula.cadeira)))) { contexto in
             var blocos = contexto.map(NotesGenerator.materiais) ?? []
             if let notas = Disco.lerApontamentos(aula.pasta) {
                 blocos.append(.texto("Apontamentos desta aula:\n\n<apontamentos>\n\(notas)\n</apontamentos>"))
@@ -605,7 +610,7 @@ final class Estudo {
             return
         }
         let raiz = library.raiz
-        executar(aula, .ligacoes, comTranscricao: false, motor: motor, sistema: definicoes.prompt(Self.sistemaLigacoes)) { _ in
+        executar(aula, .ligacoes, comTranscricao: false, motor: motor, sistema: library.prompt(Self.sistemaLigacoes)) { _ in
             let lista = outras.enumerated().map { i, o in
                 let data = o.meta.data.formatted(.dateTime.day().month(.wide).year().locale(Locale(identifier: "pt_PT")))
                 let md = NotasLigacoes.tirar(Disco.lerApontamentos(o.pasta) ?? "")
@@ -1132,7 +1137,7 @@ extension Estudo {
             blocos.append(.texto("Perguntas anteriores sobre esta cadeira:\n\n<conversa>\n\(conversa)\n</conversa>"))
         }
         blocos.append(.texto("Pergunta do estudante:\n\n\(pergunta)"))
-        let sistema = definicoes.prompt(Self.sistemaCadeira, idioma: definicoes.idioma(da: cadeira))
+        let sistema = library.prompt(Self.sistemaCadeira, idioma: library.idioma(da: cadeira))
         emCurso[chave] = EmCurso(pergunta: pergunta)
         emCurso[chave]?.tarefa = Task {
             do {

@@ -15,8 +15,7 @@ struct ApontamentosApp: App {
 
     init() {
         let definicoes = Definicoes()
-        let library = Library(raiz: definicoes.raizAulas, organizacao: definicoes.organizacao,
-                              iniciosPeriodos: definicoes.iniciosPeriodos, duracaoCurso: definicoes.duracaoCurso)
+        let library = Library(raiz: definicoes.raizAulas, preferenciasDeRecurso: definicoes.preferenciasAntigas)
         _library = State(initialValue: library)
         _definicoes = State(initialValue: definicoes)
         let fichas = Fichas(library: library, definicoes: definicoes)

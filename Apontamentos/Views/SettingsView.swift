@@ -24,27 +24,45 @@ private struct GeralSettings: View {
     /// A pasta escolhida, à espera de saber se as aulas vão para lá.
     @State private var nova: URL?
     @State private var erro: String?
+    @State private var erroCurso: String?
 
     /// Uma aula a processar ou em direto escreve na pasta atual: não se troca a meio.
     private var ocupada: Bool { fila.jobs.contains(where: \.ativo) || direto.ativa }
 
+    /// Uma preferência do curso: lê-se da biblioteca e grava-se em `_recap/definicoes.json`, com o curso.
+    private func doCurso<T>(_ campo: WritableKeyPath<DefinicoesPartilhadas, T>) -> Binding<T> {
+        Binding(get: { library.preferencias[keyPath: campo] }, set: { valor in
+            do {
+                try library.alterarPreferencias { $0[keyPath: campo] = valor }
+                erroCurso = nil
+            } catch {
+                erroCurso = error.localizedDescription
+            }
+        })
+    }
+
     var body: some View {
-        @Bindable var definicoes = definicoes
         Form {
             Section {
-                TextField("Curso", text: $definicoes.contextoCurso, prompt: Text("ex.: licenciatura em Ciência de Dados, 1.º ano, numa universidade espanhola"), axis: .vertical)
+                TextField("Curso", text: doCurso(\.contextoCurso), prompt: Text("ex.: licenciatura em Ciência de Dados, 1.º ano, numa universidade espanhola"), axis: .vertical)
                     .lineLimit(1...3)
-                Picker("Língua das aulas", selection: $definicoes.idiomaAulas) {
+                Picker("Língua das aulas", selection: doCurso(\.idioma)) {
                     ForEach(IdiomaAula.allCases) { Text($0.nome).tag($0) }
                 }
-                Picker("Língua dos apontamentos", selection: $definicoes.linguaApontamentos) {
+                Picker("Língua dos apontamentos", selection: doCurso(\.lingua)) {
                     ForEach(LinguaApontamentos.allCases) { Text($0.nome).tag($0) }
+                }
+                if library.preferenciasPorLer {
+                    Text(ErroPreferencias.porLer.localizedDescription).foregroundStyle(.orange).font(.callout)
+                } else if let erroCurso {
+                    Text(erroCurso).foregroundStyle(.red).font(.callout)
                 }
             } header: {
                 Text("O teu curso")
             } footer: {
                 Text("O curso diz ao Claude para quem escreve. A língua das aulas é a em que o professor fala: o Whisper transcreve nela. Os apontamentos, as respostas, os exercícios e a ficha da cadeira saem na língua dos apontamentos.")
             }
+            .disabled(library.preferenciasPorLer)
 
             Section {
                 LabeledContent("Pasta") {
@@ -71,31 +89,23 @@ private struct GeralSettings: View {
             }
 
             Section {
-                Picker("Organização", selection: Binding(get: { definicoes.organizacao }, set: {
-                    definicoes.organizacao = $0
-                    library.organizacao = $0
-                })) {
+                Picker("Organização", selection: doCurso(\.organizacaoCurso)) {
                     ForEach(OrganizacaoCurso.allCases) { o in
                         Text(o == .anoESemestre ? "Por ano e \(library.nomePeriodo)" : o.nome).tag(o)
                     }
                 }
                 .pickerStyle(.radioGroup)
-                Picker("Calendário", selection: Binding(get: { definicoes.iniciosPeriodos }, set: {
-                    definicoes.iniciosPeriodos = $0
-                    library.iniciosPeriodos = $0
-                })) {
+                Picker("Calendário", selection: doCurso(\.inicios)) {
                     ForEach(CalendarioLetivo.opcoes, id: \.self) { Text($0.nome).tag($0.inicios) }
                 }
-                Stepper("Duração do curso: \(definicoes.duracaoCurso) \(definicoes.duracaoCurso == 1 ? "ano" : "anos")",
-                        value: Binding(get: { definicoes.duracaoCurso }, set: {
-                            definicoes.duracaoCurso = $0
-                            library.duracaoCurso = $0
-                        }), in: 1...8)
+                Stepper("Duração do curso: \(library.duracaoCurso) \(library.duracaoCurso == 1 ? "ano" : "anos")",
+                        value: doCurso(\.duracao), in: 1...8)
             } header: {
                 Text("Barra lateral")
             } footer: {
-                Text("Por defeito, o ano e o \(library.nomePeriodo) vêm das datas das aulas (\(CalendarioLetivo.descricao(definicoes.iniciosPeriodos))). Num curso de um ano ou sem semestres, escolhe \"Só por ano\" ou \"Sem divisão\". Os semestres escolhidos à mão em cada cadeira não se perdem.")
+                Text("Por defeito, o ano e o \(library.nomePeriodo) vêm das datas das aulas (\(CalendarioLetivo.descricao(library.iniciosPeriodos))). Num curso de um ano ou sem semestres, escolhe \"Só por ano\" ou \"Sem divisão\". Os semestres escolhidos à mão em cada cadeira não se perdem.")
             }
+            .disabled(library.preferenciasPorLer)
         }
         .formStyle(.grouped)
         .fileImporter(isPresented: $escolher, allowedContentTypes: [.folder]) { resultado in
