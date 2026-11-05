@@ -88,17 +88,66 @@ struct CaptacaoGuardadaTests {
         #expect(pendentes.first?.captacao.pasta.lastPathComponent == c.pasta.lastPathComponent)
     }
 
-    /// Sem áudio (já transcrito) ou com a aula apagada, não há nada a recuperar: a pasta vai-se.
-    @Test func semAudioOuSemAulaAPastaEApagada() throws {
+    /// Sem áudio já foi transcrita: não há nada a recuperar e a pasta vai-se.
+    @Test func semAudioAPastaEApagada() throws {
         let raiz = try pasta(), aula = try pasta()
         defer { try? FileManager.default.removeItem(at: raiz); try? FileManager.default.removeItem(at: aula) }
         let jaTranscrita = try CaptacaoGuardada.criar(em: raiz)
         try jaTranscrita.guardar(.init(pastaAula: aula, titulo: "A", velocidade: 1, gerarApontamentos: true))
-        let semAula = try CaptacaoGuardada.criar(em: raiz)
-        try Data("som".utf8).write(to: semAula.audio)
-        try semAula.guardar(.init(pastaAula: aula.appending(path: "apagada"), titulo: "B", velocidade: 1, gerarApontamentos: true))
 
         #expect(CaptacaoGuardada.pendentes(em: raiz) { FileManager.default.fileExists(atPath: $0.path) }.isEmpty)
         #expect((try FileManager.default.contentsOfDirectory(atPath: raiz.path)).isEmpty)
+    }
+
+    /// Um job falhou, a cadeira mudou de nome e a app reabriu: a pasta guardada na ficha já não existe.
+    /// O áudio é a única cópia da gravação e não se pode perder por isso.
+    @Test func semAPastaDaAulaOAudioFica() throws {
+        let raiz = try pasta(), aula = try pasta()
+        defer { try? FileManager.default.removeItem(at: raiz); try? FileManager.default.removeItem(at: aula) }
+        let semAula = try CaptacaoGuardada.criar(em: raiz)
+        try Data("som".utf8).write(to: semAula.audio)
+        try semAula.guardar(.init(pastaAula: aula.appending(path: "mudou-de-nome"), titulo: "B", velocidade: 1, gerarApontamentos: true))
+
+        #expect(CaptacaoGuardada.pendentes(em: raiz) { FileManager.default.fileExists(atPath: $0.path) }.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: semAula.audio.path))
+    }
+
+    /// Se a pasta voltar (o disco externo foi ligado outra vez, por exemplo), a captação volta à fila.
+    @Test func quandoAPastaDaAulaVoltaACaptacaoVoltaAFila() throws {
+        let raiz = try pasta(), aula = try pasta()
+        defer { try? FileManager.default.removeItem(at: raiz); try? FileManager.default.removeItem(at: aula) }
+        let c = try CaptacaoGuardada.criar(em: raiz)
+        try Data("som".utf8).write(to: c.audio)
+        try c.guardar(.init(pastaAula: aula, titulo: "B", velocidade: 1, gerarApontamentos: true))
+
+        #expect(CaptacaoGuardada.pendentes(em: raiz) { _ in false }.isEmpty)
+        #expect(CaptacaoGuardada.pendentes(em: raiz) { _ in true }.count == 1)
+    }
+
+    @Test func semAPastaDaAulaOAudioSoSeApagaAosTrintaDias() throws {
+        let raiz = try pasta(), aula = try pasta()
+        defer { try? FileManager.default.removeItem(at: raiz); try? FileManager.default.removeItem(at: aula) }
+        let c = try CaptacaoGuardada.criar(em: raiz)
+        try Data("som".utf8).write(to: c.audio)
+        try c.guardar(.init(pastaAula: aula.appending(path: "apagada"), titulo: "B", velocidade: 1, gerarApontamentos: true))
+        let gravada = try #require(try FileManager.default.attributesOfItem(atPath: c.audio.path)[.modificationDate] as? Date)
+
+        _ = CaptacaoGuardada.pendentes(em: raiz, agora: gravada.addingTimeInterval(CaptacaoGuardada.idadeMaximaSemAula - 60)) { _ in false }
+        #expect(FileManager.default.fileExists(atPath: c.audio.path))
+
+        _ = CaptacaoGuardada.pendentes(em: raiz, agora: gravada.addingTimeInterval(CaptacaoGuardada.idadeMaximaSemAula + 60)) { _ in false }
+        #expect((try FileManager.default.contentsOfDirectory(atPath: raiz.path)).isEmpty)
+    }
+
+    /// Com a aula lá, a idade não conta: uma captação antiga por transcrever continua a voltar à fila.
+    @Test func comAPastaDaAulaAIdadeNaoConta() throws {
+        let raiz = try pasta(), aula = try pasta()
+        defer { try? FileManager.default.removeItem(at: raiz); try? FileManager.default.removeItem(at: aula) }
+        let c = try CaptacaoGuardada.criar(em: raiz)
+        try Data("som".utf8).write(to: c.audio)
+        try c.guardar(.init(pastaAula: aula, titulo: "B", velocidade: 1, gerarApontamentos: true))
+
+        let muitoDepois = Date.now.addingTimeInterval(365 * 86_400)
+        #expect(CaptacaoGuardada.pendentes(em: raiz, agora: muitoDepois) { _ in true }.count == 1)
     }
 }

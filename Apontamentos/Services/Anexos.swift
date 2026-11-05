@@ -153,6 +153,13 @@ enum Anexos {
         }
     }
 
+    /// A limpeza de quando uma aula abre. Só corre com o `perguntas.json` presente e legível: sem ele (a caminho pelo
+    /// iCloud, por exemplo) não se sabe que anexos as perguntas usam, e todos pareciam órfãos.
+    static func limparOrfaosAoAbrir(em pastaAula: URL, porEnviar: [String]) {
+        guard Disco.existe(Disco.perguntasJSON, em: pastaAula), let perguntas = Disco.lerPerguntasSePossivel(pastaAula) else { return }
+        limparOrfaos(em: pastaAula, usados: Set(perguntas.flatMap { $0.anexos ?? [] } + porEnviar))
+    }
+
     private static func verificarTamanho(_ bytes: Int, _ nome: String) throws {
         guard bytes <= tamanhoMaximo else { throw ErroAnexo.grandeDemais(nome, mb: max(1, bytes / 1_048_576)) }
     }

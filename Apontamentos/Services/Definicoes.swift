@@ -65,11 +65,28 @@ struct DefinicoesPartilhadas: Codable, Equatable, Sendable {
         try? Disco.ler(DefinicoesPartilhadas.self, de: url(raiz: raiz))
     }
 
-    /// Só escreve se mudou: cada escrita é um envio para o iCloud.
-    static func escrever(_ d: DefinicoesPartilhadas, raiz: URL) throws {
-        guard ler(raiz: raiz) != d else { return }
+    /// Só escreve se mudou: cada escrita é um envio para o iCloud. Um ficheiro ainda por descarregar lê-se como nil e
+    /// parecia diferente: substituí-lo levava esta cópia para cima da que vem a caminho.
+    static func escrever(_ d: DefinicoesPartilhadas, raiz: URL, porDescarregar: (URL) -> Bool = Disco.porDescarregar) throws {
+        // Ler primeiro: se faltar, pede o download.
+        let atual = ler(raiz: raiz)
+        guard !porDescarregar(url(raiz: raiz)), atual != d else { return }
         try FileManager.default.createDirectory(at: raiz.appending(path: Disco.pastaSistema), withIntermediateDirectories: true)
         try Disco.escrever(d, em: url(raiz: raiz))
+    }
+}
+
+extension DefinicoesPartilhadas {
+    /// Um campo em falta não invalida o ficheiro: sem isto, um campo novo fazia as versões anteriores lerem nil e
+    /// escreverem por cima. Na falta de um campo, os mesmos valores por defeito de `Definicoes`.
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        contextoCurso = try c.decodeIfPresent(String.self, forKey: .contextoCurso) ?? ""
+        linguaApontamentos = try c.decodeIfPresent(String.self, forKey: .linguaApontamentos) ?? LinguaApontamentos.ptPT.rawValue
+        idiomaAulas = try c.decodeIfPresent(String.self, forKey: .idiomaAulas) ?? IdiomaAula.espanhol.rawValue
+        organizacao = try c.decodeIfPresent(String.self, forKey: .organizacao) ?? OrganizacaoCurso.anoESemestre.rawValue
+        iniciosPeriodos = try c.decodeIfPresent([Int].self, forKey: .iniciosPeriodos) ?? CalendarioLetivo.porDefeito
+        duracaoCurso = try c.decodeIfPresent(Int.self, forKey: .duracaoCurso) ?? 4
     }
 }
 

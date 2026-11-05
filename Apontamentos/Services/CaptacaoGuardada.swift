@@ -49,20 +49,34 @@ struct CaptacaoGuardada: Sendable {
         return CaptacaoGuardada(pasta: pasta)
     }
 
-    /// As captações por transcrever (com áudio e com a aula ainda lá). As outras (já transcritas, aula apagada,
-    /// sem ficha) são apagadas. `aulaExiste`: a pasta da aula ainda existe.
-    static func pendentes(em raiz: URL = raizPorDefeito, aulaExiste: (URL) -> Bool) -> [(captacao: CaptacaoGuardada, ficha: Ficha)] {
+    /// Sem a pasta da aula, o áudio fica este tempo. É a única cópia da gravação, e a pasta pode só ter mudado de nome
+    /// (depois de um job falhado, por exemplo) ou estar num disco desligado.
+    static let idadeMaximaSemAula: TimeInterval = 30 * 86_400
+
+    /// As captações por transcrever (com áudio e com a aula ainda lá). `aulaExiste`: a pasta da aula ainda existe.
+    /// As já transcritas ou sem ficha são apagadas. As que perderam a pasta da aula não voltam à fila, mas só se
+    /// apagam ao fim de `idadeMaximaSemAula`.
+    static func pendentes(em raiz: URL = raizPorDefeito, agora: Date = .now, aulaExiste: (URL) -> Bool) -> [(captacao: CaptacaoGuardada, ficha: Ficha)] {
         let pastas = (try? FileManager.default.contentsOfDirectory(at: raiz, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
         return pastas.compactMap { pasta in
             let c = CaptacaoGuardada(pasta: pasta)
             guard let dados = try? Data(contentsOf: c.urlFicha), let ficha = try? JSONDecoder().decode(Ficha.self, from: dados),
-                  FileManager.default.fileExists(atPath: c.audio.path), aulaExiste(ficha.pastaAula)
+                  FileManager.default.fileExists(atPath: c.audio.path)
             else {
                 c.apagar()
                 return nil
             }
+            guard aulaExiste(ficha.pastaAula) else {
+                if let data = c.dataDoAudio, agora.timeIntervalSince(data) >= idadeMaximaSemAula { c.apagar() }
+                return nil
+            }
             return (c, ficha)
         }
+    }
+
+    /// Lida do disco, não do `URL`, que guarda em cache a data.
+    private var dataDoAudio: Date? {
+        (try? FileManager.default.attributesOfItem(atPath: audio.path))?[.modificationDate] as? Date
     }
 
     /// As pastas temporárias de versões anteriores (sem ficha, não há como saber de que aula eram).
