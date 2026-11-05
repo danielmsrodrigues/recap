@@ -41,6 +41,12 @@ struct SeletorCurso: View {
 struct CatalogoCursosView: View {
     @Environment(Biblioteca.self) private var biblioteca
     @Environment(\.dismiss) private var dismiss
+    #if os(macOS)
+    @State private var verNovo = false
+    @State private var aRenomear: Curso?
+    @State private var novoNome = ""
+    @State private var erro: String?
+    #endif
 
     var body: some View {
         let aDecorrer = biblioteca.cursos.filter { !$0.concluido }
@@ -61,38 +67,85 @@ struct CatalogoCursosView: View {
             .navigationTitle("Cursos")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Fechar") { dismiss() } }
+                #if os(macOS)
+                ToolbarItem(placement: .primaryAction) { Button("Novo curso…") { verNovo = true } }
+                #endif
             }
         }
         #if os(macOS)
         .frame(width: 520, height: 420)
+        .sheet(isPresented: $verNovo) { NovoCursoSheet { dismiss() } }
+        .alert("Mudar o nome do curso", isPresented: Binding(get: { aRenomear != nil }, set: { if !$0 { aRenomear = nil } }), presenting: aRenomear) { curso in
+            TextField("Nome", text: $novoNome)
+            Button("Guardar") { tentar { try biblioteca.renomear(curso, para: novoNome) } }
+            Button("Cancelar", role: .cancel) {}
+        } message: { _ in
+            Text("Muda só o nome que aparece no Recap. A pasta no disco fica como está.")
+        }
+        .alert("Erro", isPresented: Binding(get: { erro != nil }, set: { if !$0 { erro = nil } }), presenting: erro) { _ in
+            Button("OK") {}
+        } message: { Text($0) }
         #endif
         .task { biblioteca.atualizarResumos() }
     }
 
     private func linha(_ curso: Curso) -> some View {
-        Button {
-            biblioteca.abrir(curso)
-            dismiss()
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: curso.concluido ? "checkmark.seal" : "graduationcap")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 22)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(curso.nome).font(.headline).lineLimit(2)
-                    if let resumo = biblioteca.resumos[curso.id] {
-                        Text(Self.texto(resumo)).font(.caption).foregroundStyle(.secondary)
+        HStack(spacing: 8) {
+            Button {
+                biblioteca.abrir(curso)
+                dismiss()
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: curso.concluido ? "checkmark.seal" : "graduationcap")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 22)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(curso.nome).font(.headline).lineLimit(2)
+                        if let resumo = biblioteca.resumos[curso.id] {
+                            Text(Self.texto(resumo)).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    if curso.id == biblioteca.cursoAtivo.id {
+                        Image(systemName: "checkmark").foregroundStyle(.tint).accessibilityLabel("Aberto")
                     }
                 }
-                Spacer(minLength: 0)
-                if curso.id == biblioteca.cursoAtivo.id {
-                    Image(systemName: "checkmark").foregroundStyle(.tint).accessibilityLabel("Aberto")
-                }
+                .contentShape(.rect)
             }
-            .contentShape(.rect)
+            .buttonStyle(.plain)
+            #if os(macOS)
+            Menu {
+                acoes(curso)
+            } label: {
+                Image(systemName: "ellipsis.circle").accessibilityLabel("Mais")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            #endif
         }
-        .buttonStyle(.plain)
+        #if os(macOS)
+        .contextMenu { acoes(curso) }
+        #endif
     }
+
+    #if os(macOS)
+    @ViewBuilder private func acoes(_ curso: Curso) -> some View {
+        Button("Mudar o nome…") {
+            novoNome = curso.nome
+            aRenomear = curso
+        }
+        Button(curso.concluido ? "Voltar a pôr a decorrer" : "Marcar como concluído") {
+            tentar { try biblioteca.definirConcluido(!curso.concluido, curso: curso) }
+        }
+        Divider()
+        Button("Mostrar no Finder") { NSWorkspace.shared.activateFileViewerSelecting([curso.pasta]) }
+    }
+
+    private func tentar(_ acao: () throws -> Void) {
+        do { try acao() } catch { erro = error.localizedDescription }
+    }
+    #endif
 
     /// "3 cadeiras · 14 aulas · 2 por rever · última a 1 out."
     static func texto(_ r: ResumoCurso) -> String {

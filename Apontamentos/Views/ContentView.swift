@@ -11,13 +11,16 @@ struct JanelaPrincipal: View {
     @Environment(Atualizador.self) private var atualizador
     @State private var preparar = false
     @State private var verCursos = false
+    @State private var verNovoCurso = false
 
     var body: some View {
         let curso = biblioteca.ativo
         ContentView()
             .id(curso.id)
             .sheet(isPresented: $verCursos) { CatalogoCursosView() }
+            .sheet(isPresented: $verNovoCurso) { NovoCursoSheet() }
             .onReceive(NotificationCenter.default.publisher(for: .abrirCursos)) { _ in verCursos = true }
+            .onReceive(NotificationCenter.default.publisher(for: .novoCurso)) { _ in verNovoCurso = true }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 biblioteca.recarregarCursos()
             }

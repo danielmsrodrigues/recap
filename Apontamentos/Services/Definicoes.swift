@@ -62,6 +62,15 @@ struct DefinicoesPartilhadas: Codable, Equatable, Sendable {
         contextoCurso: "", linguaApontamentos: LinguaApontamentos.ptPT.rawValue, idiomaAulas: IdiomaAula.espanhol.rawValue,
         organizacao: OrganizacaoCurso.anoESemestre.rawValue, iniciosPeriodos: CalendarioLetivo.porDefeito, duracaoCurso: 4)
 
+    /// Para um curso novo: o contexto e o resto começam de novo, porque são deste curso. A língua dos apontamentos vem
+    /// da do curso aberto, que costuma ser a mesma. A das aulas pede-se sempre: errada, uma transcrição fica para sempre.
+    static func paraCursoNovo(idioma: IdiomaAula, como atual: DefinicoesPartilhadas) -> DefinicoesPartilhadas {
+        var p = DefinicoesPartilhadas.porDefeito
+        p.idioma = idioma
+        p.lingua = atual.lingua
+        return p
+    }
+
     /// A língua em que o Claude escreve.
     var lingua: LinguaApontamentos {
         get { LinguaApontamentos(rawValue: linguaApontamentos) ?? .ptPT }

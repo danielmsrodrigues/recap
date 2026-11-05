@@ -32,6 +32,20 @@ final class ServicosCurso: Identifiable {
     }
 }
 
+enum ErroCurso: LocalizedError, Equatable {
+    case semNome
+    case jaExiste(String)
+    case aChegar(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .semNome: "O curso precisa de um nome."
+        case .jaExiste(let nome): "Já existe um curso chamado \"\(nome)\"."
+        case .aChegar(let nome): "\"\(nome)\" ainda está a chegar do iCloud. Tenta daqui a pouco."
+        }
+    }
+}
+
 /// A pasta das aulas, com os cursos que tem. Não há base de dados nem índice: o catálogo lê-se das pastas (ver `Curso`).
 @MainActor @Observable
 final class Biblioteca {
@@ -71,19 +85,22 @@ final class Biblioteca {
     /// tiver cadeiras, se já tiver nome, ou se não houver mais nenhum: quem tem um só curso não vê diferença.
     /// Nunca fica vazio.
     nonisolated static func ler(raiz: URL) -> [Curso] {
-        let fm = FileManager.default
-        func pastas(em pai: URL) -> [URL] {
-            ((try? fm.contentsOfDirectory(at: pai, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles)) ?? [])
-                .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
-        }
         let novos = pastas(em: Disco.urlCursos(raiz: raiz)).map { Curso(id: $0.lastPathComponent, pasta: $0, meta: Disco.lerCurso($0)) }
-        let temCadeiras = pastas(em: raiz).contains { $0.lastPathComponent != Disco.pastaSistema }
-        let temNome = fm.fileExists(atPath: Disco.urlCurso(raiz).path)
-        let daRaiz = temCadeiras || temNome || novos.isEmpty ? [cursoDaRaiz(raiz)] : []
+        let temNome = FileManager.default.fileExists(atPath: Disco.urlCurso(raiz).path)
+        let daRaiz = temCadeiras(raiz) || temNome || novos.isEmpty ? [cursoDaRaiz(raiz)] : []
         return (daRaiz + novos).sorted { a, b in
             if a.concluido != b.concluido { return !a.concluido }
             return a.nome.localizedStandardCompare(b.nome) == .orderedAscending
         }
+    }
+
+    nonisolated private static func pastas(em pai: URL) -> [URL] {
+        ((try? FileManager.default.contentsOfDirectory(at: pai, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles)) ?? [])
+            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+    }
+
+    nonisolated private static func temCadeiras(_ raiz: URL) -> Bool {
+        pastas(em: raiz).contains { $0.lastPathComponent != Disco.pastaSistema }
     }
 
     nonisolated private static func cursoDaRaiz(_ raiz: URL) -> Curso {
@@ -136,6 +153,70 @@ final class Biblioteca {
                                       ultimaAula: aulas.map(\.meta.data).max())
         }
         return r
+    }
+
+    // MARK: Gerir os cursos
+
+    /// O curso da raiz, se ainda não tem nome e tem cadeiras: com outro curso ao lado, tem de se saber qual é.
+    var cursoDaRaizPorNomear: Curso? {
+        guard let daRaiz = cursos.first(where: \.naRaiz), daRaiz.meta.nome == nil, Self.temCadeiras(raiz) else { return nil }
+        return daRaiz
+    }
+
+    /// Cria um curso novo, sem tocar em nada do que já existe: as cadeiras da raiz ficam onde estão.
+    /// `nomeDoCursoDaRaiz`: o nome a dar ao curso que já havia (ver `cursoDaRaizPorNomear`).
+    @discardableResult
+    func criarCurso(nome: String, preferencias: DefinicoesPartilhadas, nomeDoCursoDaRaiz: String? = nil) throws -> Curso {
+        let nome = nome.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nomeDaRaiz = nomeDoCursoDaRaiz?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !nome.isEmpty, nomeDaRaiz?.isEmpty != true else { throw ErroCurso.semNome }
+        recarregarCursos()
+        try verificarNomeLivre(nome, exceto: nil)
+        if let nomeDaRaiz {
+            guard nomeDaRaiz.localizedCaseInsensitiveCompare(nome) != .orderedSame else { throw ErroCurso.jaExiste(nome) }
+            try verificarNomeLivre(nomeDaRaiz, exceto: Curso.idDaRaiz)
+        }
+        let id = Disco.nomeDePasta(nome)
+        let pasta = Disco.urlCursos(raiz: raiz).appending(path: id, directoryHint: .isDirectory)
+        guard !FileManager.default.fileExists(atPath: pasta.path) else { throw ErroCurso.jaExiste(nome) }
+        if let nomeDaRaiz, let daRaiz = cursos.first(where: \.naRaiz) {
+            try alterarMeta(daRaiz) { $0.nome = nomeDaRaiz }
+        }
+        try FileManager.default.createDirectory(at: pasta, withIntermediateDirectories: true)
+        try Disco.escreverCurso(CursoMeta(nome: nome), em: pasta)
+        try DefinicoesPartilhadas.escrever(preferencias, raiz: pasta)
+        recarregarCursos()
+        return cursos.first { $0.id == id } ?? Curso(id: id, pasta: pasta, meta: CursoMeta(nome: nome))
+    }
+
+    /// Muda só o nome em `curso.json`. A pasta fica: renomeá-la deixava um aparelho desatualizado a recriar a antiga.
+    func renomear(_ curso: Curso, para nome: String) throws {
+        let nome = nome.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !nome.isEmpty else { throw ErroCurso.semNome }
+        try verificarNomeLivre(nome, exceto: curso.id)
+        try alterarMeta(curso) { $0.nome = nome }
+    }
+
+    func definirConcluido(_ concluido: Bool, curso: Curso) throws {
+        try alterarMeta(curso) {
+            $0.estadoCurso = concluido ? .concluido : .aDecorrer
+            $0.concluidoEm = concluido ? .now : nil
+        }
+    }
+
+    private func verificarNomeLivre(_ nome: String, exceto id: String?) throws {
+        if cursos.contains(where: { $0.id != id && $0.nome.localizedCaseInsensitiveCompare(nome) == .orderedSame }) {
+            throw ErroCurso.jaExiste(nome)
+        }
+    }
+
+    /// Com o `curso.json` por descarregar, recusa: ler daria um vazio, e gravá-lo levava-o por cima do verdadeiro.
+    private func alterarMeta(_ curso: Curso, _ alterar: (inout CursoMeta) -> Void) throws {
+        guard !Disco.porDescarregar(Disco.urlCurso(curso.pasta)) else { throw ErroCurso.aChegar(curso.nome) }
+        var meta = Disco.lerCurso(curso.pasta)
+        alterar(&meta)
+        try Disco.escreverCurso(meta, em: curso.pasta)
+        recarregarCursos()
     }
 
     // MARK: Abrir um curso
