@@ -1,16 +1,63 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// A janela: o que não depende do curso (preparação, novidades, atualizações) à volta do curso aberto. O `.id` refaz só
+/// o conteúdo ao trocar de curso, com a seleção, o filtro e o semestre a voltarem ao início.
+struct JanelaPrincipal: View {
+    @Environment(Biblioteca.self) private var biblioteca
+    @Environment(ProcessingQueue.self) private var fila
+    @Environment(SessaoDireto.self) private var direto
+    @Environment(Definicoes.self) private var definicoes
+    @Environment(Atualizador.self) private var atualizador
+    @State private var preparar = false
+
+    var body: some View {
+        let curso = biblioteca.ativo
+        ContentView()
+            .id(curso.id)
+            // Depois de uma atualização, uma vez: o que há de novo.
+            .modifier(ComNovidades())
+            // Num Mac novo (ou se faltar o Claude Code ou o modelo), o assistente abre sozinho.
+            .sheet(isPresented: $preparar) { PreparacaoView() }
+            .onAppear { if PreparacaoView.faltaAlgo(definicoes) { preparar = true } }
+            .onReceive(NotificationCenter.default.publisher(for: .abrirPreparacao)) { _ in preparar = true }
+            .modifier(AvisosAtualizacao(ocupado: direto.ativa || fila.jobs.contains(where: \.ativo)))
+            .task(id: curso.id) {
+                curso.aoAbrir()
+                // O iPad e o iPhone leem a pasta pelo iCloud Drive: o que muda lá aparece aqui sem voltar à app.
+                curso.library.vigiar()
+            }
+            .task {
+                #if DEBUG
+                // `APONTAMENTOS_PREPARAR=1`: abre o assistente "Preparar o Recap".
+                if ProcessInfo.processInfo.environment["APONTAMENTOS_PREPARAR"] == "1" { preparar = true }
+                // `APONTAMENTOS_ATUALIZAR=1`: procura e instala logo (teste da atualização de ponta a ponta).
+                if ProcessInfo.processInfo.environment["APONTAMENTOS_ATUALIZAR"] == "1" {
+                    await atualizador.procurar()
+                    await atualizador.instalar()
+                }
+                // `APONTAMENTOS_ATUALIZACAO_PROCURAR=1`: só procura a versão nova, para testar o aviso e o botão "Atualizar agora".
+                if ProcessInfo.processInfo.environment["APONTAMENTOS_ATUALIZACAO_PROCURAR"] == "1" {
+                    await atualizador.procurar()
+                }
+                #else
+                await atualizador.procurarSeForAltura()
+                #endif
+            }
+            .environment(curso.library)
+            .environment(curso.estudo)
+            .environment(curso.fichas)
+    }
+}
+
+/// O curso aberto: as cadeiras, as aulas e a aula.
 struct ContentView: View {
     @Environment(Library.self) private var library
     @Environment(ProcessingQueue.self) private var fila
     @Environment(SessaoDireto.self) private var direto
-    @Environment(Navegacao.self) private var navegacao
-    @Environment(Fichas.self) private var fichas
+    @State private var navegacao = Navegacao()
     @State private var pesquisa = ""
-    @State private var preparar = false
     @Environment(Definicoes.self) private var definicoes
-    @Environment(Atualizador.self) private var atualizador
     @State private var selecao: URL?
     @State private var videosPendentes: [URL] = []
     @State private var atual: VideoPendente?
@@ -123,33 +170,8 @@ struct ContentView: View {
             }
         }
         .environment(aviso)
+        .environment(navegacao)
         .imagemEmGrande(navegacao)
-        // Depois de uma atualização, uma vez: o que há de novo.
-        .modifier(ComNovidades())
-        // Num Mac novo (ou se faltar o Claude Code ou o modelo), o assistente abre sozinho.
-        .sheet(isPresented: $preparar) { PreparacaoView() }
-        .onAppear { if PreparacaoView.faltaAlgo(definicoes) { preparar = true } }
-        .onReceive(NotificationCenter.default.publisher(for: .abrirPreparacao)) { _ in preparar = true }
-        .modifier(AvisosAtualizacao(ocupado: direto.ativa || fila.jobs.contains(where: \.ativo)))
-        // Aulas antigas com "Sobre a cadeira" nos apontamentos, ou que ainda não entraram na ficha da cadeira.
-        .task { fichas.atualizarTodas() }
-        // O iPad e o iPhone leem a pasta pelo iCloud Drive: o que muda lá aparece aqui sem voltar à app.
-        .task { library.vigiar() }
-        .task {
-            #if DEBUG
-            // `APONTAMENTOS_ATUALIZAR=1`: procura e instala logo (teste da atualização de ponta a ponta).
-            if ProcessInfo.processInfo.environment["APONTAMENTOS_ATUALIZAR"] == "1" {
-                await atualizador.procurar()
-                await atualizador.instalar()
-            }
-            // `APONTAMENTOS_ATUALIZACAO_PROCURAR=1`: só procura a versão nova, para testar o aviso e o botão "Atualizar agora".
-            if ProcessInfo.processInfo.environment["APONTAMENTOS_ATUALIZACAO_PROCURAR"] == "1" {
-                await atualizador.procurar()
-            }
-            #else
-            await atualizador.procurarSeForAltura()
-            #endif
-        }
         // Resultados da pesquisa e links entre aulas: a aula abre e trata do resto (separador, momento, realce).
         .onChange(of: navegacao.destino) { _, destino in
             // O URL canónico da aula: o do link pode vir noutra normalização Unicode e a lista não o reconhecia.
@@ -216,8 +238,6 @@ struct ContentView: View {
             }
             // `APONTAMENTOS_CALENDARIO=1`: abre o calendário.
             if ProcessInfo.processInfo.environment["APONTAMENTOS_CALENDARIO"] == "1" { filtro = .calendario }
-            // `APONTAMENTOS_PREPARAR=1`: abre o assistente "Preparar o Recap".
-            if ProcessInfo.processInfo.environment["APONTAMENTOS_PREPARAR"] == "1" { preparar = true }
             // `APONTAMENTOS_PESQUISA="<texto>"`: pesquisa em todas as aulas.
             if let texto = ProcessInfo.processInfo.environment["APONTAMENTOS_PESQUISA"] { pesquisa = texto }
             // `APONTAMENTOS_DIRETO=1`: abre a folha "Transcrever em direto".

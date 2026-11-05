@@ -4,6 +4,7 @@ import SwiftUI
 /// No Início do Mac: quando a pasta Recap do iCloud Drive já existe (criada pelo iPhone ou pelo iPad) e as aulas
 /// ainda estão em ~/Aulas, propõe mudá-las para lá. Só muda quando se carrega no botão.
 struct MudarParaICloud: View {
+    @Environment(Biblioteca.self) private var biblioteca
     @Environment(Library.self) private var library
     @Environment(Definicoes.self) private var definicoes
     @Environment(ProcessingQueue.self) private var fila
@@ -42,12 +43,12 @@ struct MudarParaICloud: View {
     private func mudar() {
         aMudar = true
         erro = nil
-        let origem = library.raiz, destino = PastaICloud.documentosMac()
+        let origem = biblioteca.raiz, destino = PastaICloud.documentosMac()
         Task {
             do {
                 // Na mesma pasta pessoal: são só mudanças de nome, mas fora da thread principal na mesma.
                 let ficaram = try await Task.detached { try PastaICloud.mudar(de: origem, para: destino) }.value
-                try library.mudarRaiz(para: destino, mover: false)
+                try biblioteca.mudarRaiz(para: destino, mover: false)
                 definicoes.pastaAulas = destino.path
                 if !ficaram.isEmpty {
                     erro = "Ficaram em ~/Aulas \(ficaram.count) ficheiro(s) que já existiam no iCloud: \(ficaram.prefix(3).joined(separator: ", "))."

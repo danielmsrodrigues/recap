@@ -3,7 +3,7 @@ import SwiftUI
 /// As definições do iPad e do iPhone. As do curso (línguas, contexto, organização) vêm do Mac (`_recap/definicoes.json`);
 /// aqui fica só o que é deste dispositivo: a pasta e por onde se chega ao Claude (com o motor "Mac", o modelo é o do Mac).
 struct DefinicoesIOS: View {
-    @Environment(Library.self) private var library
+    @Environment(Biblioteca.self) private var biblioteca
     @Environment(Definicoes.self) private var definicoes
     @Environment(PastaAulas.self) private var pasta
     @Environment(\.dismiss) private var dismiss
@@ -16,7 +16,7 @@ struct DefinicoesIOS: View {
         NavigationStack {
             Form {
                 Section {
-                    LabeledContent("Pasta", value: pasta.naPastaRecap ? "Recap no iCloud Drive" : library.raiz.lastPathComponent)
+                    LabeledContent("Pasta", value: pasta.naPastaRecap ? "Recap no iCloud Drive" : biblioteca.raiz.lastPathComponent)
                     if !pasta.naPastaRecap {
                         Button("Usar a pasta Recap do iCloud Drive") { Task { await pasta.usarPastaRecap() } }
                     }

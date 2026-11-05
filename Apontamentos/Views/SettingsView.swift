@@ -17,6 +17,8 @@ struct SettingsView: View {
 
 private struct GeralSettings: View {
     @Environment(Definicoes.self) private var definicoes
+    /// A pasta das aulas é da biblioteca; o resto desta página é do curso aberto.
+    @Environment(Biblioteca.self) private var biblioteca
     @Environment(Library.self) private var library
     @Environment(ProcessingQueue.self) private var fila
     @Environment(SessaoDireto.self) private var direto
@@ -66,7 +68,7 @@ private struct GeralSettings: View {
 
             Section {
                 LabeledContent("Pasta") {
-                    Text((library.raiz.path as NSString).abbreviatingWithTildeInPath)
+                    Text((biblioteca.raiz.path as NSString).abbreviatingWithTildeInPath)
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                 }
@@ -74,9 +76,9 @@ private struct GeralSettings: View {
                     Button("Escolher…") { escolher = true }
                     Button("Pasta por defeito") { pedir(Disco.raizPorDefeito) }
                         .help((Disco.raizPorDefeito.path as NSString).abbreviatingWithTildeInPath)
-                        .disabled(library.raiz.mesmoCaminho(Disco.raizPorDefeito))
+                        .disabled(biblioteca.raiz.mesmoCaminho(Disco.raizPorDefeito))
                     Spacer()
-                    Button("Mostrar no Finder") { NSWorkspace.shared.activateFileViewerSelecting([library.raiz]) }
+                    Button("Mostrar no Finder") { NSWorkspace.shared.activateFileViewerSelecting([biblioteca.raiz]) }
                 }
                 .disabled(ocupada)
                 if let erro { Text(erro).foregroundStyle(.red).font(.callout) }
@@ -116,18 +118,18 @@ private struct GeralSettings: View {
             Button("Usar a pasta sem mover") { mudar(para: url, mover: false) }
             Button("Cancelar", role: .cancel) {}
         } message: { url in
-            Text("As \(library.cadeiras.count) cadeiras de \((library.raiz.path as NSString).abbreviatingWithTildeInPath) passam para \((url.path as NSString).abbreviatingWithTildeInPath). Sem mover, o Recap passa a ler só a pasta nova e as aulas atuais ficam onde estão.")
+            Text("As \(library.cadeiras.count) cadeiras de \((biblioteca.raiz.path as NSString).abbreviatingWithTildeInPath) passam para \((url.path as NSString).abbreviatingWithTildeInPath). Sem mover, o Recap passa a ler só a pasta nova e as aulas atuais ficam onde estão.")
         }
     }
 
     private func pedir(_ url: URL) {
-        guard !url.mesmoCaminho(library.raiz) else { return }
+        guard !url.mesmoCaminho(biblioteca.raiz) else { return }
         if library.cadeiras.isEmpty { mudar(para: url, mover: false) } else { nova = url }
     }
 
     private func mudar(para url: URL, mover: Bool) {
         do {
-            try library.mudarRaiz(para: url, mover: mover)
+            try biblioteca.mudarRaiz(para: url, mover: mover)
             definicoes.pastaAulas = url.mesmoCaminho(Disco.raizPorDefeito) ? "" : url.standardizedFileURL.path
             erro = nil
         } catch {

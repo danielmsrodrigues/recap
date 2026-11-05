@@ -390,6 +390,11 @@ extension URL {
         self == outro || caminhoCanonico == outro.caminhoCanonico
     }
 
+    /// Este caminho fica dentro de `pasta`, com as mesmas regras de `mesmoCaminho`.
+    func estaDentro(de pasta: URL) -> Bool {
+        caminhoCanonico.hasPrefix(pasta.caminhoCanonico + "/")
+    }
+
     /// Resolver symlinks são várias chamadas ao sistema por componente, e isto corre em `body` em loops
     /// (cada linha da barra lateral contra cada job): guarda-se o resultado por caminho.
     private var caminhoCanonico: String {
