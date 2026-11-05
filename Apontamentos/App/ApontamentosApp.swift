@@ -5,7 +5,7 @@ struct ApontamentosApp: App {
     @State private var biblioteca: Biblioteca
     @State private var definicoes: Definicoes
     @State private var fila: ProcessingQueue
-    @State private var direto = SessaoDireto()
+    @State private var direto: SessaoDireto
     @State private var atualizador = Atualizador()
     /// Responde às perguntas feitas no iPad e no iPhone (pela pasta das aulas no iCloud Drive).
     @State private var ponte: PonteMac
@@ -15,6 +15,7 @@ struct ApontamentosApp: App {
         let biblioteca = Biblioteca(raiz: definicoes.raizAulas, definicoes: definicoes)
         _biblioteca = State(initialValue: biblioteca)
         _definicoes = State(initialValue: definicoes)
+        _direto = State(initialValue: SessaoDireto(limiteSilencio: { definicoes.limiteSilencio }))
         let ponte = PonteMac(biblioteca: biblioteca, definicoes: definicoes)
         ponte.ligar()
         _ponte = State(initialValue: ponte)

@@ -11,9 +11,6 @@ final class SessaoDireto {
         case falhou(String)
     }
 
-    /// Termina sozinha depois deste silêncio (a gravação acabou).
-    static let limiteSilencio: Double = 180
-
     private(set) var estado: Estado = .parada {
         didSet { fila?.emEspera = ativa }
     }
@@ -50,10 +47,17 @@ final class SessaoDireto {
     private var relogio: Task<Void, Never>?
     private weak var library: Library?
     private weak var fila: ProcessingQueue?
+    private let limite: @MainActor () -> Double
 
-    init(criarCaptacao: @escaping (EventosCaptacao) -> any Captacao = { CapturaAudio($0) }) {
+    /// `limiteSilencio`: lido a cada verificação, para mudar nas Definições valer também para a aula em curso.
+    init(criarCaptacao: @escaping (EventosCaptacao) -> any Captacao = { CapturaAudio($0) },
+         limiteSilencio: @escaping @MainActor () -> Double = { Double(Definicoes.minutosSilencioPorDefeito) * 60 }) {
         self.criarCaptacao = criarCaptacao
+        limite = limiteSilencio
     }
+
+    /// Termina sozinha depois deste silêncio, em segundos (a gravação acabou).
+    var limiteSilencio: Double { limite() }
 
     var ativa: Bool { [.aPreparar, .aOuvir, .emPausa].contains(estado) }
     /// Há som a chegar neste momento.
@@ -237,7 +241,7 @@ final class SessaoDireto {
                 aviso = "Não está a chegar nenhuma imagem da janela da aula: se estiver minimizada, abre-a (pode ficar por trás de outras). Sem isso não há slides."
             }
         }
-        if estado == .aOuvir, houveSom, silencio >= Self.limiteSilencio, !escolherJanela, !aMudarJanela {
+        if estado == .aOuvir, houveSom, silencio >= limiteSilencio, !escolherJanela, !aMudarJanela {
             Task { await terminar() }
         }
     }
