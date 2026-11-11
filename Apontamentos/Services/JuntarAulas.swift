@@ -2,7 +2,7 @@ import Foundation
 
 /// Junta duas gravações da mesma aula (o professor parou a gravação no intervalo, por exemplo) numa só.
 /// A `primeira` fica com tudo: a transcrição da `segunda` entra a seguir, com os tempos deslocados pela duração
-/// da primeira, e o mesmo para os slides; os PDFs e os outros materiais do professor juntam-se aos que já lá estão. A pasta da segunda
+/// da primeira, e o mesmo para os slides e as marcas "Não estou a perceber"; os PDFs e os outros materiais do professor juntam-se aos que já lá estão. A pasta da segunda
 /// não é tocada (quem chama manda-a para o Lixo), e os apontamentos têm de ser gerados de novo.
 enum JuntarAulas {
     enum Erro: LocalizedError {
@@ -71,6 +71,11 @@ enum JuntarAulas {
         meta.duracao = t.duracao
         meta.geracoes += meta2.geracoes
         meta.nomesPDFs = nomes.isEmpty ? nil : nomes
+        // Os bocados marcados com "Não estou a perceber" na segunda parte, nos tempos da aula junta.
+        let naoPercebi = (meta1.naoPercebi ?? []) + (meta2.naoPercebi ?? []).map {
+            IntervaloNaoPercebi(inicio: $0.inicio + desvio, fim: $0.fim.map { $0 + desvio })
+        }
+        meta.naoPercebi = naoPercebi.isEmpty ? nil : naoPercebi
         meta.revista = false
         try Disco.escreverMeta(meta, em: primeira)
     }

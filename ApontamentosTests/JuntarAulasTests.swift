@@ -58,6 +58,35 @@ struct JuntarAulasTests {
         #expect(Disco.pdfsProfessor(pasta, nomes: meta.nomesPDFs).map(\.titulo) == ["Tema 1", "Tema 2"])
     }
 
+    /// As marcas "Não estou a perceber" das duas partes ficam, as da segunda com os tempos deslocados.
+    @Test func asMarcasNaoPercebiDasDuasPartesFicam() throws {
+        let (lib, raiz) = try biblioteca()
+        defer { try? FileManager.default.removeItem(at: raiz) }
+        let p1 = try aula(lib, "Parte 1", duracao: 3000, texto: "Antes")
+        let p2 = try aula(lib, "Parte 2", duracao: 2400, texto: "Depois")
+        try lib.atualizarMeta(em: p1) { $0.naoPercebi = [IntervaloNaoPercebi(inicio: 100, fim: 200)] }
+        try lib.atualizarMeta(em: p2) { $0.naoPercebi = [IntervaloNaoPercebi(inicio: 50, fim: 80), IntervaloNaoPercebi(inicio: 2300, fim: nil)] }
+
+        let pasta = try lib.juntar(try #require(lib.aula(em: p2)), a: try #require(lib.aula(em: p1)))
+
+        #expect(try Disco.lerMeta(pasta).naoPercebi == [IntervaloNaoPercebi(inicio: 100, fim: 200),
+                                                        IntervaloNaoPercebi(inicio: 3050, fim: 3080),
+                                                        IntervaloNaoPercebi(inicio: 5300, fim: nil)])
+    }
+
+    /// Só a segunda parte tem marcas: passam na mesma.
+    @Test func asMarcasDaSegundaPassamMesmoSemMarcasNaPrimeira() throws {
+        let (lib, raiz) = try biblioteca()
+        defer { try? FileManager.default.removeItem(at: raiz) }
+        let p1 = try aula(lib, "Parte 1", duracao: 3000, texto: "Antes")
+        let p2 = try aula(lib, "Parte 2", duracao: 2400, texto: "Depois")
+        try lib.atualizarMeta(em: p2) { $0.naoPercebi = [IntervaloNaoPercebi(inicio: 50, fim: 80)] }
+
+        let pasta = try lib.juntar(try #require(lib.aula(em: p2)), a: try #require(lib.aula(em: p1)))
+
+        #expect(try Disco.lerMeta(pasta).naoPercebi == [IntervaloNaoPercebi(inicio: 3050, fim: 3080)])
+    }
+
     @Test func osMateriaisDaSegundaPassamParaAPrimeira() throws {
         let (lib, raiz) = try biblioteca()
         defer { try? FileManager.default.removeItem(at: raiz) }
