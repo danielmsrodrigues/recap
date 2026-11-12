@@ -11,6 +11,9 @@ enum Novidades {
     }
 
     static let todas: [Versao] = [
+        Versao(numero: "1.19", data: "12 de novembro de 2026", itens: [
+            "Ao juntar duas gravações da mesma aula (Juntar a seguir a esta), os bocados que marcaste com \"Não estou a perceber\" na segunda parte já não se perdem: passam para a aula junta, no minuto certo, e os apontamentos explicam-nos outra vez.",
+        ]),
         Versao(numero: "1.18", data: "5 de novembro de 2026", itens: [
             "Em Definições → Transcrição escolhes ao fim de quanto tempo de silêncio uma aula em direto termina sozinha, de 1 minuto a 1 hora. Numa aula com intervalos, escolhe mais tempo do que o intervalo mais longo. Vale também para a aula em curso.",
         ]),
