@@ -49,6 +49,7 @@
 				Services/ClaudeCodeClient.swift,
 				Services/ExportadorPDF.swift,
 				Services/ModelStore.swift,
+				Services/NavegadorAcordado.swift,
 				Services/Oradores.swift,
 				Services/SlideExtractor.swift,
 				Services/Transcriber.swift,
