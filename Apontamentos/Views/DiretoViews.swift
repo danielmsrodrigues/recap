@@ -20,6 +20,11 @@ struct ConfigDiretoSheet: View {
     @State private var fonte: FonteAudio?
     @State private var dados = DadosAula()
     @State private var erro: String?
+    /// Se o browser da janela escolhida continua a desenhá-la escondida (ver NavegadorAcordado).
+    @State private var estadoNavegador = NavegadorAcordado.Estado.naoSeAplica
+    @State private var confirmarReabrir = false
+    @State private var aReabrir = false
+    @State private var erroReabrir: String?
 
     /// Altura da lista de janelas: até duas filas de quatro; com mais, faz scroll.
     private var alturaJanelas: CGFloat {
@@ -36,6 +41,12 @@ struct ConfigDiretoSheet: View {
         .padding(20)
         .frame(width: 760)
         .task { await carregarFontes() }
+        .task(id: fonte) { atualizarEstadoNavegador() }
+        .confirmationDialog("Reabrir o \(nomeNavegador)?", isPresented: $confirmarReabrir) {
+            Button("Reabrir") { Task { await reabrirNavegador() } }
+        } message: {
+            Text("O \(nomeNavegador) fecha e volta logo a abrir, com os separadores que tens. Fica assim até o fechares.")
+        }
         .onAppear { dados.escolherCadeira(library: library, ultima: ultimaCadeira) }
     }
 
@@ -75,9 +86,75 @@ struct ConfigDiretoSheet: View {
             }
             .frame(minHeight: min(alturaJanelas, 150), idealHeight: alturaJanelas, maxHeight: alturaJanelas)
 
-            Text("A janela tem de ficar à vista para os slides saírem (atrás de outras ou minimizada, as capturas saem pretas). O som é o da aplicação inteira: não ponhas outro som a tocar.")
+            if capturarSlides, let fonte, let nome = NavegadorAcordado.chromium[fonte.bundleID] {
+                avisoNavegador(nome)
+            }
+
+            Text(estadoNavegador == .pronto
+                 ? "Minimizada, a janela não dá slides. O som é o da aplicação inteira: não ponhas outro som a tocar."
+                 : "A janela tem de ficar à vista para os slides saírem (atrás de outras ou minimizada, as capturas saem pretas). O som é o da aplicação inteira: não ponhas outro som a tocar.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private var nomeNavegador: String { fonte.flatMap { NavegadorAcordado.chromium[$0.bundleID] } ?? "browser" }
+
+    /// O Chrome deixa de desenhar uma janela escondida; reaberto pelo Recap, continua a desenhá-la.
+    @ViewBuilder private func avisoNavegador(_ nome: String) -> some View {
+        switch estadoNavegador {
+        case .precisaReabrir:
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Label("Para os slides saírem com a janela escondida (atrás de outras ou noutro desktop), o \(nome) tem de ser reaberto pelo Recap.",
+                          systemImage: "eye.slash")
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    if aReabrir {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button("Reabrir o \(nome)") { confirmarReabrir = true }
+                    }
+                }
+                if let erroReabrir {
+                    Text(erroReabrir).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .font(.callout)
+        case .pronto:
+            Label("O \(nome) foi aberto pelo Recap: a janela da aula pode ficar escondida.", systemImage: "checkmark.circle")
+                .font(.callout).foregroundStyle(.secondary)
+        case .naoSeAplica:
+            EmptyView()
+        }
+    }
+
+    private func atualizarEstadoNavegador() {
+        estadoNavegador = fonte.map { NavegadorAcordado.estado(bundleID: $0.bundleID, pid: $0.pid) } ?? .naoSeAplica
+    }
+
+    private func reabrirNavegador() async {
+        guard let anterior = fonte else { return }
+        aReabrir = true
+        erroReabrir = nil
+        defer { aReabrir = false }
+        do {
+            try await NavegadorAcordado.reabrir(bundleID: anterior.bundleID)
+        } catch {
+            erroReabrir = error.localizedDescription
+            return
+        }
+        // As janelas voltam com outros números: espera que reapareçam e volta a escolher a da aula pelo título
+        // (o separador pode demorar a recuperar o título; ao fim de 10 s serve outra janela do mesmo browser).
+        for tentativa in 1...20 {
+            try? await Task.sleep(for: .milliseconds(500))
+            let doBrowser = ((try? await CapturaAudio.fontes()) ?? []).filter { $0.bundleID == anterior.bundleID }
+            if let mesma = doBrowser.first(where: { $0.tituloJanela == anterior.tituloJanela }) ?? (tentativa == 20 ? doBrowser.first : nil) {
+                fonte = mesma
+                break
+            }
+        }
+        await carregarFontes()
+        atualizarEstadoNavegador()
     }
 
     /// Que aula é, e como.
@@ -259,7 +336,7 @@ struct DiretoView: View {
                 .font(.caption).foregroundStyle(.orange)
         }
         if sessao.avisoPreto {
-            Text("O vídeo está a sair preto: a janela da aula está escondida. Põe-na à vista (por exemplo no monitor) ou usa o picture-in-picture do leitor.")
+            Text("O vídeo está a sair preto: a janela da aula está escondida. Põe-na à vista (por exemplo no monitor) ou usa o picture-in-picture do leitor. Na próxima aula, reabre o Chrome pelo Recap antes de começar e ela pode ficar escondida.")
                 .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
         }
         if let aviso = sessao.aviso {
