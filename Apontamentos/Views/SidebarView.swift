@@ -295,7 +295,8 @@ struct ListaAulas: View {
         } message: { aula in
             Text("A pasta \"\(aula.pasta.lastPathComponent)\" vai para o Lixo, de onde a podes recuperar. O vídeo original não é tocado.")
         }
-        .confirmationDialog("Juntar as duas gravações?", isPresented: Binding(get: { aJuntar != nil }, set: { if !$0 { aJuntar = nil } }), presenting: aJuntar) { par in
+        .confirmationDialog(aJuntar.map { "Pôr \"\($0.segunda.meta.titulo)\" a seguir a \"\($0.primeira.meta.titulo)\"?" } ?? "",
+                            isPresented: Binding(get: { aJuntar != nil }, set: { if !$0 { aJuntar = nil } }), presenting: aJuntar) { par in
             Button("Juntar e gerar apontamentos") { juntar(par.segunda, a: par.primeira) }
             Button("Cancelar", role: .cancel) {}
         } message: { par in
@@ -358,10 +359,13 @@ struct ListaAulas: View {
                 fila.adicionar(Job(pastaAula: aula.pasta, titulo: aula.meta.titulo, video: url, gerarApontamentos: true))
             }
         }
-        let outras = (library.cadeira(nome: aula.cadeira)?.aulas.reversed() ?? []).filter {
+        let candidatas = (library.cadeira(nome: aula.cadeira)?.aulas.reversed() ?? []).filter {
             !$0.pasta.mesmoCaminho(aula.pasta) && $0.temTranscricao && fila.job(para: $0.pasta)?.ativo != true
         }
-        Menu("Juntar a seguir a esta") {
+        // A 2.ª parte de uma aula é quase sempre do mesmo dia: essas vêm primeiro.
+        let doMesmoDia = { (outra: Aula) in Calendar.current.isDate(outra.meta.data, inSameDayAs: aula.meta.data) }
+        let outras = candidatas.filter(doMesmoDia) + candidatas.filter { !doMesmoDia($0) }
+        Menu("Acrescentar a 2.ª parte") {
             ForEach(outras) { outra in
                 Button("\(outra.meta.titulo) · \(outra.meta.data.formatted(.dateTime.day().month(.wide).locale(Locale(identifier: "pt_PT"))))") {
                     aJuntar = (aula, outra)
