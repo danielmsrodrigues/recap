@@ -51,7 +51,7 @@ Na primeira abertura, a janela **Preparar o Recap** guia os três passos que fal
 
 - **Vídeo de uma aula:** arrasta o vídeo (.mp4, .mov) para a janela, ou usa **+ → Importar vídeo…**.
 - **Aula ao vivo ou gravação no browser:** usa **+ → Transcrever em direto…** e escolhe a janela da aula.
-  - Para os slides saírem, a janela da aula tem de estar à vista, por exemplo noutro monitor.
+  - Para os slides saírem, a janela da aula tem de estar à vista, por exemplo noutro monitor. Para a poderes esconder (atrás de outras ou noutro desktop), carrega em **Reabrir o Chrome** antes de começar: o Chrome volta a abrir com os separadores e continua a desenhar a janela. Minimizada não dá.
   - O Recap termina sozinho ao fim de 3 minutos de silêncio. Esse tempo muda-se em Definições → Transcrição.
 - **PDFs dos slides do professor:** dentro da aula, abre o menu **Slides do professor** (podes juntar vários; o Claude usa só as páginas dadas nessa aula).
 - **Sobre a cadeira:** a primeira linha de cada cadeira na barra lateral. Junta numa ficha a avaliação, as datas, o programa e os avisos de todas as aulas, e vai crescendo a cada aula. Para começar já com o essencial, junta o programa da cadeira em PDF no menu **Programa**.

@@ -65,4 +65,12 @@ struct DiretoTests {
         #expect(CapturaAudio.centroPreto(imagem(0)))
         #expect(!CapturaAudio.centroPreto(imagem(0.9)))
     }
+
+    /// Os argumentos de um processo lêem-se como no `ps` (é assim que se sabe se o Chrome já tem a opção).
+    @Test @MainActor func argumentosDoProcessoEEstadoDoNavegador() {
+        #expect(NavegadorAcordado.argumentos(pid: getpid()) == Array(CommandLine.arguments.dropFirst()))
+        #expect(NavegadorAcordado.argumentos(pid: -1).isEmpty)
+        #expect(NavegadorAcordado.estado(bundleID: "us.zoom.xos", pid: getpid()) == .naoSeAplica)
+        #expect(NavegadorAcordado.estado(bundleID: "com.google.Chrome", pid: getpid()) == .precisaReabrir)
+    }
 }
