@@ -76,6 +76,9 @@ h3 { font-size: 1.15em; }
 
 p, ul, ol, table, blockquote, pre { margin: 0.7em 0; }
 li { margin: 0.25em 0; }
+/* Alíneas dos exercícios: uma por linha, com a letra à esquerda e o texto alinhado a seguir. */
+p.alinea { margin: 0.35em 0; padding-left: 1.6em; text-indent: -1.6em; }
+p.alinea + p.alinea { margin-top: 0.2em; }
 a { color: var(--destaque); }
 
 /* Caixas de cantos redondos, sem a barra à esquerda (como o "Resumo" e os "Avisos" do design). */
