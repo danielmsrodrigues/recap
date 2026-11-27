@@ -72,6 +72,11 @@ final class PipelineRunner {
         if let existente = Disco.lerTranscricao(job.pastaAula) {
             job.saltar(.audio, detalhe: "Transcrição já existente")
             job.saltar(.transcricao, detalhe: "Reutilizada de transcricao.json")
+            // O áudio captado já não serve: se ficasse, a aula voltava à fila a cada abertura.
+            if let direto = job.audioDireto {
+                try? FileManager.default.removeItem(at: direto)
+                CaptacaoGuardada.de(audio: direto)?.apagarSeAcabada()
+            }
             return existente
         }
         guard !job.soApontamentos else {

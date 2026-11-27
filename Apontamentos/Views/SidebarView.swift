@@ -82,6 +82,16 @@ struct BarraLateral: View {
                 let doCurso = jobsDoCurso
                 let noutros = jobsPorAcabar.count - doCurso.count
                 Section("Fila") {
+                    if fila.pausada {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label("Em pausa durante a aula em direto", systemImage: "pause.circle")
+                                .foregroundStyle(.secondary)
+                                .font(.caption)
+                            Button("Processar já") { fila.processarJa() }
+                                .controlSize(.small)
+                                .help("Começa já a fila. A captação em direto pode ficar mais lenta.")
+                        }
+                    }
                     ForEach(doCurso) { job in
                         Button { aoAbrirAula(job.pastaAula) } label: { LinhaJob(job: job).contentShape(.rect) }
                             .buttonStyle(.plain)

@@ -35,6 +35,12 @@ struct ApontamentosApp: App {
         CaptacaoGuardada.realojar { biblioteca.procurarAula($0) }
         let existe = { (u: URL) in FileManager.default.fileExists(atPath: u.path) }
         for (c, ficha) in CaptacaoGuardada.pendentes(aulaExiste: existe) {
+            // A aula já foi transcrita (o áudio ficou para trás): na fila, a transcrição era reutilizada, o áudio nunca
+            // se apagava e os apontamentos voltavam a ser gerados a cada abertura.
+            if existe(ficha.pastaAula.appending(path: Disco.transcricaoJSON)) {
+                c.apagar()
+                continue
+            }
             fila.adicionar(Job(pastaAula: ficha.pastaAula, titulo: ficha.titulo, video: nil, gerarApontamentos: ficha.gerarApontamentos,
                                audioDireto: c.audio, velocidade: ficha.velocidade, framesDireto: existe(c.frames) ? c.frames : nil))
         }

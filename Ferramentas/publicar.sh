@@ -6,13 +6,19 @@ set -euo pipefail
 cd "${0:A:h}/.."
 
 # A versão da app é a da release: é por ela que o Recap sabe se há uma atualização.
-versao_app=()
-[[ "${1:-}" == "--github" ]] && versao_app=("MARKETING_VERSION=${2:?indica a versão, por exemplo: --github 1.2}")
+# Sem --github, a cópia local leva a versão da última release (a tag mais alta): com a do projeto (1.2)
+# o Recap julgava-se atrás da release e propunha "atualizar" para uma versão mais antiga do que a compilada.
+if [[ "${1:-}" == "--github" ]]; then
+  versao_app=("MARKETING_VERSION=${2:?indica a versão, por exemplo: --github 1.2}")
+else
+  ultima_tag=$(git tag --list 'v*' --sort=-v:refname | head -1)
+  versao_app=(${ultima_tag:+"MARKETING_VERSION=${ultima_tag#v}"})
+fi
 
 # Sem a cobertura de testes (o esquema gerado liga-a) e sem os símbolos de depuração: a app passa de ~20 MB a ~7 MB.
 final=(CLANG_COVERAGE_MAPPING=NO CLANG_ENABLE_CODE_COVERAGE=NO DEPLOYMENT_POSTPROCESSING=YES STRIP_INSTALLED_PRODUCT=YES
        DEAD_CODE_STRIPPING=YES)
-xcodebuild -project Apontamentos.xcodeproj -scheme Apontamentos -configuration Release \
+xcodebuild -project Apontamentos.xcodeproj -scheme Apontamentos -configuration Release -jobs 3 \
   -derivedDataPath build/DerivedData build "${versao_app[@]}" "${final[@]}" | grep -E "error|BUILD" || true
 app=build/DerivedData/Build/Products/Release/Recap.app
 codesign --verify --deep --strict "$app"

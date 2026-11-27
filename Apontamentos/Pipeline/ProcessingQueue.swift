@@ -9,7 +9,23 @@ final class ProcessingQueue {
     private var aCorrer = false
     /// Enquanto uma aula é captada em direto, não começa trabalho pesado (a chamada não fica lenta).
     var emEspera = false {
-        didSet { if !emEspera { avancar() } }
+        didSet {
+            // Uma aula em direto nova volta a pôr a fila em pausa, mesmo que na anterior se tenha forçado.
+            if emEspera, !oldValue { processarDuranteDireto = false }
+            if !emEspera { avancar() }
+        }
+    }
+    /// "Processar já": a fila avança durante a aula em direto, à custa de a captação poder ficar mais lenta.
+    private(set) var processarDuranteDireto = false
+
+    /// Há aulas à espera só por causa da aula em direto.
+    var pausada: Bool {
+        emEspera && !processarDuranteDireto && jobs.contains { $0.estado == .emEspera }
+    }
+
+    func processarJa() {
+        processarDuranteDireto = true
+        avancar()
     }
 
     init(runner: PipelineRunner) {
@@ -54,7 +70,7 @@ final class ProcessingQueue {
     }
 
     private func avancar() {
-        guard !aCorrer, !emEspera, let proximo = jobs.first(where: { $0.estado == .emEspera }) else {
+        guard !aCorrer, !emEspera || processarDuranteDireto, let proximo = jobs.first(where: { $0.estado == .emEspera }) else {
             if !aCorrer, !jobs.contains(where: \.ativo) { runner.filaVazia() }
             return
         }
