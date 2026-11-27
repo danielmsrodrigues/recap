@@ -11,6 +11,13 @@ enum Novidades {
     }
 
     static let todas: [Versao] = [
+        Versao(numero: "1.20", data: "27 de novembro de 2026", itens: [
+            "Durante uma aula em direto, \"Processar já\" na fila trata das aulas à espera sem esperar que a aula acabe.",
+            "Para juntar duas gravações da mesma aula, \"Acrescentar a 2.ª parte\" no menu da aula, com a ordem das partes confirmada antes de juntar.",
+            "Em Transcrever em direto, um botão volta a abrir o Chrome e esconde a janela da aula.",
+            "Nos exercícios, cada alínea a), b), c) fica numa linha própria.",
+            "Uma aula já transcrita deixa de voltar à fila (e de gerar os apontamentos outra vez) sempre que abres o Recap.",
+        ]),
         Versao(numero: "1.19", data: "12 de novembro de 2026", itens: [
             "Ao juntar duas gravações da mesma aula (Juntar a seguir a esta), os bocados que marcaste com \"Não estou a perceber\" na segunda parte já não se perdem: passam para a aula junta, no minuto certo, e os apontamentos explicam-nos outra vez.",
         ]),
