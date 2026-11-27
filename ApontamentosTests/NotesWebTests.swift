@@ -44,6 +44,20 @@ struct NotesWebTests {
         #expect(n == 2)
     }
 
+    /// As alíneas a), b), c) escritas em linhas seguidas ficam uma por linha, também dentro da resolução.
+    @Test func alineasUmaPorLinha() async throws {
+        let pagina = try await Pagina.carregar()
+        try await pagina.render("Indica:\n\na) $6 \\cdot 9$\nb) uno\nc) dos\n\n> **Resolución**\n> a) x\n> b) y\n\n```\na) código\nb) fica\n```")
+        let r = try #require(try await pagina.web.evaluateJavaScript("""
+            [document.querySelectorAll('#conteudo > p.alinea').length,
+             document.querySelectorAll('blockquote p.alinea').length,
+             document.querySelector('pre code').textContent]
+            """) as? [Any])
+        #expect(r[0] as? Int == 3)
+        #expect(r[1] as? Int == 2)
+        #expect(r[2] as? String == "a) código\nb) fica\n")
+    }
+
     /// O que o professor só mencionou fica numa caixa à parte, em qualquer língua dos apontamentos.
     @Test func caixaSoMencionado() async throws {
         let pagina = try await Pagina.carregar()

@@ -279,11 +279,33 @@
     }
   }
 
+  // Alíneas dos exercícios ("a) …", "b) …") escritas em linhas seguidas: o Markdown juntava-as num só parágrafo.
+  // Cada uma passa a parágrafo próprio (também dentro das resoluções, que são citações). Fora dos blocos de código.
+  const ALINEA = /^[a-z]\)\s/;
+  function separarAlineas(texto) {
+    const linhas = texto.split("\n");
+    let emCodigo = false;
+    const saida = [];
+    for (const linha of linhas) {
+      if (/^\s*(>\s*)*```/.test(linha)) emCodigo = !emCodigo;
+      const m = !emCodigo && linha.match(/^((?:\s*>)*\s*)([a-z]\)\s.*)$/);
+      const anterior = saida[saida.length - 1];
+      if (m && anterior !== undefined) {
+        const prefixo = m[1].replace(/\s+$/, "");
+        const resto = anterior.slice(prefixo.length).trim();
+        // A linha de cima tem texto e é do mesmo bloco (mesma citação): uma linha em branco separa-as.
+        if (anterior.startsWith(prefixo) && resto !== "" && !/^>/.test(resto)) saida.push(prefixo);
+      }
+      saida.push(linha);
+    }
+    return saida.join("\n");
+  }
+
   window.renderMarkdown = function (md, emStreaming, base) {
     const r = raiz();
     const perto = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     const { texto, formulas } = protegerMatematica(md || "");
-    let html = marked.parse(texto, { gfm: true, breaks: false });
+    let html = marked.parse(separarAlineas(texto), { gfm: true, breaks: false });
     html = html.replace(/@@MATH(\d+)@@/g, (_, i) => formulaHTML(formulas[Number(i)].tex, formulas[Number(i)].display));
     // Monta-se tudo à parte e só depois entra no documento, para comparar com o que lá está.
     const novo = document.createElement("template");
@@ -292,6 +314,9 @@
     ligarTimestamps(n);
     ligarImagens(n, base);
     ligarEsquemas(n, emStreaming);
+    for (const p of n.querySelectorAll("p")) {
+      if (ALINEA.test(p.textContent)) p.classList.add("alinea");
+    }
     // Explicações que o professor não deu: destacadas à parte das definições.
     let resolucoes = 0;
     for (const q of n.querySelectorAll("blockquote")) {
